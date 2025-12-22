@@ -2,231 +2,434 @@
   <div class="header">
     <div class="title-section">
       <h1>Panel Administratora</h1>
-      <p class="subtitle">Zarządzaj ofertami pracy</p>
+      <p class="subtitle">Zarządzaj systemem</p>
     </div>
-    <button mat-raised-button color="primary" (click)="openAddDialog()" class="add-button">
-      <mat-icon>add</mat-icon>
-      Dodaj ofertę
-    </button>
   </div>
 
-  <!-- Filters Section -->
-  @if (!loading && jobs.length > 0) {
-    <mat-card class="filters-card">
-      <div class="filters-grid">
-        <!-- Search -->
-        <mat-form-field appearance="outline" class="search-field">
-          <mat-label>Szukaj</mat-label>
-          <input matInput [(ngModel)]="searchTerm" (ngModelChange)="onSearch()" placeholder="Stanowisko, firma, lokalizacja...">
-          <mat-icon matPrefix>search</mat-icon>
-          @if (searchTerm) {
-            <button mat-icon-button matSuffix (click)="searchTerm = ''; onSearch()">
-              <mat-icon>close</mat-icon>
-            </button>
-          }
-        </mat-form-field>
+  <mat-tab-group [(selectedIndex)]="selectedTabIndex" (selectedIndexChange)="onTabChange($event)" class="admin-tabs">
+    <!-- TAB 1: Oferty Pracy -->
+    <mat-tab label="Oferty Pracy">
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">work</mat-icon>
+        Oferty Pracy
+      </ng-template>
 
-        <!-- Work Type Filter -->
-        <mat-form-field appearance="outline">
-          <mat-label>Typ pracy</mat-label>
-          <mat-select [(ngModel)]="selectedWorkType" (ngModelChange)="onFilterChange()">
-            @for (option of workTypeOptions; track option.value) {
-              <mat-option [value]="option.value">{{ option.label }}</mat-option>
-            }
-          </mat-select>
-          <mat-icon matPrefix>work_outline</mat-icon>
-        </mat-form-field>
-      </div>
-
-      <div class="filter-actions">
-        <button mat-button (click)="clearFilters()">
-          <mat-icon>clear</mat-icon>
-          Wyczyść filtry
-        </button>
-        <div class="results-count">
-          Znaleziono: <strong>{{ totalItems }}</strong> ofert
+      <div class="tab-content">
+        <div class="tab-header">
+          <button mat-raised-button color="primary" (click)="openAddDialog()" class="add-button">
+            <mat-icon>add</mat-icon>
+            Dodaj ofertę
+          </button>
         </div>
-      </div>
-    </mat-card>
-  }
 
-  @if (loading) {
-    <div class="loading-container">
-      <mat-spinner></mat-spinner>
-    </div>
-  }
-
-  @if (!loading && jobs.length > 0) {
-    <mat-card class="table-card">
-      <div class="table-container">
-        <table mat-table [dataSource]="paginatedJobs" class="jobs-table">
-          <!-- ID Column (Sortable) -->
-          <ng-container matColumnDef="id">
-            <th mat-header-cell *matHeaderCellDef (click)="onSort('id')" class="sortable">
-              <div class="header-cell">
-                ID
-                @if (sortColumn === 'id') {
-                  <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+        <!-- Filters Section -->
+        @if (!loading && jobs.length > 0) {
+          <mat-card class="filters-card">
+            <div class="filters-grid">
+              <!-- Search -->
+              <mat-form-field appearance="outline" class="search-field">
+                <mat-label>Szukaj</mat-label>
+                <input matInput [(ngModel)]="searchTerm" (ngModelChange)="onSearch()" placeholder="Stanowisko, firma, lokalizacja...">
+                <mat-icon matPrefix>search</mat-icon>
+                @if (searchTerm) {
+                  <button mat-icon-button matSuffix (click)="searchTerm = ''; onSearch()">
+                    <mat-icon>close</mat-icon>
+                  </button>
                 }
-              </div>
-            </th>
-            <td mat-cell *matCellDef="let job">
-              <span class="job-id">#{{ job.id }}</span>
-            </td>
-          </ng-container>
+              </mat-form-field>
 
-          <!-- Title Column (Sortable) -->
-          <ng-container matColumnDef="title">
-            <th mat-header-cell *matHeaderCellDef (click)="onSort('title')" class="sortable">
-              <div class="header-cell">
-                Stanowisko
-                @if (sortColumn === 'title') {
-                  <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
-                }
-              </div>
-            </th>
-            <td mat-cell *matCellDef="let job">
-              <span class="job-title">{{ job.title }}</span>
-            </td>
-          </ng-container>
-
-          <!-- Company Column (Sortable) -->
-          <ng-container matColumnDef="company">
-            <th mat-header-cell *matHeaderCellDef (click)="onSort('company')" class="sortable">
-              <div class="header-cell">
-                Firma
-                @if (sortColumn === 'company') {
-                  <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
-                }
-              </div>
-            </th>
-            <td mat-cell *matCellDef="let job">
-              <span class="company-name">{{ job.company }}</span>
-            </td>
-          </ng-container>
-
-          <!-- Location Column (Sortable) -->
-          <ng-container matColumnDef="location">
-            <th mat-header-cell *matHeaderCellDef (click)="onSort('location')" class="sortable">
-              <div class="header-cell">
-                Lokalizacja
-                @if (sortColumn === 'location') {
-                  <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
-                }
-              </div>
-            </th>
-            <td mat-cell *matCellDef="let job">
-              <div class="location-cell">
-                <mat-icon>location_on</mat-icon>
-                <span>{{ job.location }}</span>
-              </div>
-            </td>
-          </ng-container>
-
-          <!-- Work Type Column (Sortable) -->
-          <ng-container matColumnDef="workType">
-            <th mat-header-cell *matHeaderCellDef (click)="onSort('workType')" class="sortable">
-              <div class="header-cell">
-                Typ pracy
-                @if (sortColumn === 'workType') {
-                  <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
-                }
-              </div>
-            </th>
-            <td mat-cell *matCellDef="let job">
-              <div class="worktype-cell">
-                <mat-icon>work</mat-icon>
-                <span>{{ getWorkTypeLabel(job.workType) }}</span>
-              </div>
-            </td>
-          </ng-container>
-
-          <!-- Salary Column (Sortable) -->
-          <ng-container matColumnDef="salary">
-            <th mat-header-cell *matHeaderCellDef (click)="onSort('salary')" class="sortable">
-              <div class="header-cell">
-                Wynagrodzenie
-                @if (sortColumn === 'salary') {
-                  <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
-                }
-              </div>
-            </th>
-            <td mat-cell *matCellDef="let job">
-              <div class="salary-cell">
-                <mat-icon>payments</mat-icon>
-                <span>{{ formatSalary(job.salaryMin, job.salaryMax) }}</span>
-              </div>
-            </td>
-          </ng-container>
-
-          <!-- Created At Column (Sortable) -->
-          <ng-container matColumnDef="createdAt">
-            <th mat-header-cell *matHeaderCellDef (click)="onSort('createdAt')" class="sortable">
-              <div class="header-cell">
-                Data dodania
-                @if (sortColumn === 'createdAt') {
-                  <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
-                }
-              </div>
-            </th>
-            <td mat-cell *matCellDef="let job">
-              <div class="date-cell">
-                <mat-icon>schedule</mat-icon>
-                <span>{{ job.createdAt | date: 'dd.MM.yyyy' }}</span>
-              </div>
-            </td>
-          </ng-container>
-
-          <!-- Actions Column -->
-          <ng-container matColumnDef="actions">
-            <th mat-header-cell *matHeaderCellDef>Akcje</th>
-            <td mat-cell *matCellDef="let job">
-              <div class="actions-cell">
-                <button mat-icon-button color="primary" (click)="openEditDialog(job)" matTooltip="Edytuj">
-                  <mat-icon>edit</mat-icon>
-                </button>
-                <button
-                  mat-icon-button
-                  color="warn"
-                  (click)="deleteJob(job.id)"
-                  [disabled]="deleting && deletingId === job.id"
-                  matTooltip="Usuń">
-                  @if (deleting && deletingId === job.id) {
-                    <mat-spinner diameter="24"></mat-spinner>
-                  } @else {
-                    <mat-icon>delete</mat-icon>
+              <!-- Work Type Filter -->
+              <mat-form-field appearance="outline">
+                <mat-label>Typ pracy</mat-label>
+                <mat-select [(ngModel)]="selectedWorkType" (ngModelChange)="onFilterChange()">
+                  @for (option of workTypeOptions; track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
                   }
-                </button>
+                </mat-select>
+                <mat-icon matPrefix>work_outline</mat-icon>
+              </mat-form-field>
+            </div>
+
+            <div class="filter-actions">
+              <button mat-button (click)="clearFilters()">
+                <mat-icon>clear</mat-icon>
+                Wyczyść filtry
+              </button>
+              <div class="results-count">
+                Znaleziono: <strong>{{ totalItems }}</strong> ofert
               </div>
-            </td>
-          </ng-container>
+            </div>
+          </mat-card>
+        }
 
-          <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-          <tr mat-row *matRowDef="let row; columns: displayedColumns;" class="table-row"></tr>
-        </table>
+        @if (loading) {
+          <div class="loading-container">
+            <mat-spinner></mat-spinner>
+          </div>
+        }
+
+        @if (!loading && jobs.length > 0) {
+          <mat-card class="table-card">
+            <div class="table-container">
+              <table mat-table [dataSource]="paginatedJobs" class="jobs-table">
+                <!-- ID Column (Sortable) -->
+                <ng-container matColumnDef="id">
+                  <th mat-header-cell *matHeaderCellDef (click)="onSort('id')" class="sortable">
+                    <div class="header-cell">
+                      ID
+                      @if (sortColumn === 'id') {
+                        <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+                      }
+                    </div>
+                  </th>
+                  <td mat-cell *matCellDef="let job">
+                    <span class="job-id">#{{ job.id }}</span>
+                  </td>
+                </ng-container>
+
+                <!-- Title Column (Sortable) -->
+                <ng-container matColumnDef="title">
+                  <th mat-header-cell *matHeaderCellDef (click)="onSort('title')" class="sortable">
+                    <div class="header-cell">
+                      Stanowisko
+                      @if (sortColumn === 'title') {
+                        <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+                      }
+                    </div>
+                  </th>
+                  <td mat-cell *matCellDef="let job">
+                    <span class="job-title">{{ job.title }}</span>
+                  </td>
+                </ng-container>
+
+                <!-- Company Column (Sortable) -->
+                <ng-container matColumnDef="company">
+                  <th mat-header-cell *matHeaderCellDef (click)="onSort('company')" class="sortable">
+                    <div class="header-cell">
+                      Firma
+                      @if (sortColumn === 'company') {
+                        <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+                      }
+                    </div>
+                  </th>
+                  <td mat-cell *matCellDef="let job">
+                    <span class="company-name">{{ job.company }}</span>
+                  </td>
+                </ng-container>
+
+                <!-- Location Column (Sortable) -->
+                <ng-container matColumnDef="location">
+                  <th mat-header-cell *matHeaderCellDef (click)="onSort('location')" class="sortable">
+                    <div class="header-cell">
+                      Lokalizacja
+                      @if (sortColumn === 'location') {
+                        <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+                      }
+                    </div>
+                  </th>
+                  <td mat-cell *matCellDef="let job">
+                    <div class="location-cell">
+                      <mat-icon>location_on</mat-icon>
+                      <span>{{ job.location }}</span>
+                    </div>
+                  </td>
+                </ng-container>
+
+                <!-- Work Type Column (Sortable) -->
+                <ng-container matColumnDef="workType">
+                  <th mat-header-cell *matHeaderCellDef (click)="onSort('workType')" class="sortable">
+                    <div class="header-cell">
+                      Typ pracy
+                      @if (sortColumn === 'workType') {
+                        <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+                      }
+                    </div>
+                  </th>
+                  <td mat-cell *matCellDef="let job">
+                    <div class="worktype-cell">
+                      <mat-icon>work</mat-icon>
+                      <span>{{ getWorkTypeLabel(job.workType) }}</span>
+                    </div>
+                  </td>
+                </ng-container>
+
+                <!-- Salary Column (Sortable) -->
+                <ng-container matColumnDef="salary">
+                  <th mat-header-cell *matHeaderCellDef (click)="onSort('salary')" class="sortable">
+                    <div class="header-cell">
+                      Wynagrodzenie
+                      @if (sortColumn === 'salary') {
+                        <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+                      }
+                    </div>
+                  </th>
+                  <td mat-cell *matCellDef="let job">
+                    <div class="salary-cell">
+                      <mat-icon>payments</mat-icon>
+                      <span>{{ formatSalary(job.salaryMin, job.salaryMax) }}</span>
+                    </div>
+                  </td>
+                </ng-container>
+
+                <!-- Created At Column (Sortable) -->
+                <ng-container matColumnDef="createdAt">
+                  <th mat-header-cell *matHeaderCellDef (click)="onSort('createdAt')" class="sortable">
+                    <div class="header-cell">
+                      Data dodania
+                      @if (sortColumn === 'createdAt') {
+                        <mat-icon>{{ sortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+                      }
+                    </div>
+                  </th>
+                  <td mat-cell *matCellDef="let job">
+                    <div class="date-cell">
+                      <mat-icon>schedule</mat-icon>
+                      <span>{{ job.createdAt | date: 'dd.MM.yyyy' }}</span>
+                    </div>
+                  </td>
+                </ng-container>
+
+                <!-- Actions Column -->
+                <ng-container matColumnDef="actions">
+                  <th mat-header-cell *matHeaderCellDef>Akcje</th>
+                  <td mat-cell *matCellDef="let job">
+                    <div class="actions-cell">
+                      <button mat-icon-button color="primary" (click)="openEditDialog(job)" matTooltip="Edytuj">
+                        <mat-icon>edit</mat-icon>
+                      </button>
+                      <button
+                        mat-icon-button
+                        color="warn"
+                        (click)="deleteJob(job.id)"
+                        [disabled]="deleting && deletingId === job.id"
+                        matTooltip="Usuń">
+                        @if (deleting && deletingId === job.id) {
+                          <mat-spinner diameter="24"></mat-spinner>
+                        } @else {
+                          <mat-icon>delete</mat-icon>
+                        }
+                      </button>
+                    </div>
+                  </td>
+                </ng-container>
+
+                <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+                <tr mat-row *matRowDef="let row; columns: displayedColumns;" class="table-row"></tr>
+              </table>
+            </div>
+
+            <!-- Pagination -->
+            <mat-paginator
+              [length]="totalItems"
+              [pageSize]="pageSize"
+              [pageIndex]="pageIndex"
+              [pageSizeOptions]="pageSizeOptions"
+              (page)="onPageChange($event)"
+              showFirstLastButtons>
+            </mat-paginator>
+          </mat-card>
+        }
+
+        @if (!loading && jobs.length === 0) {
+          <div class="no-jobs">
+            <mat-icon>work_off</mat-icon>
+            <h3>Brak ofert</h3>
+            <p>Nie dodano jeszcze żadnych ofert pracy</p>
+            <button mat-raised-button color="primary" (click)="openAddDialog()">
+              <mat-icon>add</mat-icon>
+              Dodaj pierwszą ofertę
+            </button>
+          </div>
+        }
       </div>
+    </mat-tab>
 
-      <!-- Pagination -->
-      <mat-paginator
-        [length]="totalItems"
-        [pageSize]="pageSize"
-        [pageIndex]="pageIndex"
-        [pageSizeOptions]="pageSizeOptions"
-        (page)="onPageChange($event)"
-        showFirstLastButtons>
-      </mat-paginator>
-    </mat-card>
-  }
+    <!-- TAB 2: Aplikacje -->
+    <mat-tab label="Aplikacje">
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">assignment</mat-icon>
+        Aplikacje
+      </ng-template>
 
-  @if (!loading && jobs.length === 0) {
-    <div class="no-jobs">
-      <mat-icon>work_off</mat-icon>
-      <h3>Brak ofert</h3>
-      <p>Nie dodano jeszcze żadnych ofert pracy</p>
-      <button mat-raised-button color="primary" (click)="openAddDialog()">
-        <mat-icon>add</mat-icon>
-        Dodaj pierwszą ofertę
-      </button>
-    </div>
-  }
+      <div class="tab-content">
+        <!-- Filters Section -->
+        @if (!applicationsLoading && applications.length > 0) {
+          <mat-card class="filters-card">
+            <div class="filters-grid">
+              <!-- Search -->
+              <mat-form-field appearance="outline" class="search-field">
+                <mat-label>Szukaj</mat-label>
+                <input matInput [(ngModel)]="applicationsSearchTerm" (ngModelChange)="onApplicationsSearch()" placeholder="Stanowisko, użytkownik, firma...">
+                <mat-icon matPrefix>search</mat-icon>
+                @if (applicationsSearchTerm) {
+                  <button mat-icon-button matSuffix (click)="applicationsSearchTerm = ''; onApplicationsSearch()">
+                    <mat-icon>close</mat-icon>
+                  </button>
+                }
+              </mat-form-field>
+            </div>
+
+            <div class="filter-actions">
+              <button mat-button (click)="clearApplicationsFilters()">
+                <mat-icon>clear</mat-icon>
+                Wyczyść filtry
+              </button>
+              <div class="results-count">
+                Znaleziono: <strong>{{ applicationsTotalItems }}</strong> aplikacji
+              </div>
+            </div>
+          </mat-card>
+        }
+
+        @if (applicationsLoading) {
+          <div class="loading-container">
+            <mat-spinner></mat-spinner>
+          </div>
+        }
+
+        @if (!applicationsLoading && applications.length > 0) {
+          <mat-card class="table-card">
+            <div class="table-container">
+              <table mat-table [dataSource]="paginatedApplications" class="applications-table">
+                <!-- ID Column (Sortable) -->
+                <ng-container matColumnDef="id">
+                  <th mat-header-cell *matHeaderCellDef (click)="onApplicationsSort('id')" class="sortable">
+                    <div class="header-cell">
+                      ID
+                      @if (applicationsSortColumn === 'id') {
+                        <mat-icon>{{ applicationsSortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+                      }
+                    </div>
+                  </th>
+                  <td mat-cell *matCellDef="let app">
+                    <span class="app-id">#{{ app.id }}</span>
+                  </td>
+                </ng-container>
+
+                <!-- Job Title Column (Sortable) -->
+                <ng-container matColumnDef="jobTitle">
+                  <th mat-header-cell *matHeaderCellDef (click)="onApplicationsSort('jobTitle')" class="sortable">
+                    <div class="header-cell">
+                      Stanowisko
+                      @if (applicationsSortColumn === 'jobTitle') {
+                        <mat-icon>{{ applicationsSortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+                      }
+                    </div>
+                  </th>
+                  <td mat-cell *matCellDef="let app">
+                    <span class="job-title">{{ app.jobTitle }}</span>
+                  </td>
+                </ng-container>
+
+                <!-- Company Column (Sortable) -->
+                <ng-container matColumnDef="company">
+                  <th mat-header-cell *matHeaderCellDef (click)="onApplicationsSort('company')" class="sortable">
+                    <div class="header-cell">
+                      Firma
+                      @if (applicationsSortColumn === 'company') {
+                        <mat-icon>{{ applicationsSortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+                      }
+                    </div>
+                  </th>
+                  <td mat-cell *matCellDef="let app">
+                    <span class="company-name">{{ app.jobOffer?.company || 'N/A' }}</span>
+                  </td>
+                </ng-container>
+
+                <!-- User Email Column (Sortable) -->
+                <ng-container matColumnDef="userEmail">
+                  <th mat-header-cell *matHeaderCellDef (click)="onApplicationsSort('userEmail')" class="sortable">
+                    <div class="header-cell">
+                      Użytkownik
+                      @if (applicationsSortColumn === 'userEmail') {
+                        <mat-icon>{{ applicationsSortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+                      }
+                    </div>
+                  </th>
+                  <td mat-cell *matCellDef="let app">
+                    <div class="email-cell">
+                      <mat-icon>email</mat-icon>
+                      <span>{{ app.userEmail }}</span>
+                    </div>
+                  </td>
+                </ng-container>
+
+                <!-- Applied At Column (Sortable) -->
+                <ng-container matColumnDef="appliedAt">
+                  <th mat-header-cell *matHeaderCellDef (click)="onApplicationsSort('appliedAt')" class="sortable">
+                    <div class="header-cell">
+                      Data aplikacji
+                      @if (applicationsSortColumn === 'appliedAt') {
+                        <mat-icon>{{ applicationsSortDirection === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</mat-icon>
+                      }
+                    </div>
+                  </th>
+                  <td mat-cell *matCellDef="let app">
+                    <div class="date-cell">
+                      <mat-icon>schedule</mat-icon>
+                      <span>{{ formatDate(app.appliedAt) }}</span>
+                    </div>
+                  </td>
+                </ng-container>
+
+                <!-- Note Column -->
+                <ng-container matColumnDef="note">
+                  <th mat-header-cell *matHeaderCellDef>Notatka</th>
+                  <td mat-cell *matCellDef="let app">
+                    @if (app.note) {
+                      <span class="note" [matTooltip]="app.note">{{ app.note | slice:0:30 }}{{ app.note.length > 30 ? '...' : '' }}</span>
+                    } @else {
+                      <span class="no-note">Brak</span>
+                    }
+                  </td>
+                </ng-container>
+
+                <!-- Actions Column -->
+                <ng-container matColumnDef="actions">
+                  <th mat-header-cell *matHeaderCellDef>Akcje</th>
+                  <td mat-cell *matCellDef="let app">
+                    <div class="actions-cell">
+                      <button
+                        mat-icon-button
+                        color="warn"
+                        (click)="deleteApplication(app.id)"
+                        [disabled]="applicationDeleting && applicationDeletingId === app.id"
+                        matTooltip="Usuń">
+                        @if (applicationDeleting && applicationDeletingId === app.id) {
+                          <mat-spinner diameter="24"></mat-spinner>
+                        } @else {
+                          <mat-icon>delete</mat-icon>
+                        }
+                      </button>
+                    </div>
+                  </td>
+                </ng-container>
+
+                <tr mat-header-row *matHeaderRowDef="applicationsDisplayedColumns"></tr>
+                <tr mat-row *matRowDef="let row; columns: applicationsDisplayedColumns;" class="table-row"></tr>
+              </table>
+            </div>
+
+            <!-- Pagination -->
+            <mat-paginator
+              [length]="applicationsTotalItems"
+              [pageSize]="applicationsPageSize"
+              [pageIndex]="applicationsPageIndex"
+              [pageSizeOptions]="pageSizeOptions"
+              (page)="onApplicationsPageChange($event)"
+              showFirstLastButtons>
+            </mat-paginator>
+          </mat-card>
+        }
+
+        @if (!applicationsLoading && applications.length === 0) {
+          <div class="no-applications">
+            <mat-icon>inbox</mat-icon>
+            <h3>Brak aplikacji</h3>
+            <p>Nie ma jeszcze żadnych aplikacji na oferty pracy</p>
+          </div>
+        }
+      </div>
+    </mat-tab>
+  </mat-tab-group>
 </div>

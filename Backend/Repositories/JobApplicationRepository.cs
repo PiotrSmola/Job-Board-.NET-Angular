@@ -41,6 +41,15 @@ public class JobApplicationRepository : IJobApplicationRepository
             .ToListAsync();
     }
 
+    public async Task<IEnumerable<JobApplication>> GetAllApplicationsAsync()
+    {
+        return await _context.JobApplications
+            .Include(a => a.JobOffer)
+            .Include(a => a.User)
+            .OrderByDescending(a => a.AppliedAt)
+            .ToListAsync();
+    }
+
     public async Task<bool> HasUserAppliedAsync(int jobId, string userId)
     {
         return await _context.JobApplications

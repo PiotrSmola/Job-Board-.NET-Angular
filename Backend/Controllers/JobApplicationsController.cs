@@ -173,4 +173,26 @@ public class JobApplicationsController : ControllerBase
         var hasApplied = await _applicationRepository.HasUserAppliedAsync(jobId, userId);
         return Ok(new { hasApplied });
     }
+
+    // GET: api/jobapplications/all
+    [HttpGet("all")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<IEnumerable<JobApplicationDto>>> GetAllApplications()
+    {
+        var applications = await _applicationRepository.GetAllApplicationsAsync();
+
+        var applicationsDto = applications.Select(a => new JobApplicationDto
+        {
+            Id = a.Id,
+            JobOfferId = a.JobOfferId,
+            UserId = a.UserId,
+            Note = a.Note,
+            AppliedAt = a.AppliedAt,
+            UserEmail = a.User.Email ?? string.Empty,
+            JobTitle = a.JobOffer.Title,
+            JobOffer = a.JobOffer
+        });
+
+        return Ok(applicationsDto);
+    }
 }

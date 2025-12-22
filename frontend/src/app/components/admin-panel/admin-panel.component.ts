@@ -13,8 +13,11 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatPaginatorModule } from '@angular/material/paginator';
 import { MatSortModule } from '@angular/material/sort';
+import { MatTabsModule } from '@angular/material/tabs';
 import { JobService } from '../../services/job.service';
+import { JobApplicationService } from '../../services/job-application.service';
 import { JobOffer, CreateJobOffer, WorkType } from '../../models/job-offer.model';
+import { JobApplication } from '../../models/job-application.model';
 
 @Component({
   selector: 'app-job-dialog',
@@ -290,16 +293,22 @@ export class JobDialogComponent {
     MatInputModule,
     MatSelectModule,
     MatPaginatorModule,
-    MatSortModule
+    MatSortModule,
+    MatTabsModule
   ],
   templateUrl: './admin-panel.component.html',
   styleUrl: './admin-panel.component.scss'
 })
 export class AdminPanelComponent implements OnInit {
   private jobService = inject(JobService);
+  private applicationService = inject(JobApplicationService);
   private dialog = inject(MatDialog);
   private cdr = inject(ChangeDetectorRef);
 
+  // Tab management
+  selectedTabIndex = 0;
+
+  // Jobs tab
   jobs: JobOffer[] = [];
   filteredJobs: JobOffer[] = [];
   displayedColumns: string[] = ['id', 'title', 'company', 'location', 'workType', 'salary', 'createdAt', 'actions'];
@@ -307,17 +316,35 @@ export class AdminPanelComponent implements OnInit {
   deleting = false;
   deletingId: number | null = null;
 
-  // Pagination
+  // Applications tab
+  applications: JobApplication[] = [];
+  filteredApplications: JobApplication[] = [];
+  applicationsDisplayedColumns: string[] = ['id', 'jobTitle', 'company', 'userEmail', 'appliedAt', 'note', 'actions'];
+  applicationsLoading = false;
+  applicationDeleting = false;
+  applicationDeletingId: number | null = null;
+
+  // Pagination - Jobs
   totalItems = 0;
   pageSize = 10;
   pageIndex = 0;
   pageSizeOptions = [5, 10, 25, 50];
 
-  // Filtering & Sorting
+  // Filtering & Sorting - Jobs
   searchTerm = '';
   selectedWorkType: WorkType | null = null;
   sortColumn = 'id';
   sortDirection: 'asc' | 'desc' = 'asc';
+
+  // Pagination - Applications
+  applicationsTotalItems = 0;
+  applicationsPageSize = 10;
+  applicationsPageIndex = 0;
+
+  // Filtering & Sorting - Applications
+  applicationsSearchTerm = '';
+  applicationsSortColumn = 'id';
+  applicationsSortDirection: 'asc' | 'desc' = 'desc'; // Newest first by default
 
   WorkType = WorkType;
   workTypeOptions = [
@@ -329,6 +356,13 @@ export class AdminPanelComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadJobs();
+  }
+
+  onTabChange(index: number): void {
+    this.selectedTabIndex = index;
+    if (index === 1 && this.applications.length === 0) {
+      this.loadAllApplications();
+    }
   }
 
   loadJobs(): void {
@@ -534,5 +568,148 @@ export class AdminPanelComponent implements OnInit {
     if (salaryMin) return `Od ${salaryMin} PLN`;
     if (salaryMax) return `Do ${salaryMax} PLN`;
     return 'Nieokreślona';
+  }
+
+  // ========== Applications Management ==========
+
+  loadAllApplications(): void {
+    this.applicationsLoading = true;
+    this.applicationService.getAllApplications().subscribe({
+      next: (applications) => {
+        this.applications = applications;
+        this.applyApplicationsFiltersAndSort();
+        this.applicationsLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        console.error('Error loading applications:', error);
+        this.applicationsLoading = false;
+        this.cdr.detectChanges();
+        alert('Błąd podczas ładowania aplikacji');
+      }
+    });
+  }
+
+  applyApplicationsFiltersAndSort(): void {
+    let result = [...this.applications];
+
+    // Search filter
+    if (this.applicationsSearchTerm) {
+      const term = this.applicationsSearchTerm.toLowerCase();
+      result = result.filter(app =>
+        app.jobTitle.toLowerCase().includes(term) ||
+        app.userEmail.toLowerCase().includes(term) ||
+        (app.jobOffer?.company && app.jobOffer.company.toLowerCase().includes(term)) ||
+        (app.note && app.note.toLowerCase().includes(term))
+      );
+    }
+
+    // Sorting
+    result.sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (this.applicationsSortColumn) {
+        case 'id':
+          aValue = a.id;
+          bValue = b.id;
+          break;
+        case 'jobTitle':
+          aValue = a.jobTitle.toLowerCase();
+          bValue = b.jobTitle.toLowerCase();
+          break;
+        case 'company':
+          aValue = (a.jobOffer?.company || '').toLowerCase();
+          bValue = (b.jobOffer?.company || '').toLowerCase();
+          break;
+        case 'userEmail':
+          aValue = a.userEmail.toLowerCase();
+          bValue = b.userEmail.toLowerCase();
+          break;
+        case 'appliedAt':
+          aValue = new Date(a.appliedAt).getTime();
+          bValue = new Date(b.appliedAt).getTime();
+          break;
+        default:
+          aValue = a.id;
+          bValue = b.id;
+      }
+
+      if (aValue < bValue) return this.applicationsSortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return this.applicationsSortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    this.applicationsTotalItems = result.length;
+    this.filteredApplications = result;
+  }
+
+  get paginatedApplications(): JobApplication[] {
+    const startIndex = this.applicationsPageIndex * this.applicationsPageSize;
+    return this.filteredApplications.slice(startIndex, startIndex + this.applicationsPageSize);
+  }
+
+  onApplicationsSearch(): void {
+    this.applicationsPageIndex = 0;
+    this.applyApplicationsFiltersAndSort();
+  }
+
+  onApplicationsSort(column: string): void {
+    if (this.applicationsSortColumn === column) {
+      this.applicationsSortDirection = this.applicationsSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.applicationsSortColumn = column;
+      this.applicationsSortDirection = 'asc';
+    }
+    this.applyApplicationsFiltersAndSort();
+  }
+
+  onApplicationsPageChange(event: any): void {
+    this.applicationsPageIndex = event.pageIndex;
+    this.applicationsPageSize = event.pageSize;
+  }
+
+  clearApplicationsFilters(): void {
+    this.applicationsSearchTerm = '';
+    this.applicationsSortColumn = 'id';
+    this.applicationsSortDirection = 'desc';
+    this.applicationsPageIndex = 0;
+    this.applyApplicationsFiltersAndSort();
+  }
+
+  deleteApplication(id: number): void {
+    if (!confirm('Czy na pewno chcesz usunąć tę aplikację?')) {
+      return;
+    }
+
+    this.applicationDeleting = true;
+    this.applicationDeletingId = id;
+    this.applicationService.deleteApplication(id).subscribe({
+      next: () => {
+        this.applications = this.applications.filter(app => app.id !== id);
+        this.applyApplicationsFiltersAndSort();
+        this.applicationDeleting = false;
+        this.applicationDeletingId = null;
+        this.cdr.detectChanges();
+        alert('Aplikacja została usunięta');
+      },
+      error: (error) => {
+        console.error('Error deleting application:', error);
+        this.applicationDeleting = false;
+        this.applicationDeletingId = null;
+        this.cdr.detectChanges();
+        alert('Błąd podczas usuwania aplikacji');
+      }
+    });
+  }
+
+  formatDate(date: Date): string {
+    return new Date(date).toLocaleDateString('pl-PL', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   }
 }

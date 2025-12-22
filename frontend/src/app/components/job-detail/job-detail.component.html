@@ -63,7 +63,7 @@
       </mat-card-content>
 
       <mat-card-actions>
-        @if (authService.isAuthenticated()) {
+        @if (authService.isAuthenticated() && !authService.isAdmin()) {
           @if (hasApplied) {
             <button mat-raised-button color="accent" disabled>
               <mat-icon>check_circle</mat-icon>
@@ -81,7 +81,7 @@
               }
             </button>
           }
-        } @else {
+        } @else if (!authService.isAuthenticated()) {
           <button mat-raised-button color="primary" [routerLink]="['/login']">
             <mat-icon>login</mat-icon>
             Zaloguj się, aby aplikować

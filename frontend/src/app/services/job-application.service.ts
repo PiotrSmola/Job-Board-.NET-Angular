@@ -25,4 +25,8 @@ export class JobApplicationService {
   deleteApplication(id: number): Observable<void> {
     return this.http.delete<void>(`${this.API_URL}/${id}`);
   }
+
+  getAllApplications(): Observable<JobApplication[]> {
+    return this.http.get<JobApplication[]>(`${this.API_URL}/all`);
+  }
 }
