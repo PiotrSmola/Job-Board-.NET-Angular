@@ -1,0 +1,101 @@
+mat-toolbar {
+  background-color: rgba(22, 22, 22, 0.95) !important;
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--primary-color), var(--secondary-color), transparent);
+    opacity: 0.7;
+  }
+}
+
+.logo {
+  font-size: 1.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+  background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  
+  &:hover {
+    opacity: 0.9;
+  }
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  a, button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary) !important;
+    font-weight: 500;
+    transition: all 0.3s;
+    border-radius: 20px;
+    padding: 0 16px;
+    height: 36px;
+
+    mat-icon {
+      font-size: 20px;
+      width: 20px;
+      height: 20px;
+      transition: color 0.3s;
+    }
+
+    &:hover {
+      color: var(--text-primary) !important;
+      background-color: rgba(255, 255, 255, 0.05);
+      
+      mat-icon {
+        color: var(--primary-color);
+      }
+    }
+  }
+
+  .active {
+    background-color: rgba(0, 229, 255, 0.1) !important;
+    color: var(--primary-color) !important;
+    border: 1px solid rgba(0, 229, 255, 0.2);
+
+    mat-icon {
+      color: var(--primary-color);
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .nav-links {
+    gap: 8px;
+    
+    a, button {
+      padding: 0 12px;
+      
+      span:not(.mat-icon) {
+        display: none;
+      }
+    }
+  }
+}

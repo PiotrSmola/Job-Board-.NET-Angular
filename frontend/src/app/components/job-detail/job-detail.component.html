@@ -1,0 +1,98 @@
+<div class="job-detail-container">
+  @if (loading) {
+    <div class="loading-container">
+      <mat-spinner></mat-spinner>
+    </div>
+  }
+
+  @if (!loading && job) {
+    <div class="back-button-container">
+      <button mat-button (click)="goBack()">
+        <mat-icon>arrow_back</mat-icon>
+        Powrót do listy
+      </button>
+    </div>
+
+    <mat-card class="job-detail-card">
+      <mat-card-header>
+        <mat-card-title>{{ job.title }}</mat-card-title>
+        <mat-card-subtitle>{{ job.company }}</mat-card-subtitle>
+      </mat-card-header>
+
+      <mat-card-content>
+        <div class="job-meta">
+          <div class="meta-item">
+            <mat-icon>location_on</mat-icon>
+            <div class="meta-content">
+              <span class="meta-label">Lokalizacja</span>
+              <span class="meta-value">{{ job.location }}</span>
+            </div>
+          </div>
+
+          <div class="meta-item">
+            <mat-icon>work</mat-icon>
+            <div class="meta-content">
+              <span class="meta-label">Typ pracy</span>
+              <span class="meta-value">{{ getWorkTypeLabel() }}</span>
+            </div>
+          </div>
+
+          <div class="meta-item">
+            <mat-icon>payments</mat-icon>
+            <div class="meta-content">
+              <span class="meta-label">Wynagrodzenie</span>
+              <span class="meta-value">{{ formatSalary() }}</span>
+            </div>
+          </div>
+
+          <div class="meta-item">
+            <mat-icon>schedule</mat-icon>
+            <div class="meta-content">
+              <span class="meta-label">Data dodania</span>
+              <span class="meta-value">{{ job.createdAt | date: 'dd.MM.yyyy' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <mat-divider class="divider"></mat-divider>
+
+        <div class="description-section">
+          <h3>Opis stanowiska</h3>
+          <p class="description">{{ job.description }}</p>
+        </div>
+      </mat-card-content>
+
+      <mat-card-actions>
+        @if (authService.isAuthenticated()) {
+          @if (hasApplied) {
+            <button mat-raised-button color="accent" disabled>
+              <mat-icon>check_circle</mat-icon>
+              Już aplikowałeś
+            </button>
+          } @else {
+            <button mat-raised-button color="primary" (click)="openApplyDialog()" [disabled]="applying || checkingApplication">
+              @if (applying) {
+                <mat-spinner diameter="20"></mat-spinner>
+              } @else {
+                <ng-container>
+                  <mat-icon>send</mat-icon>
+                  Aplikuj na to stanowisko
+                </ng-container>
+              }
+            </button>
+          }
+        } @else {
+          <button mat-raised-button color="primary" [routerLink]="['/login']">
+            <mat-icon>login</mat-icon>
+            Zaloguj się, aby aplikować
+          </button>
+        }
+
+        <button mat-button (click)="goBack()">
+          <mat-icon>cancel</mat-icon>
+          Anuluj
+        </button>
+      </mat-card-actions>
+    </mat-card>
+  }
+</div>

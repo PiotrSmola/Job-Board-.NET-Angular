@@ -1,0 +1,52 @@
+<mat-toolbar color="primary">
+  <span class="logo" routerLink="/jobs">Job Board</span>
+
+  <span class="spacer"></span>
+
+  <nav class="nav-links">
+    <a mat-button routerLink="/jobs" routerLinkActive="active">
+      <mat-icon>work</mat-icon>
+      Oferty
+    </a>
+
+    @if (authService.currentUser()) {
+      @if (!authService.isAdmin()) {
+        <a mat-button routerLink="/my-applications" routerLinkActive="active">
+          <mat-icon>assignment</mat-icon>
+          Moje Aplikacje
+        </a>
+      }
+
+      @if (authService.isAdmin()) {
+        <a mat-button routerLink="/admin" routerLinkActive="active">
+          <mat-icon>admin_panel_settings</mat-icon>
+          Panel Admina
+        </a>
+      }
+
+      <button mat-button [matMenuTriggerFor]="userMenu">
+        <mat-icon>account_circle</mat-icon>
+        {{ authService.currentUser()?.firstName }}
+      </button>
+      <mat-menu #userMenu="matMenu">
+        <button mat-menu-item disabled>
+          <mat-icon>email</mat-icon>
+          {{ authService.currentUser()?.email }}
+        </button>
+        <button mat-menu-item (click)="logout()">
+          <mat-icon>logout</mat-icon>
+          Wyloguj
+        </button>
+      </mat-menu>
+    } @else {
+      <a mat-button routerLink="/login" routerLinkActive="active">
+        <mat-icon>login</mat-icon>
+        Logowanie
+      </a>
+      <a mat-button routerLink="/register" routerLinkActive="active">
+        <mat-icon>person_add</mat-icon>
+        Rejestracja
+      </a>
+    }
+  </nav>
+</mat-toolbar>

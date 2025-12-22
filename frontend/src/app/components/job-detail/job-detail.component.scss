@@ -1,0 +1,205 @@
+.job-detail-container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 24px;
+  background-color: var(--bg-color);
+  min-height: calc(100vh - 64px);
+}
+
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+.back-button-container {
+  margin-bottom: 24px;
+
+  button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+    transition: color 0.2s;
+
+    &:hover {
+      color: var(--primary-color);
+    }
+  }
+}
+
+.job-detail-card {
+  background-color: var(--surface-color) !important;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  padding: 32px;
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+  }
+
+  mat-card-header {
+    margin-bottom: 32px;
+    padding: 0;
+
+    mat-card-title {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 12px;
+      line-height: 1.2;
+    }
+
+    mat-card-subtitle {
+      font-size: 1.5rem;
+      color: var(--primary-color);
+      font-weight: 500;
+    }
+  }
+
+  mat-card-content {
+    padding: 0;
+
+    .job-meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 24px;
+      margin-bottom: 32px;
+      padding: 24px;
+      background-color: rgba(255, 255, 255, 0.03);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+
+      .meta-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+
+        mat-icon {
+          color: var(--secondary-color);
+          font-size: 28px;
+          width: 28px;
+          height: 28px;
+        }
+
+        .meta-content {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+
+          .meta-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+          }
+
+          .meta-value {
+            font-size: 1.1rem;
+            color: var(--text-primary);
+            font-weight: 600;
+          }
+        }
+      }
+    }
+
+    .divider {
+      margin: 32px 0;
+      background-color: var(--border-color);
+    }
+
+    .description-section {
+      h3 {
+        font-size: 1.8rem;
+        color: var(--text-primary);
+        margin: 0 0 24px 0;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+
+        &::before {
+          content: '';
+          display: block;
+          width: 4px;
+          height: 24px;
+          background-color: var(--primary-color);
+          border-radius: 2px;
+        }
+      }
+
+      .description {
+        font-size: 1.1rem;
+        line-height: 1.8;
+        color: var(--text-secondary);
+        white-space: pre-wrap;
+        margin: 0;
+      }
+    }
+  }
+
+  mat-card-actions {
+    margin-top: 40px;
+    padding: 24px 0 0 0;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: 16px;
+
+    button {
+      padding: 8px 32px;
+      font-size: 1.1rem;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+  }
+}
+
+.application-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--success-color);
+  font-weight: 600;
+  font-size: 1.1rem;
+  padding: 8px 16px;
+  background-color: rgba(0, 230, 118, 0.1);
+  border-radius: 4px;
+  border: 1px solid rgba(0, 230, 118, 0.2);
+}
+
+@media (max-width: 600px) {
+  .job-detail-container {
+    padding: 16px;
+  }
+
+  .job-detail-card {
+    padding: 20px;
+
+    mat-card-header mat-card-title {
+      font-size: 1.8rem;
+    }
+    
+    mat-card-content .job-meta {
+      grid-template-columns: 1fr;
+    }
+    
+    mat-card-actions {
+      flex-direction: column;
+      button {
+        width: 100%;
+      }
+    }
+  }
+}

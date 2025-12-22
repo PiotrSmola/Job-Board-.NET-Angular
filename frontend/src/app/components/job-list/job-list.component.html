@@ -1,0 +1,153 @@
+<div class="job-list-container">
+  <div class="header">
+    <h1>Oferty Pracy</h1>
+    <p class="subtitle">Znajdź swoją wymarzoną pracę</p>
+  </div>
+
+  <!-- Filters Section -->
+  <mat-card class="filters-card">
+    <div class="filters-grid">
+      <!-- Search -->
+      <mat-form-field appearance="outline" class="search-field">
+        <mat-label>Szukaj</mat-label>
+        <input matInput [ngModel]="jobParams.searchTerm" (ngModelChange)="onSearchTermChange($event)" placeholder="Stanowisko, firma...">
+        <mat-icon matPrefix>search</mat-icon>
+        @if (jobParams.searchTerm) {
+          <button mat-icon-button matSuffix (click)="clearSearch()">
+            <mat-icon>close</mat-icon>
+          </button>
+        }
+      </mat-form-field>
+
+      <!-- Work Type -->
+      <mat-form-field appearance="outline">
+        <mat-label>Typ pracy</mat-label>
+        <mat-select [(ngModel)]="jobParams.workType" (selectionChange)="onFilterChange()">
+          @for (option of workTypeOptions; track option.value) {
+            <mat-option [value]="option.value">{{ option.label }}</mat-option>
+          }
+        </mat-select>
+        <mat-icon matPrefix>work</mat-icon>
+      </mat-form-field>
+
+      <!-- Location -->
+      <mat-form-field appearance="outline">
+        <mat-label>Lokalizacja</mat-label>
+        <input matInput [(ngModel)]="jobParams.location" (ngModelChange)="onFilterChange()" placeholder="Warszawa, Kraków...">
+        <mat-icon matPrefix>location_on</mat-icon>
+      </mat-form-field>
+
+      <!-- Min Salary -->
+      <mat-form-field appearance="outline" class="salary-field">
+        <mat-label>Płaca od</mat-label>
+        <input matInput type="number" min="0" [(ngModel)]="jobParams.minSalary" (ngModelChange)="onFilterChange()" placeholder="8000">
+        <span matTextPrefix>$&nbsp;</span>
+        <span matTextSuffix>&nbsp;PLN</span>
+      </mat-form-field>
+
+      <!-- Max Salary -->
+      <mat-form-field appearance="outline" class="salary-field">
+        <mat-label>Płaca do</mat-label>
+        <input matInput type="number" min="0" [(ngModel)]="jobParams.maxSalary" (ngModelChange)="onFilterChange()" placeholder="20000">
+        <span matTextPrefix>$&nbsp;</span>
+        <span matTextSuffix>&nbsp;PLN</span>
+      </mat-form-field>
+
+      <!-- Sort -->
+      <mat-form-field appearance="outline">
+        <mat-label>Sortowanie</mat-label>
+        <mat-select [(ngModel)]="jobParams.orderBy" (selectionChange)="onFilterChange()">
+          @for (option of sortOptions; track option.value) {
+            <mat-option [value]="option.value">{{ option.label }}</mat-option>
+          }
+        </mat-select>
+        <mat-icon matPrefix>sort</mat-icon>
+      </mat-form-field>
+    </div>
+
+    <div class="filter-actions">
+      <button mat-raised-button color="primary" (click)="onSearch()">
+        <mat-icon>search</mat-icon>
+        Szukaj
+      </button>
+      <button mat-button (click)="clearFilters()">
+        <mat-icon>clear</mat-icon>
+        Wyczyść filtry
+      </button>
+    </div>
+  </mat-card>
+
+  <!-- Results Info -->
+  <div class="results-info">
+    Znaleziono: <span><strong>{{ totalItems }}</strong> ofert</span>
+  </div>
+
+  <!-- Loading Spinner -->
+  @if (loading) {
+    <div class="loading-container">
+      <mat-spinner></mat-spinner>
+    </div>
+  }
+
+  <!-- Job Cards -->
+  @if (!loading) {
+    <div class="jobs-grid">
+      @for (job of jobs; track job.id) {
+        <mat-card class="job-card" (click)="viewJobDetails(job.id)">
+          <mat-card-header>
+            <mat-card-title>{{ job.title }}</mat-card-title>
+            <mat-card-subtitle>
+              <mat-icon>business</mat-icon>
+              {{ job.company }}
+            </mat-card-subtitle>
+          </mat-card-header>
+
+          <mat-card-content>
+            <div class="job-info">
+              <div class="info-item">
+                <mat-icon>location_on</mat-icon>
+                <span>{{ job.location }}</span>
+              </div>
+              <div class="info-item">
+                <mat-icon>work</mat-icon>
+                <span>{{ getWorkTypeLabel(job.workType) }}</span>
+              </div>
+            </div>
+            
+            <div class="salary-badge">
+              <mat-icon>payments</mat-icon>
+              {{ formatSalary(job.salaryMin, job.salaryMax) }}
+            </div>
+
+            <p class="description">{{ job.description | slice:0:150 }}...</p>
+          </mat-card-content>
+
+          <mat-card-actions>
+            <span class="posted-date">Dodano: {{ job.createdAt | date:'dd.MM.yyyy' }}</span>
+            <button mat-button color="primary">
+              Szczegóły <mat-icon>arrow_forward</mat-icon>
+            </button>
+          </mat-card-actions>
+        </mat-card>
+      } @empty {
+        <div class="no-results">
+          <mat-icon>work_off</mat-icon>
+          <h3>Brak ofert</h3>
+          <p>Spróbuj zmienić kryteria wyszukiwania</p>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- Pagination -->
+  @if (!loading && jobs.length > 0) {
+    <mat-paginator
+      [length]="totalItems"
+      [pageSize]="jobParams.pageSize"
+      [pageIndex]="jobParams.pageNumber - 1"
+      [pageSizeOptions]="[5, 10, 20, 50]"
+      (page)="onPageChange($event)"
+      showFirstLastButtons>
+    </mat-paginator>
+  }
+</div>
