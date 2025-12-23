@@ -12,14 +12,14 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Database Configuration
+// Konfiguracja bazy danych MySQL
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseMySql(
         builder.Configuration.GetConnectionString("DefaultConnection"),
         ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("DefaultConnection"))
     ));
 
-// Identity Configuration
+// Konfiguracja Identity
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {
     options.Password.RequireDigit = true;
@@ -32,7 +32,7 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
 
-// JWT Authentication Configuration
+// Konfiguracja uwierzytelniania JWT
 var jwtSecret = builder.Configuration["JwtSettings:Secret"]
     ?? throw new InvalidOperationException("JWT Secret not configured");
 
@@ -55,7 +55,7 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// CORS Configuration
+// Konfiguracja CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngularApp", policy =>
@@ -63,7 +63,7 @@ builder.Services.AddCors(options =>
         policy.WithOrigins("http://localhost:4200")
               .AllowAnyHeader()
               .AllowAnyMethod()
-              .WithExposedHeaders("Pagination"); // For pagination header
+              .WithExposedHeaders("Pagination");
     });
 });
 
@@ -72,14 +72,14 @@ builder.Services.AddScoped<IJobRepository, JobRepository>();
 builder.Services.AddScoped<IJobApplicationRepository, JobApplicationRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 
-// Controllers
+// Kontrolery
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
     });
 
-// Swagger Configuration with JWT Support
+// Konfiguracja Swagger z obsługą JWT
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -90,7 +90,7 @@ builder.Services.AddSwaggerGen(options =>
         Description = "ASP.NET Core Web API for Job Board Application"
     });
 
-    // JWT Authorization in Swagger
+    // autentyfikacja JWT w Swaggerze
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -119,13 +119,13 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-// Seed Database (roles, users, job offers)
+// seedowanie bazy danych
 using (var scope = app.Services.CreateScope())
 {
     await DatabaseSeeder.SeedAsync(scope.ServiceProvider);
 }
 
-// Configure the HTTP request pipeline
+// konfiguracja potoku HTTP
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
