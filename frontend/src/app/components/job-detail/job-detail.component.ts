@@ -38,7 +38,7 @@ import { JobOffer, WorkType } from '../../models/job-offer.model';
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close>Anuluj</button>
-      <button mat-raised-button color="primary" [mat-dialog-close]="note">Aplikuj</button>
+      <button mat-raised-button color="primary" [mat-dialog-close]="{ confirmed: true, note: note }">Aplikuj</button>
     </mat-dialog-actions>
   `,
   styles: [`
@@ -135,9 +135,9 @@ export class JobDetailComponent implements OnInit {
 
     const dialogRef = this.dialog.open(ApplyDialogComponent);
 
-    dialogRef.afterClosed().subscribe((note: string | undefined) => {
-      if (note !== undefined && this.job) {
-        this.applyToJob(note);
+    dialogRef.afterClosed().subscribe((result: { confirmed: boolean, note: string } | undefined) => {
+      if (result?.confirmed && this.job) {
+        this.applyToJob(result.note);
       }
     });
   }
@@ -153,10 +153,12 @@ export class JobDetailComponent implements OnInit {
       next: () => {
         this.hasApplied = true;
         this.applying = false;
+        this.cdr.detectChanges();
         alert('Aplikacja wysłana pomyślnie!');
       },
       error: (error) => {
         this.applying = false;
+        this.cdr.detectChanges();
         alert(error.error?.message || 'Błąd podczas aplikowania');
       }
     });

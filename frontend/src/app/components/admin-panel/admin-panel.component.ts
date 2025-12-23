@@ -16,6 +16,7 @@ import { MatSortModule } from '@angular/material/sort';
 import { MatTabsModule } from '@angular/material/tabs';
 import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
+import { AdminService } from '../../services/admin.service';
 import { JobOffer, CreateJobOffer, WorkType } from '../../models/job-offer.model';
 import { JobApplication } from '../../models/job-application.model';
 
@@ -302,6 +303,7 @@ export class JobDialogComponent {
 export class AdminPanelComponent implements OnInit {
   private jobService = inject(JobService);
   private applicationService = inject(JobApplicationService);
+  private adminService = inject(AdminService);
   private dialog = inject(MatDialog);
   private cdr = inject(ChangeDetectorRef);
 
@@ -315,6 +317,7 @@ export class AdminPanelComponent implements OnInit {
   loading = false;
   deleting = false;
   deletingId: number | null = null;
+  refreshingSeed = false;
 
   // Applications tab
   applications: JobApplication[] = [];
@@ -538,6 +541,7 @@ export class AdminPanelComponent implements OnInit {
     this.jobService.deleteJob(id).subscribe({
       next: () => {
         this.jobs = this.jobs.filter(job => job.id !== id);
+        this.applyFiltersAndSort();
         this.deleting = false;
         this.deletingId = null;
         this.cdr.detectChanges();
@@ -710,6 +714,35 @@ export class AdminPanelComponent implements OnInit {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
+    });
+  }
+
+  refreshSeedData(): void {
+    if (!confirm('Czy na pewno chcesz przywrócić dane z seedera? Wszystkie oferty pracy, aplikacje i użytkownicy zostaną usunięte i zastąpione danymi początkowymi.')) {
+      return;
+    }
+
+    this.refreshingSeed = true;
+    this.adminService.refreshSeed().subscribe({
+      next: (response) => {
+        this.refreshingSeed = false;
+        alert('Dane zostały pomyślnie przywrócone z seedera!');
+        // Reload jobs if on jobs tab
+        if (this.selectedTabIndex === 0) {
+          this.loadJobs();
+        }
+        // Reload applications if on applications tab
+        if (this.selectedTabIndex === 1) {
+          this.loadAllApplications();
+        }
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        console.error('Error refreshing seed data:', error);
+        this.refreshingSeed = false;
+        this.cdr.detectChanges();
+        alert('Błąd podczas przywracania danych z seedera: ' + (error.error?.message || error.message));
+      }
     });
   }
 }

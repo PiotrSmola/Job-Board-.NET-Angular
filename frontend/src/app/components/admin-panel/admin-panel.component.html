@@ -20,6 +20,10 @@
             <mat-icon>add</mat-icon>
             Dodaj ofertę
           </button>
+          <button mat-raised-button color="warn" (click)="refreshSeedData()" class="refresh-seed-button" [disabled]="refreshingSeed">
+            <mat-icon>refresh</mat-icon>
+            {{ refreshingSeed ? 'Przywracanie...' : 'Przywróć dane z seedera' }}
+          </button>
         </div>
 
         <!-- Filters Section -->
