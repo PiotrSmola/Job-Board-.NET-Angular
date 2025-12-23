@@ -19,7 +19,6 @@ public class JobRepository : IJobRepository
     {
         var query = _context.JobOffers.AsQueryable();
 
-        // Filtering - SearchTerm (searches in Title, Company, Description)
         if (!string.IsNullOrWhiteSpace(jobParams.SearchTerm))
         {
             query = query.Where(j =>
@@ -29,39 +28,46 @@ public class JobRepository : IJobRepository
             );
         }
 
-        // Filtering - WorkType
         if (jobParams.WorkType.HasValue)
         {
             query = query.Where(j => j.WorkType == jobParams.WorkType.Value);
         }
 
-        // Filtering - Location
         if (!string.IsNullOrWhiteSpace(jobParams.Location))
         {
             query = query.Where(j => j.Location.ToLower().Contains(jobParams.Location.ToLower()));
         }
 
-        // Filtering - Salary Range
-        if (jobParams.MinSalary.HasValue)
+        if (jobParams.MinSalary.HasValue && jobParams.MaxSalary.HasValue)
         {
-            query = query.Where(j => j.SalaryMax >= jobParams.MinSalary.Value || j.SalaryMin >= jobParams.MinSalary.Value);
+            query = query.Where(j =>
+                (j.SalaryMin.HasValue && j.SalaryMin >= jobParams.MinSalary.Value) &&
+                (j.SalaryMax.HasValue && j.SalaryMax <= jobParams.MaxSalary.Value)
+            );
+        }
+        else if (jobParams.MinSalary.HasValue)
+        {
+            query = query.Where(j =>
+                (j.SalaryMin.HasValue && j.SalaryMin >= jobParams.MinSalary.Value) ||
+                (j.SalaryMax.HasValue && j.SalaryMax >= jobParams.MinSalary.Value)
+            );
+        }
+        else if (jobParams.MaxSalary.HasValue)
+        {
+            query = query.Where(j =>
+                (j.SalaryMin.HasValue && j.SalaryMin <= jobParams.MaxSalary.Value) ||
+                (j.SalaryMax.HasValue && j.SalaryMax <= jobParams.MaxSalary.Value)
+            );
         }
 
-        if (jobParams.MaxSalary.HasValue)
-        {
-            query = query.Where(j => j.SalaryMin <= jobParams.MaxSalary.Value || j.SalaryMax <= jobParams.MaxSalary.Value);
-        }
-
-        // Sorting
         query = jobParams.OrderBy switch
         {
             "oldest" => query.OrderBy(j => j.CreatedAt),
             "salaryHigh" => query.OrderByDescending(j => j.SalaryMax ?? 0),
             "salaryLow" => query.OrderBy(j => j.SalaryMin ?? decimal.MaxValue),
-            _ => query.OrderByDescending(j => j.CreatedAt) // newest (default)
+            _ => query.OrderByDescending(j => j.CreatedAt)
         };
 
-        // Pagination
         return await PagedList<JobOffer>.CreateAsync(query, jobParams.PageNumber, jobParams.PageSize);
     }
 

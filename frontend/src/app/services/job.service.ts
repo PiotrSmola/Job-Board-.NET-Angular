@@ -82,10 +82,9 @@ export class JobService {
   }
 
   getAllJobs(): Observable<JobOffer[]> {
-    // Get all jobs without pagination for admin panel
     const params = new HttpParams()
       .append('pageNumber', '1')
-      .append('pageSize', '1000'); // Large page size to get all jobs
+      .append('pageSize', '1000');
 
     return this.http.get<JobOffer[]>(this.API_URL, { params });
   }

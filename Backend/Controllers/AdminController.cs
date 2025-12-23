@@ -18,12 +18,11 @@ public class AdminController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Resets all data (users, job offers, applications) and re-seeds from DatabaseSeeder
-    /// Similar to Laravel's db:seed --refresh
-    /// </summary>
-    /// <returns></returns>
     [HttpPost("refresh-seed")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> RefreshSeed()
     {
         try

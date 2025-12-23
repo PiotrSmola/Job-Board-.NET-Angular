@@ -173,7 +173,6 @@ import { JobApplication } from '../../models/job-application.model';
         }
       }
 
-      // Ukryj steppers (strzałki) dla input[type=number]
       .salary-field input[type=number] {
         -moz-appearance: textfield;
         appearance: textfield;
@@ -185,7 +184,6 @@ import { JobApplication } from '../../models/job-application.model';
         }
       }
 
-      // Style dla prefix/suffix
       .salary-field ::ng-deep .mat-mdc-form-field-text-prefix,
       .salary-field ::ng-deep .mat-mdc-form-field-text-suffix {
         color: var(--text-secondary);
@@ -229,12 +227,10 @@ export class JobDialogComponent {
     const salaryMin = group.get('salaryMin')?.value;
     const salaryMax = group.get('salaryMax')?.value;
 
-    // If both are null or undefined, no validation error
     if (!salaryMin || !salaryMax) {
       return null;
     }
 
-    // If salaryMin is greater than salaryMax, return error
     if (Number(salaryMin) > Number(salaryMax)) {
       return { salaryRangeInvalid: true };
     }
@@ -248,7 +244,6 @@ export class JobDialogComponent {
     this.submitting = true;
     const formValue = this.jobForm.value;
 
-    // Ensure salary fields are null if empty, not empty strings
     const jobData: CreateJobOffer = {
       ...formValue,
       salaryMin: formValue.salaryMin || null,
@@ -264,7 +259,7 @@ export class JobDialogComponent {
         this.submitting = false;
         this.cdr.detectChanges();
         alert(this.data ? 'Oferta zaktualizowana!' : 'Oferta dodana!');
-        this.dialogRef.close(true); // Close dialog and signal success
+        this.dialogRef.close(true);
       },
       error: (error) => {
         this.submitting = false;
@@ -307,10 +302,8 @@ export class AdminPanelComponent implements OnInit {
   private dialog = inject(MatDialog);
   private cdr = inject(ChangeDetectorRef);
 
-  // Tab management
   selectedTabIndex = 0;
 
-  // Jobs tab
   jobs: JobOffer[] = [];
   filteredJobs: JobOffer[] = [];
   displayedColumns: string[] = ['id', 'title', 'company', 'location', 'workType', 'salary', 'createdAt', 'actions'];
@@ -319,7 +312,6 @@ export class AdminPanelComponent implements OnInit {
   deletingId: number | null = null;
   refreshingSeed = false;
 
-  // Applications tab
   applications: JobApplication[] = [];
   filteredApplications: JobApplication[] = [];
   applicationsDisplayedColumns: string[] = ['id', 'jobTitle', 'company', 'userEmail', 'appliedAt', 'note', 'actions'];
@@ -327,27 +319,23 @@ export class AdminPanelComponent implements OnInit {
   applicationDeleting = false;
   applicationDeletingId: number | null = null;
 
-  // Pagination - Jobs
   totalItems = 0;
   pageSize = 10;
   pageIndex = 0;
   pageSizeOptions = [5, 10, 25, 50];
 
-  // Filtering & Sorting - Jobs
   searchTerm = '';
   selectedWorkType: WorkType | null = null;
   sortColumn = 'id';
   sortDirection: 'asc' | 'desc' = 'asc';
 
-  // Pagination - Applications
   applicationsTotalItems = 0;
   applicationsPageSize = 10;
   applicationsPageIndex = 0;
 
-  // Filtering & Sorting - Applications
   applicationsSearchTerm = '';
   applicationsSortColumn = 'id';
-  applicationsSortDirection: 'asc' | 'desc' = 'desc'; // Newest first by default
+  applicationsSortDirection: 'asc' | 'desc' = 'desc';
 
   WorkType = WorkType;
   workTypeOptions = [
@@ -389,7 +377,6 @@ export class AdminPanelComponent implements OnInit {
   applyFiltersAndSort(): void {
     let result = [...this.jobs];
 
-    // Search filter
     if (this.searchTerm) {
       const term = this.searchTerm.toLowerCase();
       result = result.filter(job =>
@@ -400,12 +387,10 @@ export class AdminPanelComponent implements OnInit {
       );
     }
 
-    // Work type filter
     if (this.selectedWorkType !== null) {
       result = result.filter(job => job.workType === this.selectedWorkType);
     }
 
-    // Sorting
     result.sort((a, b) => {
       let aValue: any;
       let bValue: any;
@@ -502,7 +487,7 @@ export class AdminPanelComponent implements OnInit {
 
     dialogRef.afterClosed().subscribe((result) => {
       if (result !== undefined) {
-        this.loadJobs(); // Refresh the list
+        this.loadJobs();
       }
     });
   }
@@ -526,7 +511,7 @@ export class AdminPanelComponent implements OnInit {
 
     dialogRef.afterClosed().subscribe((result) => {
       if (result !== undefined) {
-        this.loadJobs(); // Refresh the list
+        this.loadJobs();
       }
     });
   }
@@ -574,8 +559,6 @@ export class AdminPanelComponent implements OnInit {
     return 'Nieokreślona';
   }
 
-  // ========== Applications Management ==========
-
   loadAllApplications(): void {
     this.applicationsLoading = true;
     this.applicationService.getAllApplications().subscribe({
@@ -597,7 +580,6 @@ export class AdminPanelComponent implements OnInit {
   applyApplicationsFiltersAndSort(): void {
     let result = [...this.applications];
 
-    // Search filter
     if (this.applicationsSearchTerm) {
       const term = this.applicationsSearchTerm.toLowerCase();
       result = result.filter(app =>
@@ -608,7 +590,6 @@ export class AdminPanelComponent implements OnInit {
       );
     }
 
-    // Sorting
     result.sort((a, b) => {
       let aValue: any;
       let bValue: any;
@@ -727,11 +708,9 @@ export class AdminPanelComponent implements OnInit {
       next: (response) => {
         this.refreshingSeed = false;
         alert('Dane zostały pomyślnie przywrócone z seedera!');
-        // Reload jobs if on jobs tab
         if (this.selectedTabIndex === 0) {
           this.loadJobs();
         }
-        // Reload applications if on applications tab
         if (this.selectedTabIndex === 1) {
           this.loadAllApplications();
         }

@@ -4,10 +4,8 @@
     <p class="subtitle">Znajdź swoją wymarzoną pracę</p>
   </div>
 
-  <!-- Filters Section -->
   <mat-card class="filters-card">
     <div class="filters-grid">
-      <!-- Search -->
       <mat-form-field appearance="outline" class="search-field">
         <mat-label>Szukaj</mat-label>
         <input matInput [ngModel]="jobParams.searchTerm" (ngModelChange)="onSearchTermChange($event)" placeholder="Stanowisko, firma...">
@@ -19,7 +17,6 @@
         }
       </mat-form-field>
 
-      <!-- Work Type -->
       <mat-form-field appearance="outline">
         <mat-label>Typ pracy</mat-label>
         <mat-select [(ngModel)]="jobParams.workType" (selectionChange)="onFilterChange()">
@@ -30,30 +27,26 @@
         <mat-icon matPrefix>work</mat-icon>
       </mat-form-field>
 
-      <!-- Location -->
       <mat-form-field appearance="outline">
         <mat-label>Lokalizacja</mat-label>
         <input matInput [(ngModel)]="jobParams.location" (ngModelChange)="onFilterChange()" placeholder="Warszawa, Kraków...">
         <mat-icon matPrefix>location_on</mat-icon>
       </mat-form-field>
 
-      <!-- Min Salary -->
       <mat-form-field appearance="outline" class="salary-field">
         <mat-label>Płaca od</mat-label>
-        <input matInput type="number" min="0" [(ngModel)]="jobParams.minSalary" (ngModelChange)="onFilterChange()" placeholder="8000">
+        <input matInput type="number" min="0" [(ngModel)]="jobParams.minSalary" (ngModelChange)="onSalaryChange()" placeholder="8000">
         <span matTextPrefix>$&nbsp;</span>
         <span matTextSuffix>&nbsp;PLN</span>
       </mat-form-field>
 
-      <!-- Max Salary -->
       <mat-form-field appearance="outline" class="salary-field">
         <mat-label>Płaca do</mat-label>
-        <input matInput type="number" min="0" [(ngModel)]="jobParams.maxSalary" (ngModelChange)="onFilterChange()" placeholder="20000">
+        <input matInput type="number" min="0" [(ngModel)]="jobParams.maxSalary" (ngModelChange)="onSalaryChange()" placeholder="20000">
         <span matTextPrefix>$&nbsp;</span>
         <span matTextSuffix>&nbsp;PLN</span>
       </mat-form-field>
 
-      <!-- Sort -->
       <mat-form-field appearance="outline">
         <mat-label>Sortowanie</mat-label>
         <mat-select [(ngModel)]="jobParams.orderBy" (selectionChange)="onFilterChange()">
@@ -77,19 +70,16 @@
     </div>
   </mat-card>
 
-  <!-- Results Info -->
   <div class="results-info">
     Znaleziono: <span><strong>{{ totalItems }}</strong> ofert</span>
   </div>
 
-  <!-- Loading Spinner -->
   @if (loading) {
     <div class="loading-container">
       <mat-spinner></mat-spinner>
     </div>
   }
 
-  <!-- Job Cards -->
   @if (!loading) {
     <div class="jobs-grid">
       @for (job of jobs; track job.id) {
@@ -139,7 +129,6 @@
     </div>
   }
 
-  <!-- Pagination -->
   @if (!loading && jobs.length > 0) {
     <mat-paginator
       [length]="totalItems"

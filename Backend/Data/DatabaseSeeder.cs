@@ -12,16 +12,12 @@ public static class DatabaseSeeder
         var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = serviceProvider.GetRequiredService<RoleManager<IdentityRole>>();
 
-        // Ensure database is created
         await context.Database.MigrateAsync();
 
-        // Seed Roles
         await SeedRoles(roleManager);
 
-        // Seed Users (5 regular users + 2 admins)
         await SeedUsers(userManager);
 
-        // Seed Job Offers (20 offers)
         await SeedJobOffers(context);
     }
 
@@ -31,30 +27,24 @@ public static class DatabaseSeeder
         var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = serviceProvider.GetRequiredService<RoleManager<IdentityRole>>();
 
-        // 1. Delete all applications
         var applications = await context.JobApplications.ToListAsync();
         context.JobApplications.RemoveRange(applications);
         await context.SaveChangesAsync();
 
-        // 2. Delete all job offers
         var jobOffers = await context.JobOffers.ToListAsync();
         context.JobOffers.RemoveRange(jobOffers);
         await context.SaveChangesAsync();
 
-        // 3. Delete all users (except those in seeder)
         var users = await userManager.Users.ToListAsync();
         foreach (var user in users)
         {
             await userManager.DeleteAsync(user);
         }
 
-        // 4. Re-seed roles
         await SeedRoles(roleManager);
 
-        // 5. Re-seed users
         await SeedUsers(userManager);
 
-        // 6. Re-seed job offers
         await SeedJobOffers(context, forceReseed: true);
     }
 
@@ -73,7 +63,6 @@ public static class DatabaseSeeder
 
     private static async Task SeedUsers(UserManager<ApplicationUser> userManager)
     {
-        // 2 Admins
         var admins = new[]
         {
             new { Email = "admin@jobboard.com", FirstName = "Admin", LastName = "Główny", Password = "Admin123!" },
@@ -102,7 +91,6 @@ public static class DatabaseSeeder
             }
         }
 
-        // 5 Regular Users
         var regularUsers = new[]
         {
             new { Email = "jan.kowalski@example.com", FirstName = "Jan", LastName = "Kowalski", Password = "User123!" },
@@ -137,10 +125,9 @@ public static class DatabaseSeeder
 
     private static async Task SeedJobOffers(ApplicationDbContext context, bool forceReseed = false)
     {
-        // Check if job offers already exist
         if (!forceReseed && await context.JobOffers.AnyAsync())
         {
-            return; // Database already seeded
+            return;
         }
 
         var jobOffers = new List<JobOffer>

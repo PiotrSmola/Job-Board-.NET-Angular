@@ -25,7 +25,6 @@ public class TokenService : ITokenService
             new Claim(ClaimTypes.Name, $"{user.FirstName} {user.LastName}")
         };
 
-        // Add roles to claims
         foreach (var role in roles)
         {
             claims.Add(new Claim(ClaimTypes.Role, role));

@@ -23,5 +23,5 @@ public class JobParams
     public string? Location { get; set; }
 
     // Sorting
-    public string OrderBy { get; set; } = "newest";  // newest, oldest, salaryHigh, salaryLow
+    public string OrderBy { get; set; } = "newest";
 }

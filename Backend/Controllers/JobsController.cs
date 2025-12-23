@@ -20,8 +20,8 @@ public class JobsController : ControllerBase
         _jobRepository = jobRepository;
     }
 
-    // GET: api/jobs
     [HttpGet]
+    [ProducesResponseType(typeof(IEnumerable<JobOfferDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<JobOfferDto>>> GetJobs([FromQuery] JobParams jobParams)
     {
         var jobs = await _jobRepository.GetJobsAsync(jobParams);
@@ -52,8 +52,9 @@ public class JobsController : ControllerBase
         return Ok(jobsDto);
     }
 
-    // GET: api/jobs/5
     [HttpGet("{id}")]
+    [ProducesResponseType(typeof(JobOfferDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<JobOfferDto>> GetJob(int id)
     {
         var job = await _jobRepository.GetJobByIdAsync(id);
@@ -79,9 +80,12 @@ public class JobsController : ControllerBase
         return Ok(jobDto);
     }
 
-    // POST: api/jobs
     [HttpPost]
     [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(JobOfferDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<JobOfferDto>> CreateJob(CreateJobOfferDto createJobDto)
     {
         var job = new JobOffer
@@ -114,9 +118,13 @@ public class JobsController : ControllerBase
         return CreatedAtAction(nameof(GetJob), new { id = jobDto.Id }, jobDto);
     }
 
-    // PUT: api/jobs/5
     [HttpPut("{id}")]
     [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(JobOfferDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<JobOfferDto>> UpdateJob(int id, CreateJobOfferDto updateJobDto)
     {
         if (!await _jobRepository.JobExistsAsync(id))
@@ -156,9 +164,12 @@ public class JobsController : ControllerBase
         return Ok(jobDto);
     }
 
-    // DELETE: api/jobs/5
     [HttpDelete("{id}")]
     [Authorize(Roles = "Admin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> DeleteJob(int id)
     {
         var result = await _jobRepository.DeleteJobAsync(id);

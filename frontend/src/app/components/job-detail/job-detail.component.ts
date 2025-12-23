@@ -108,7 +108,6 @@ export class JobDetailComponent implements OnInit {
         console.error('Error loading job:', err);
         this.loading = false;
         this.cdr.detectChanges();
-        // Don't redirect immediately, maybe show error in UI
       }
     });
   }
@@ -124,7 +123,7 @@ export class JobDetailComponent implements OnInit {
       error: (error) => {
         console.error('Error checking application status:', error);
         this.checkingApplication = false;
-        this.hasApplied = false; // Reset to allow applying if check fails
+        this.hasApplied = false;
         this.cdr.detectChanges();
       }
     });

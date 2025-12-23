@@ -8,5 +8,5 @@ export class JobParams {
   minSalary: number | null = null;
   maxSalary: number | null = null;
   location = '';
-  orderBy = 'newest'; // newest, oldest, salaryHigh, salaryLow
+  orderBy = 'newest';
 }

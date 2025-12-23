@@ -25,6 +25,8 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
+    [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<UserDto>> Register(RegisterDto registerDto)
     {
         if (await _userManager.FindByEmailAsync(registerDto.Email) != null)
@@ -47,7 +49,7 @@ public class AuthController : ControllerBase
             return BadRequest(result.Errors);
         }
 
-        // Assign default role "User"
+        // default role "User"
         await _userManager.AddToRoleAsync(user, "User");
 
         var roles = await _userManager.GetRolesAsync(user);
@@ -62,6 +64,8 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<UserDto>> Login(LoginDto loginDto)
     {
         var user = await _userManager.FindByEmailAsync(loginDto.Email);

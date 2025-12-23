@@ -11,7 +11,6 @@ public class JobApplicationDto
     public string? Note { get; set; }
     public DateTime AppliedAt { get; set; }
 
-    // Related data
     public string UserEmail { get; set; } = string.Empty;
     public string JobTitle { get; set; } = string.Empty;
     public JobOffer? JobOffer { get; set; }

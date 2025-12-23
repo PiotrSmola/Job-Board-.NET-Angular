@@ -18,7 +18,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     {
         base.OnModelCreating(builder);
 
-        // JobOffer configuration
         builder.Entity<JobOffer>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -37,7 +36,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // JobApplication configuration
         builder.Entity<JobApplication>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -50,7 +48,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // ApplicationUser configuration
         builder.Entity<ApplicationUser>(entity =>
         {
             entity.Property(e => e.FirstName).HasMaxLength(100);

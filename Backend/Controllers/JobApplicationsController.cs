@@ -23,8 +23,9 @@ public class JobApplicationsController : ControllerBase
         _jobRepository = jobRepository;
     }
 
-    // GET: api/jobapplications/my-applications
     [HttpGet("my-applications")]
+    [ProducesResponseType(typeof(IEnumerable<JobApplicationDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<IEnumerable<JobApplicationDto>>> GetMyApplications()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -50,9 +51,12 @@ public class JobApplicationsController : ControllerBase
         return Ok(applicationsDto);
     }
 
-    // GET: api/jobapplications/job/5
     [HttpGet("job/{jobId}")]
     [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(IEnumerable<JobApplicationDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<IEnumerable<JobApplicationDto>>> GetApplicationsByJobId(int jobId)
     {
         if (!await _jobRepository.JobExistsAsync(jobId))
@@ -77,8 +81,11 @@ public class JobApplicationsController : ControllerBase
         return Ok(applicationsDto);
     }
 
-    // POST: api/jobapplications
     [HttpPost]
+    [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<JobApplicationDto>> ApplyToJob(CreateJobApplicationDto createApplicationDto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -87,13 +94,11 @@ public class JobApplicationsController : ControllerBase
             return Unauthorized();
         }
 
-        // Check if job exists
         if (!await _jobRepository.JobExistsAsync(createApplicationDto.JobOfferId))
         {
             return NotFound(new { message = "Job offer not found" });
         }
 
-        // Check if user already applied
         if (await _applicationRepository.HasUserAppliedAsync(createApplicationDto.JobOfferId, userId))
         {
             return BadRequest(new { message = "You have already applied to this job" });
@@ -109,7 +114,6 @@ public class JobApplicationsController : ControllerBase
 
         var createdApplication = await _applicationRepository.AddApplicationAsync(application);
 
-        // Reload to get navigation properties
         var fullApplication = await _applicationRepository.GetApplicationByIdAsync(createdApplication.Id);
 
         var applicationDto = new JobApplicationDto
@@ -126,8 +130,11 @@ public class JobApplicationsController : ControllerBase
         return CreatedAtAction(nameof(GetMyApplications), new { id = applicationDto.Id }, applicationDto);
     }
 
-    // DELETE: api/jobapplications/5
     [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> DeleteApplication(int id)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -143,7 +150,6 @@ public class JobApplicationsController : ControllerBase
             return NotFound(new { message = "Application not found" });
         }
 
-        // Only the user who created the application or admin can delete it
         var isAdmin = User.IsInRole("Admin");
         if (application.UserId != userId && !isAdmin)
         {
@@ -160,8 +166,9 @@ public class JobApplicationsController : ControllerBase
         return NoContent();
     }
 
-    // GET: api/jobapplications/check/5
     [HttpGet("check/{jobId}")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<bool>> CheckIfApplied(int jobId)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -174,9 +181,11 @@ public class JobApplicationsController : ControllerBase
         return Ok(new { hasApplied });
     }
 
-    // GET: api/jobapplications/all
     [HttpGet("all")]
     [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(IEnumerable<JobApplicationDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<IEnumerable<JobApplicationDto>>> GetAllApplications()
     {
         var applications = await _applicationRepository.GetAllApplicationsAsync();

@@ -48,6 +48,7 @@ export class JobListComponent implements OnInit, OnDestroy {
 
   jobParams = new JobParams();
   private searchSubject = new Subject<string>();
+  private salaryFilterSubject = new Subject<{ min?: number, max?: number }>();
   private destroy$ = new Subject<void>();
 
   WorkType = WorkType;
@@ -68,13 +69,27 @@ export class JobListComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadJobs();
 
-    // Setup real-time search
     this.searchSubject.pipe(
       debounceTime(500),
       distinctUntilChanged(),
       takeUntil(this.destroy$)
     ).subscribe(searchTerm => {
       this.jobParams.searchTerm = searchTerm;
+      this.jobParams.pageNumber = 1;
+      this.loadJobs();
+    });
+
+    this.salaryFilterSubject.pipe(
+      debounceTime(800),
+      takeUntil(this.destroy$)
+    ).subscribe(salary => {
+      if (salary.min && salary.max && salary.min > salary.max) {
+        alert('Wynagrodzenie "Od" nie może być wyższe niż "Do"');
+        return;
+      }
+
+      this.jobParams.minSalary = salary.min ?? null;
+      this.jobParams.maxSalary = salary.max ?? null;
       this.jobParams.pageNumber = 1;
       this.loadJobs();
     });
@@ -118,26 +133,18 @@ export class JobListComponent implements OnInit, OnDestroy {
   }
 
   onSearch(): void {
-    // Validate salary range
-    if (this.jobParams.minSalary && this.jobParams.maxSalary &&
-        this.jobParams.minSalary > this.jobParams.maxSalary) {
-      alert('Wynagrodzenie "Od" nie może być wyższe niż "Do"');
-      return;
-    }
-
-    // Kept for manual trigger if needed, but searchSubject handles typing
     this.jobParams.pageNumber = 1;
     this.loadJobs();
   }
 
-  onFilterChange(): void {
-    // Validate salary range
-    if (this.jobParams.minSalary && this.jobParams.maxSalary &&
-        this.jobParams.minSalary > this.jobParams.maxSalary) {
-      alert('Wynagrodzenie "Od" nie może być wyższe niż "Do"');
-      return;
-    }
+  onSalaryChange(): void {
+    this.salaryFilterSubject.next({
+      min: this.jobParams.minSalary ?? undefined,
+      max: this.jobParams.maxSalary ?? undefined
+    });
+  }
 
+  onFilterChange(): void {
     this.jobParams.pageNumber = 1;
     this.loadJobs();
   }
