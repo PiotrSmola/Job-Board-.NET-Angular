@@ -74,7 +74,7 @@ export class AuthService {
     this.redirectToLogin(currentUrl);
   }
 
-  redirectToLogin(returnUrl: string): void {
+  private redirectToLogin(returnUrl: string): void {
     this.router.navigate(['/login'], { queryParams: { returnUrl } });
   }
 
