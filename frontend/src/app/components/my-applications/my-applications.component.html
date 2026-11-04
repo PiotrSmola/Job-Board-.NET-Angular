@@ -1,7 +1,7 @@
 <div class="my-applications-container">
   <div class="header">
     <h1>Moje Aplikacje</h1>
-    <p class="subtitle">Zarządzaj swoimi aplikacjami na oferty pracy</p>
+    <p class="subtitle">Śledź status swoich aplikacji i historię rekrutacji</p>
   </div>
 
   @if (loading) {
@@ -13,7 +13,7 @@
   @if (!loading && applications.length > 0) {
     <mat-card class="table-card">
       <div class="table-container">
-        <table mat-table [dataSource]="applications" class="applications-table">
+        <table mat-table [dataSource]="applications" multiTemplateDataRows class="applications-table">
           <ng-container matColumnDef="jobTitle">
             <th mat-header-cell *matHeaderCellDef>Stanowisko</th>
             <td mat-cell *matCellDef="let application">
@@ -35,6 +35,14 @@
                 <mat-icon>location_on</mat-icon>
                 <span>{{ application.jobOffer?.location || 'N/A' }}</span>
               </div>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="status">
+            <th mat-header-cell *matHeaderCellDef>Status</th>
+            <td mat-cell *matCellDef="let application">
+              @let presentation = statusPresentation(application.status);
+              <app-status-chip [label]="presentation.label" [tone]="presentation.tone" />
             </td>
           </ng-container>
 
@@ -68,22 +76,48 @@
                 </button>
                 <button
                   mat-icon-button
-                  color="warn"
-                  (click)="deleteApplication(application.id)"
-                  [disabled]="deleting && deletingId === application.id"
-                  matTooltip="Usuń aplikację">
-                  @if (deleting && deletingId === application.id) {
-                    <mat-spinner diameter="24"></mat-spinner>
-                  } @else {
-                    <mat-icon>delete</mat-icon>
-                  }
+                  (click)="toggleHistory(application)"
+                  [attr.aria-expanded]="expandedId === application.id"
+                  [matTooltip]="expandedId === application.id ? 'Ukryj historię' : 'Pokaż historię'">
+                  <mat-icon>{{ expandedId === application.id ? 'expand_less' : 'history' }}</mat-icon>
                 </button>
+                @if (canWithdraw(application)) {
+                  <button
+                    mat-icon-button
+                    color="warn"
+                    (click)="withdrawApplication(application)"
+                    [disabled]="withdrawingId === application.id"
+                    matTooltip="Wycofaj aplikację">
+                    @if (withdrawingId === application.id) {
+                      <mat-spinner diameter="24"></mat-spinner>
+                    } @else {
+                      <mat-icon>undo</mat-icon>
+                    }
+                  </button>
+                }
               </div>
+            </td>
+          </ng-container>
+
+          <!-- Rozwijana historia statusów -->
+          <ng-container matColumnDef="expandedDetail">
+            <td mat-cell *matCellDef="let application" [attr.colspan]="displayedColumns.length" class="detail-cell">
+              @if (expandedId === application.id) {
+                <div class="history-panel">
+                  @if (historyLoadingId === application.id) {
+                    <mat-spinner diameter="32"></mat-spinner>
+                  } @else {
+                    <app-status-timeline [history]="histories[application.id]" />
+                  }
+                </div>
+              }
             </td>
           </ng-container>
 
           <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
           <tr mat-row *matRowDef="let row; columns: displayedColumns;" class="table-row"></tr>
+          <tr mat-row *matRowDef="let row; columns: ['expandedDetail']" class="detail-row"
+            [class.expanded]="expandedId === row.id"></tr>
         </table>
       </div>
 

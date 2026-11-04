@@ -7,11 +7,13 @@ import { JobDetailComponent } from './job-detail.component';
 import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
-import { JobOffer, WorkType } from '../../models/job-offer.model';
+import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
+import { ApplicationStatus } from '../../models/job-application.model';
 
 const JOB: JobOffer = {
   id: 5, title: 'Angular Developer', company: 'Acme', description: 'Opis', salaryMin: 1000, salaryMax: 2000,
-  location: 'Rzeszów', workType: WorkType.Remote, createdAt: new Date('2026-01-01')
+  location: 'Rzeszów', workType: WorkType.Remote, createdAt: new Date('2026-01-01'),
+  status: JobOfferStatus.Active, expiresAt: null, isExpired: false
 };
 
 describe('JobDetailComponent', () => {
@@ -90,6 +92,69 @@ describe('JobDetailComponent', () => {
     expect(component.checkingApplication).toBe(false);
     expect(snackBarOpen).not.toHaveBeenCalled();
     expect(alertSpy).not.toHaveBeenCalled();
+  });
+
+  describe('offer lifecycle and application status', () => {
+    function text(): string {
+      fixture.detectChanges();
+      return (fixture.nativeElement as HTMLElement).textContent ?? '';
+    }
+
+    it.each([
+      [{ status: JobOfferStatus.Closed, isExpired: false }, 'Rekrutacja na to stanowisko została zakończona'],
+      [{ status: JobOfferStatus.Active, isExpired: true }, 'Ta oferta wygasła']
+    ])('shows a banner and blocks applying for %o', (state, bannerText) => {
+      create(of({ ...JOB, ...state }));
+
+      expect(component.acceptsApplications).toBe(false);
+      expect(text()).toContain(bannerText);
+      expect(text()).toContain('Aplikowanie zamknięte');
+      expect(text()).not.toContain('Aplikuj na to stanowisko');
+    });
+
+    it('shows no banner and the expiration date for an active offer', () => {
+      create(of({ ...JOB, expiresAt: '2026-12-31T22:59:59Z' }));
+
+      expect(component.banner).toBeNull();
+      expect(text()).toContain('Aktualna do');
+      expect(text()).toContain('Aplikuj na to stanowisko');
+    });
+
+    it('shows the current status of an existing application', () => {
+      checkIfApplied.mockReturnValue(of({ hasApplied: true, applicationId: 3, status: ApplicationStatus.Interview }));
+      create();
+
+      expect(component.applicationStatus).toBe(ApplicationStatus.Interview);
+      expect(text()).toContain('Rozmowa');
+      expect(text()).toContain('Już aplikowałeś');
+    });
+
+    it('offers applying again after withdrawal and reports the reactivation', () => {
+      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
+      create();
+
+      expect(component.hasWithdrawn).toBe(true);
+      expect(text()).toContain('Aplikuj ponownie');
+
+      applyToJob.mockReturnValue(of({ id: 3, status: ApplicationStatus.Submitted }));
+      component.applyToJob('Znowu');
+
+      expect(component.hasApplied).toBe(true);
+      expect(component.applicationStatus).toBe(ApplicationStatus.Submitted);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja została złożona ponownie!');
+    });
+
+    it('reloads the offer when the API reports that it no longer accepts applications', () => {
+      create();
+      getJob.mockReturnValue(of({ ...JOB, status: JobOfferStatus.Closed }));
+      applyToJob.mockReturnValue(throwError(() => httpError(400, { message: 'This job offer is not accepting applications' })));
+
+      component.applyToJob('');
+
+      expect(getJob).toHaveBeenCalledTimes(2);
+      expect(component.acceptsApplications).toBe(false);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Ta oferta nie przyjmuje już aplikacji');
+    });
   });
 
   describe('applyToJob', () => {

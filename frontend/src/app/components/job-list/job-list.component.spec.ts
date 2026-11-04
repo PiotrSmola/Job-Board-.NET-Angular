@@ -4,14 +4,15 @@ import { provideRouter, Router } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
 import { JobListComponent } from './job-list.component';
 import { JobService } from '../../services/job.service';
-import { JobOffer, WorkType } from '../../models/job-offer.model';
+import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
 import { JobParams } from '../../models/job-params.model';
 import { PaginatedResult } from '../../models/pagination.model';
 
 function makeJob(id: number): JobOffer {
   return {
     id, title: `Oferta ${id}`, company: 'Acme', description: 'Opis', salaryMin: 1000, salaryMax: 2000,
-    location: 'Rzeszów', workType: WorkType.Hybrid, createdAt: new Date('2026-01-01')
+    location: 'Rzeszów', workType: WorkType.Hybrid, createdAt: new Date('2026-01-01'),
+    status: JobOfferStatus.Active, expiresAt: null, isExpired: false
   };
 }
 

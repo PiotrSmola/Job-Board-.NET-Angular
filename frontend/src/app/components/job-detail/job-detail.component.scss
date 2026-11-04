@@ -166,17 +166,27 @@
   }
 }
 
+// status aplikacji użytkownika – po lewej stronie przycisków akcji
 .application-status {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--success-color);
-  font-weight: 600;
-  font-size: 1.1rem;
-  padding: 8px 16px;
-  background-color: rgba(0, 230, 118, 0.1);
-  border-radius: 4px;
-  border: 1px solid rgba(0, 230, 118, 0.2);
+  margin-right: auto;
+  color: var(--text-secondary);
+}
+
+// oferta zamknięta / wygasła / szkic
+.offer-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 183, 77, 0.4);
+  background-color: rgba(255, 183, 77, 0.1);
+  color: #ffb74d;
+  font-weight: 500;
 }
 
 @media (max-width: 600px) {

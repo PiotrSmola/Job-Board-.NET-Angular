@@ -9,8 +9,11 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { JobApplicationService } from '../../services/job-application.service';
-import { JobApplication } from '../../models/job-application.model';
+import { ApplicationStatus, ApplicationStatusHistoryEntry, JobApplication } from '../../models/job-application.model';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
+import { canWithdraw, getApplicationStatusPresentation, StatusPresentation } from '../../utils/status-labels';
+import { StatusChipComponent } from '../shared/status-chip.component';
+import { StatusTimelineComponent } from '../shared/status-timeline.component';
 
 @Component({
   selector: 'app-my-applications',
@@ -23,7 +26,9 @@ import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-err
     MatIconModule,
     MatCardModule,
     MatProgressSpinnerModule,
-    MatTooltipModule
+    MatTooltipModule,
+    StatusChipComponent,
+    StatusTimelineComponent
   ],
   templateUrl: './my-applications.component.html',
   styleUrl: './my-applications.component.scss'
@@ -35,10 +40,15 @@ export class MyApplicationsComponent implements OnInit {
   private snackBar = inject(MatSnackBar);
 
   applications: JobApplication[] = [];
-  displayedColumns: string[] = ['jobTitle', 'company', 'location', 'appliedAt', 'note', 'actions'];
+  displayedColumns: string[] = ['jobTitle', 'company', 'location', 'status', 'appliedAt', 'note', 'actions'];
   loading = false;
-  deleting = false;
-  deletingId: number | null = null;
+  withdrawingId: number | null = null;
+
+  /** Aplikacja z rozwiniętą historią (null = żadna). */
+  expandedId: number | null = null;
+  historyLoadingId: number | null = null;
+  /** Historia pobrana z GET /api/jobapplications/{id}, per aplikacja. */
+  histories: Record<number, ApplicationStatusHistoryEntry[]> = {};
 
   ngOnInit(): void {
     this.loadApplications();
@@ -63,28 +73,66 @@ export class MyApplicationsComponent implements OnInit {
     });
   }
 
-  deleteApplication(id: number): void {
-    if (!confirm('Czy na pewno chcesz usunąć tę aplikację?')) {
+  statusPresentation(status: ApplicationStatus): StatusPresentation {
+    return getApplicationStatusPresentation(status);
+  }
+
+  canWithdraw(application: JobApplication): boolean {
+    return canWithdraw(application.status);
+  }
+
+  /** Rozwija/zwija historię; przy pierwszym rozwinięciu pobiera ją z API. */
+  toggleHistory(application: JobApplication): void {
+    if (this.expandedId === application.id) {
+      this.expandedId = null;
       return;
     }
 
-    this.deleting = true;
-    this.deletingId = id;
-    this.applicationService.deleteApplication(id).subscribe({
-      next: () => {
-        this.applications = this.applications.filter(app => app.id !== id);
-        this.deleting = false;
-        this.deletingId = null;
+    this.expandedId = application.id;
+    if (this.histories[application.id]) return;
+
+    this.historyLoadingId = application.id;
+    this.applicationService.getApplication(application.id).subscribe({
+      next: (details) => {
+        this.histories = { ...this.histories, [application.id]: details.history ?? [] };
+        this.historyLoadingId = null;
         this.cdr.detectChanges();
-        this.notify('Aplikacja została usunięta');
       },
       error: (error) => {
-        console.error('Error deleting application:', error);
-        this.deleting = false;
-        this.deletingId = null;
+        console.error('Error loading application history:', error);
+        this.historyLoadingId = null;
+        this.expandedId = null;
         this.cdr.detectChanges();
         if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Błąd podczas usuwania aplikacji'));
+          this.notify(getApiErrorMessage(error, 'Nie udało się wczytać historii aplikacji'));
+        }
+      }
+    });
+  }
+
+  withdrawApplication(application: JobApplication): void {
+    if (!confirm(`Czy na pewno chcesz wycofać aplikację na stanowisko „${application.jobTitle}”? ` +
+      'Jeśli oferta będzie nadal aktywna, możesz później aplikować ponownie.')) {
+      return;
+    }
+
+    this.withdrawingId = application.id;
+    this.applicationService.withdraw(application.id).subscribe({
+      next: (updated) => {
+        this.applications = this.applications.map(app => app.id === updated.id ? { ...app, ...updated } : app);
+        if (updated.history) {
+          this.histories = { ...this.histories, [updated.id]: updated.history };
+        }
+        this.withdrawingId = null;
+        this.cdr.detectChanges();
+        this.notify('Aplikacja została wycofana');
+      },
+      error: (error) => {
+        console.error('Error withdrawing application:', error);
+        this.withdrawingId = null;
+        this.cdr.detectChanges();
+        if (!isHandledByInterceptor(error)) {
+          this.notify(getApiErrorMessage(error, 'Błąd podczas wycofywania aplikacji'));
         }
       }
     });
@@ -98,7 +146,7 @@ export class MyApplicationsComponent implements OnInit {
     this.router.navigate(['/jobs', jobId]);
   }
 
-  formatDate(date: Date): string {
+  formatDate(date: Date | string): string {
     return new Date(date).toLocaleDateString('pl-PL', {
       year: 'numeric',
       month: 'long',

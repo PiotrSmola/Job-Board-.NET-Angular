@@ -127,7 +127,12 @@
           </mat-card-content>
 
           <mat-card-actions>
-            <span class="posted-date">Dodano: {{ job.createdAt | date:'dd.MM.yyyy' }}</span>
+            <div>
+              <span class="posted-date">Dodano: {{ job.createdAt | date:'dd.MM.yyyy' }}</span>
+              @if (expiresSoon(job); as hint) {
+                <span class="expires-soon">{{ hint }}</span>
+              }
+            </div>
             <button mat-button color="primary">
               Szczegóły <mat-icon>arrow_forward</mat-icon>
             </button>

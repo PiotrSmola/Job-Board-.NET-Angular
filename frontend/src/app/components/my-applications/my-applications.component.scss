@@ -123,6 +123,24 @@
   }
 }
 
+// wiersz z historią – zwinięty nie zajmuje miejsca
+.applications-table tr.detail-row {
+  height: 0;
+
+  .detail-cell {
+    padding: 0 16px;
+    border-bottom-width: 0;
+  }
+
+  &.expanded .detail-cell {
+    border-bottom-width: 1px;
+  }
+}
+
+.history-panel {
+  padding: 16px 8px 20px;
+}
+
 .stats-footer {
   display: flex;
   align-items: center;
