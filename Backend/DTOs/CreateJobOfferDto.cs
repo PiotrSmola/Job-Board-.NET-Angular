@@ -25,5 +25,7 @@ public class CreateJobOfferDto
     [MaxLength(200)]
     public string Location { get; set; } = string.Empty;
 
+    // System.Text.Json przyjmuje dowolną liczbę dla enuma - EnumDataType odrzuca wartości spoza WorkType
+    [EnumDataType(typeof(WorkType))]
     public WorkType WorkType { get; set; }
 }

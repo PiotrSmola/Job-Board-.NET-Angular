@@ -120,15 +120,49 @@ public class JobsCrudTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    [Fact(Skip = "Bug: WorkType outside the enum range (e.g. 99) is accepted and stored (CreateJobOfferDto has no [EnumDataType]/range validation, Backend/DTOs/CreateJobOfferDto.cs:29); expected 400.")]
-    public async Task CreateJob_WithUndefinedWorkType_ShouldReturnBadRequest()
+    [Theory]
+    [InlineData(99)]
+    [InlineData(-1)]
+    [InlineData(3)]
+    public async Task CreateJob_WithUndefinedWorkType_ReturnsBadRequest(int workType)
     {
         using var client = await _api.AdminClientAsync();
-        var payload = new { title = "T", company = "C", description = "D", location = "L", workType = 99 };
+        var payload = new { title = "T", company = "C", description = "D", location = "L", workType };
 
         var response = await client.PostJsonAsync("/api/jobs", payload);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(body.RootElement.GetProperty("errors").TryGetProperty("WorkType", out _));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task CreateJob_WithEachDefinedWorkType_Succeeds(int workType)
+    {
+        using var client = await _api.AdminClientAsync();
+        var payload = new { title = "T", company = "C", description = "D", location = "L", workType };
+
+        var response = await client.PostJsonAsync("/api/jobs", payload);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal((WorkType)workType, (await response.ReadJsonAsync<JobOfferDto>()).WorkType);
+    }
+
+    [Fact]
+    public async Task UpdateJob_WithUndefinedWorkType_ReturnsBadRequestAndKeepsOffer()
+    {
+        var job = await _api.CreateJobAsync(j => j.WorkType = WorkType.Onsite);
+        using var client = await _api.AdminClientAsync();
+        var payload = new { title = "T", company = "C", description = "D", location = "L", workType = 99 };
+
+        var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", payload);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var fetched = await (await client.GetAsync($"/api/jobs/{job.Id}")).ReadJsonAsync<JobOfferDto>();
+        Assert.Equal(WorkType.Onsite, fetched.WorkType);
     }
 
     [Fact(Skip = "Bug: SalaryMin greater than SalaryMax is accepted (no cross-field validation in CreateJobOfferDto / JobsController.CreateJob); expected 400.")]
