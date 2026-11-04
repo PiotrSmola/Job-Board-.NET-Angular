@@ -37,6 +37,29 @@ public class TokenServiceTests
     }
 
     [Fact]
+    public void CreateToken_ContainsUserSecurityStamp()
+    {
+        var user = NewUser();
+        user.SecurityStamp = "stamp-abc";
+
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(CreateService().CreateToken(user, new List<string>()));
+
+        Assert.Equal("AspNet.Identity.SecurityStamp", TokenService.SecurityStampClaimType);
+        Assert.Contains(jwt.Claims, c => c.Type == TokenService.SecurityStampClaimType && c.Value == "stamp-abc");
+    }
+
+    [Fact]
+    public void CreateToken_WithoutSecurityStamp_OmitsStampClaim()
+    {
+        var user = NewUser();
+        user.SecurityStamp = null;
+
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(CreateService().CreateToken(user, new List<string>()));
+
+        Assert.DoesNotContain(jwt.Claims, c => c.Type == TokenService.SecurityStampClaimType);
+    }
+
+    [Fact]
     public void CreateToken_WithoutRoles_HasNoRoleClaims()
     {
         var token = CreateService().CreateToken(NewUser(), new List<string>());

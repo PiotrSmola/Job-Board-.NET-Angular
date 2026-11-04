@@ -11,6 +11,9 @@ namespace Backend.Services;
 
 public class TokenService : ITokenService
 {
+    // ta sama nazwa claimu co w ASP.NET Core Identity (ClaimsIdentityOptions.SecurityStampClaimType)
+    public const string SecurityStampClaimType = "AspNet.Identity.SecurityStamp";
+
     private readonly JwtSettings _jwtSettings;
 
     public TokenService(IOptions<JwtSettings> jwtSettings)
@@ -26,6 +29,12 @@ public class TokenService : ITokenService
             new Claim(ClaimTypes.Email, user.Email ?? string.Empty),
             new Claim(ClaimTypes.Name, $"{user.FirstName} {user.LastName}")
         };
+
+        // security stamp pozwala unieważnić token po usunięciu konta lub zmianie stampu (JwtUserValidator)
+        if (!string.IsNullOrEmpty(user.SecurityStamp))
+        {
+            claims.Add(new Claim(SecurityStampClaimType, user.SecurityStamp));
+        }
 
         foreach (var role in roles)
         {

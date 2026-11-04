@@ -10,6 +10,7 @@ namespace Backend.Tests.Infrastructure;
 // (kolekcja "Api"); testy mutujące dane tworzą własnych użytkowników i oferty.
 public class ApiFixture : IAsyncLifetime
 {
+    private readonly bool _cacheTokens;
     private readonly Lazy<Task<string>> _adminToken;
     private readonly Lazy<Task<string>> _userToken;
 
@@ -20,8 +21,11 @@ public class ApiFixture : IAsyncLifetime
     {
     }
 
-    protected ApiFixture(string environment, string? jwtSecret, bool allowSeedRefresh)
+    // cacheTokens: false - każde AdminClientAsync/UserClientAsync loguje się od nowa (potrzebne, gdy testy
+    // resetują dane: konta z seeda dostają nowe id i security stamp, więc wcześniejsze tokeny tracą ważność)
+    protected ApiFixture(string environment, string? jwtSecret, bool allowSeedRefresh, bool cacheTokens = true)
     {
+        _cacheTokens = cacheTokens;
         Factory = new JobBoardFactory(environment, jwtSecret, allowSeedRefresh);
         _adminToken = new Lazy<Task<string>>(() => LoginAsync(TestUsers.AdminEmail, TestUsers.AdminPassword));
         _userToken = new Lazy<Task<string>>(() => LoginAsync(TestUsers.UserEmail, TestUsers.UserPassword));
@@ -49,9 +53,11 @@ public class ApiFixture : IAsyncLifetime
 
     public HttpClient CreateClient(TestUser user) => CreateClient(user.Token);
 
-    public async Task<HttpClient> AdminClientAsync() => CreateClient(await _adminToken.Value);
+    public async Task<HttpClient> AdminClientAsync() =>
+        CreateClient(_cacheTokens ? await _adminToken.Value : await LoginAsync(TestUsers.AdminEmail, TestUsers.AdminPassword));
 
-    public async Task<HttpClient> UserClientAsync() => CreateClient(await _userToken.Value);
+    public async Task<HttpClient> UserClientAsync() =>
+        CreateClient(_cacheTokens ? await _userToken.Value : await LoginAsync(TestUsers.UserEmail, TestUsers.UserPassword));
 
     public async Task<string> LoginAsync(string email, string password)
     {

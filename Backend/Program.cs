@@ -66,6 +66,12 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
             ValidAudience = jwtSettings.Audience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret))
         };
+
+        // token usuniętego użytkownika lub z nieaktualnym security stampem jest odrzucany (401)
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = JwtUserValidator.ValidateAsync
+        };
     });
 
 // Konfiguracja CORS

@@ -5,7 +5,9 @@ using Backend.Interfaces;
 using Backend.Mappings;
 using Backend.Models;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Controllers;
 
@@ -16,13 +18,16 @@ public class JobApplicationsController : ControllerBase
 {
     private readonly IJobApplicationRepository _applicationRepository;
     private readonly IJobRepository _jobRepository;
+    private readonly UserManager<ApplicationUser> _userManager;
 
     public JobApplicationsController(
         IJobApplicationRepository applicationRepository,
-        IJobRepository jobRepository)
+        IJobRepository jobRepository,
+        UserManager<ApplicationUser> userManager)
     {
         _applicationRepository = applicationRepository;
         _jobRepository = jobRepository;
+        _userManager = userManager;
     }
 
     [HttpGet("my-applications")]
@@ -68,6 +73,12 @@ public class JobApplicationsController : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        // obronnie: konto mogło zostać usunięte (np. reset danych demo) - inaczej zapis złamałby klucz obcy
+        if (!await _userManager.Users.AnyAsync(u => u.Id == userId))
         {
             return Unauthorized();
         }

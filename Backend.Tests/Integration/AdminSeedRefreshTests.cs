@@ -16,7 +16,7 @@ public class ProductionRefreshDisabledFixture : ApiFixture
 // Środowisko Production z jawnie włączonym resetem danych (Admin:AllowSeedRefresh=true)
 public class ProductionRefreshEnabledFixture : ApiFixture
 {
-    public ProductionRefreshEnabledFixture() : base("Production", JobBoardFactory.TestJwtSecret, allowSeedRefresh: true)
+    public ProductionRefreshEnabledFixture() : base("Production", JobBoardFactory.TestJwtSecret, allowSeedRefresh: true, cacheTokens: false)
     {
     }
 }
@@ -136,8 +136,8 @@ public class AdminSeedRefreshEnabledTests : IClassFixture<ProductionRefreshEnabl
         Assert.Equal(0, all.ReadPagination().TotalItems);
     }
 
-    [Fact(Skip = "Bug: a still-valid JWT of a user that no longer exists (e.g. deleted by refresh-seed) is accepted; applying then fails with a foreign key violation (DbUpdateException -> HTTP 500) in JobApplicationsController.ApplyToJob (Backend/Controllers/JobApplicationsController.cs:93). Expected 401/4xx.")]
-    public async Task Apply_WithValidTokenOfUserDeletedByRefresh_ShouldNotCauseServerError()
+    [Fact]
+    public async Task Apply_WithValidTokenOfUserDeletedByRefresh_ReturnsUnauthorized()
     {
         var user = await _api.RegisterUserAsync("stale");
         using var admin = await _api.AdminClientAsync();
@@ -149,17 +149,33 @@ public class AdminSeedRefreshEnabledTests : IClassFixture<ProductionRefreshEnabl
         var response = await staleClient.PostJsonAsync("/api/jobapplications",
             new CreateJobApplicationDto { JobOfferId = jobs[0].Id });
 
-        // token jest jeszcze ważny, ale użytkownik już nie istnieje - oczekiwane 4xx, nie 500 (naruszenie klucza obcego)
-        Assert.InRange((int)response.StatusCode, 400, 499);
+        // token jest jeszcze ważny, ale użytkownik już nie istnieje - 401 zamiast 500 (naruszenie klucza obcego)
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await staleClient.GetAsync("/api/jobapplications/my-applications")).StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminToken_IssuedBeforeRefresh_IsRejectedAfterRefresh()
+    {
+        // reset odtwarza konto admina od nowa (nowe id i security stamp) - stary token traci ważność
+        var oldAdminToken = await _api.LoginAsync(TestUsers.AdminEmail, TestUsers.AdminPassword);
+        using var oldAdmin = _api.CreateClient(oldAdminToken);
+        Assert.Equal(HttpStatusCode.OK, (await oldAdmin.PostAsync("/api/admin/refresh-seed", null)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await oldAdmin.GetAsync("/api/admin/settings")).StatusCode);
+        using var newAdmin = await _api.AdminClientAsync();
+        Assert.Equal(HttpStatusCode.OK, (await newAdmin.GetAsync("/api/admin/settings")).StatusCode);
     }
 
     [Fact]
     public async Task RefreshSeed_CalledTwice_ProducesTheSameSeedState()
     {
         using var admin = await _api.AdminClientAsync();
+        Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync("/api/admin/refresh-seed", null)).StatusCode);
 
-        Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync("/api/admin/refresh-seed", null)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync("/api/admin/refresh-seed", null)).StatusCode);
+        // po resecie konto admina jest nowe - potrzebny świeży token
+        using var adminAfterRefresh = await _api.AdminClientAsync();
+        Assert.Equal(HttpStatusCode.OK, (await adminAfterRefresh.PostAsync("/api/admin/refresh-seed", null)).StatusCode);
 
         using var anonymous = _api.CreateClient();
         Assert.Equal(20, (await anonymous.GetAsync("/api/jobs")).ReadPagination().TotalItems);

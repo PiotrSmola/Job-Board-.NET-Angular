@@ -93,19 +93,16 @@ public class JwtStartupConfigurationTests
         {
             using var client = factory.CreateClient();
 
+            // tokeny wystawiane przez login są podpisane kluczem deweloperskim
+            var issued = await LoginAdminAsync(client);
+            Assert.Equal(HttpStatusCode.OK, await StatusAsync(client, "/api/admin/settings", issued));
+
             // token podpisany kluczem deweloperskim jest akceptowany, podpisany kluczem testowym - nie
-            var devToken = JwtTestHelper.Create(JwtSettings.DevelopmentSecret);
-            var otherToken = JwtTestHelper.Create(JobBoardFactory.TestJwtSecret);
+            var devToken = AdminTokenSignedWith(JwtSettings.DevelopmentSecret, issued);
+            var otherToken = AdminTokenSignedWith(JobBoardFactory.TestJwtSecret, issued);
 
             Assert.Equal(HttpStatusCode.OK, await StatusAsync(client, "/api/admin/settings", devToken));
             Assert.Equal(HttpStatusCode.Unauthorized, await StatusAsync(client, "/api/admin/settings", otherToken));
-
-            // a tokeny wystawiane przez login są podpisane tym samym kluczem
-            var login = await client.PostJsonAsync("/api/auth/login",
-                new Backend.DTOs.LoginDto { Email = TestUsers.AdminEmail, Password = TestUsers.AdminPassword });
-            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
-            var issued = (await login.ReadJsonAsync<Backend.DTOs.UserDto>()).Token;
-            Assert.Equal(HttpStatusCode.OK, await StatusAsync(client, "/api/admin/settings", issued));
         }
         finally
         {
@@ -120,8 +117,10 @@ public class JwtStartupConfigurationTests
         try
         {
             using var client = factory.CreateClient();
-            var devToken = JwtTestHelper.Create(JwtSettings.DevelopmentSecret);
+            var issued = await LoginAdminAsync(client);
+            var devToken = AdminTokenSignedWith(JwtSettings.DevelopmentSecret, issued);
 
+            Assert.Equal(HttpStatusCode.OK, await StatusAsync(client, "/api/admin/settings", issued));
             Assert.Equal(HttpStatusCode.Unauthorized, await StatusAsync(client, "/api/admin/settings", devToken));
         }
         finally
@@ -129,6 +128,20 @@ public class JwtStartupConfigurationTests
             await factory.DisposeAndDropDatabaseAsync();
         }
     }
+
+    private static async Task<string> LoginAdminAsync(HttpClient client)
+    {
+        var login = await client.PostJsonAsync("/api/auth/login",
+            new Backend.DTOs.LoginDto { Email = TestUsers.AdminEmail, Password = TestUsers.AdminPassword });
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        return (await login.ReadJsonAsync<Backend.DTOs.UserDto>()).Token;
+    }
+
+    // Token admina (to samo id i security stamp co w wystawionym tokenie) podpisany wskazanym kluczem
+    private static string AdminTokenSignedWith(string secret, string issuedAdminToken) =>
+        JwtTestHelper.Create(secret,
+            userId: JwtTestHelper.GetUserId(issuedAdminToken),
+            securityStamp: JwtTestHelper.GetSecurityStamp(issuedAdminToken));
 
     private static async Task<HttpStatusCode> StatusAsync(HttpClient client, string url, string token)
     {

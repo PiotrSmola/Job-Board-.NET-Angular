@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Backend.Services;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Backend.Tests.Infrastructure;
@@ -20,16 +21,26 @@ public static class JwtTestHelper
             .First(c => c.Type == ClaimTypes.NameIdentifier || c.Type == "nameid")
             .Value;
 
-    // Buduje token podpisany dowolnym kluczem - do testów odrzucania nieprawidłowych tokenów
+    public static string? GetSecurityStamp(string token) =>
+        Read(token).Claims.FirstOrDefault(c => c.Type == TokenService.SecurityStampClaimType)?.Value;
+
+    // Buduje token podpisany dowolnym kluczem - do testów odrzucania nieprawidłowych tokenów.
+    // Token jest akceptowany tylko dla istniejącego użytkownika z aktualnym security stampem.
     public static string Create(
         string secret,
         string issuer = "JobBoardAPI",
         string audience = "JobBoardClient",
         DateTime? expires = null,
         string userId = "some-user-id",
-        string? role = "Admin")
+        string? role = "Admin",
+        string? securityStamp = null)
     {
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, userId) };
+        if (securityStamp != null)
+        {
+            claims.Add(new Claim(TokenService.SecurityStampClaimType, securityStamp));
+        }
+
         if (role != null)
         {
             claims.Add(new Claim(ClaimTypes.Role, role));
