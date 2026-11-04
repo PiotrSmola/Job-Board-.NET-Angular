@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using MySqlConnector;
 
 namespace Backend.Controllers;
 
@@ -101,7 +102,16 @@ public class JobApplicationsController : ControllerBase
             AppliedAt = DateTime.UtcNow
         };
 
-        var createdApplication = await _applicationRepository.AddApplicationAsync(application);
+        JobApplication createdApplication;
+        try
+        {
+            createdApplication = await _applicationRepository.AddApplicationAsync(application);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is MySqlException { ErrorCode: MySqlErrorCode.DuplicateKeyEntry })
+        {
+            // równoległe żądanie zdążyło zapisać aplikację - unikalny indeks (JobOfferId, UserId)
+            return BadRequest(new { message = "You have already applied to this job" });
+        }
 
         // ponowne pobranie z ofertą i użytkownikiem, żeby zwrócić pełne DTO
         var fullApplication = await _applicationRepository.GetApplicationByIdAsync(createdApplication.Id);

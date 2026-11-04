@@ -42,6 +42,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.Note).HasMaxLength(1000);
             entity.Property(e => e.AppliedAt);
 
+            // jedna aplikacja użytkownika na ofertę (chroni też przed równoległymi żądaniami)
+            entity.HasIndex(e => new { e.JobOfferId, e.UserId }).IsUnique();
+
             entity.HasOne(e => e.User)
                 .WithMany(e => e.JobApplications)
                 .HasForeignKey(e => e.UserId)

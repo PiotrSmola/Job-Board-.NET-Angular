@@ -17,7 +17,7 @@ namespace Backend.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.11")
+                .HasAnnotation("ProductVersion", "9.0.22")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
@@ -121,9 +121,10 @@ namespace Backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("JobOfferId");
-
                     b.HasIndex("UserId");
+
+                    b.HasIndex("JobOfferId", "UserId")
+                        .IsUnique();
 
                     b.ToTable("JobApplications");
                 });

@@ -85,6 +85,28 @@ public class JobApplicationsTests
     }
 
     [Fact]
+    public async Task Apply_ConcurrentRequestsToSameJob_CreateExactlyOneApplication()
+    {
+        var job = await _api.CreateJobAsync();
+        var user = await _api.RegisterUserAsync("concurrent");
+        using var client = _api.CreateClient(user);
+
+        // równoległe żądania mogą wszystkie przejść sprawdzenie HasUserApplied - decyduje unikalny indeks
+        var responses = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => client.PostJsonAsync(Url, Apply(job.Id))));
+
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created);
+        Assert.All(responses.Where(r => r.StatusCode != HttpStatusCode.Created), r => Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode));
+        foreach (var rejected in responses.Where(r => r.StatusCode == HttpStatusCode.BadRequest))
+        {
+            using var body = JsonDocument.Parse(await rejected.Content.ReadAsStringAsync());
+            Assert.Equal("You have already applied to this job", body.RootElement.GetProperty("message").GetString());
+        }
+
+        var mine = await (await client.GetAsync($"{Url}/my-applications")).ReadJsonAsync<JobApplicationDto[]>();
+        Assert.Single(mine);
+    }
+
+    [Fact]
     public async Task Apply_TwoDifferentUsers_ToSameJob_BothSucceed()
     {
         var job = await _api.CreateJobAsync();
