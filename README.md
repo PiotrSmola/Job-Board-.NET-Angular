@@ -40,6 +40,29 @@ Po 5 nieudanych próbach logowania konto jest blokowane na 5 minut (API zwraca `
 
 Tokeny JWT zawierają security stamp użytkownika i są sprawdzane przy każdym żądaniu: token konta, które zostało usunięte (np. przez reset danych demo, który odtwarza też konta z seeda) albo którego security stamp się zmienił (np. po zmianie hasła), jest odrzucany z `401` - trzeba zalogować się ponownie.
 
+## Cykl życia ofert
+
+Oferta ma status zapisany w bazie oraz opcjonalną datę ważności (`expiresAt`, UTC):
+
+| Stan | Znaczenie | Lista publiczna | Aplikowanie |
+| --- | --- | --- | --- |
+| Szkic (`Draft`) | oferta w przygotowaniu | nie (szczegóły tylko dla admina) | nie |
+| Aktywna (`Active`) | opublikowana, bez daty lub z datą w przyszłości | tak | tak |
+| Wygasła | `Active` z datą ważności w przeszłości - stan wyliczany, nie zapisywany | nie (szczegóły z banerem) | nie |
+| Zamknięta (`Closed`) | rekrutacja zakończona | nie (szczegóły z banerem) | nie |
+
+Admin zarządza ofertami w panelu (`GET /api/jobs/manage` z filtrem `state=draft|active|expired|closed`): szybkie akcje Opublikuj / Zamknij / Wznów (`PATCH /api/jobs/{id}/status`) oraz status i datę „Aktualna do” w formularzu oferty (oferta jest ważna do końca wybranego dnia). Aktywnej oferty nie można zapisać ani opublikować z datą ważności w przeszłości - trzeba ją przedłużyć albo zamknąć. Istniejące oferty po migracji pozostają aktywne i bezterminowe.
+
+## Proces rekrutacji
+
+Każda aplikacja ma status, a każda jego zmiana (także złożenie aplikacji) trafia do historii z datą, autorem i opcjonalnym komentarzem:
+
+`Złożona` → `W analizie` → `Rozmowa` → `Oferta` → `Zatrudniony`, w każdej chwili `Odrzucona`; kandydat może też `Wycofać` aplikację.
+
+- **Rekruter (admin)** zmienia status w panelu (`PUT /api/jobapplications/{id}/status`) i może dodać komentarz - **komentarz jest widoczny dla kandydata**. Ten sam status z komentarzem zapisuje notatkę bez zmiany statusu. Statusu „Wycofana” nie ustawia rekruter, a aplikacji wycofanej nie można już zmieniać. Admin może też trwale usunąć aplikację.
+- **Kandydat** widzi status i historię w „Moich aplikacjach” (bez danych autorów zmian) i może wycofać aplikację na etapie Złożona / W analizie / Rozmowa / Oferta (`POST /api/jobapplications/{id}/withdraw`). Po wycofaniu może aplikować ponownie, dopóki oferta jest aktywna - reaktywowana zostaje ta sama aplikacja (z nową notatką i datą).
+- Aplikować można tylko na oferty aktywne i niewygasłe.
+
 ## Uruchomienie lokalne (bez Dockera)
 
 Backend: `dotnet run` w katalogu `Backend` (wymaga MySQL na `localhost:3306`). W środowisku Development, gdy nie podano `JwtSettings:Secret`, używany jest wbudowany klucz deweloperski; w innych środowiskach sekret jest wymagany (np. zmienna `JwtSettings__Secret`). Frontend: `npm start` w katalogu `frontend` - `ng serve` przekazuje `/api` do `http://localhost:5285` (`frontend/proxy.conf.json`).
