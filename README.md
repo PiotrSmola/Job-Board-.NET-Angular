@@ -16,6 +16,8 @@ Preferowane porty można zmienić parametrami:
 .\docker-up.ps1 -FrontendPort 8080 -BackendPort 8081 -DbPort 3310
 ```
 
+> **Uwaga:** stack z `docker-compose.yml` jest przeznaczony wyłącznie do lokalnego uruchomienia (demo). Konta demo (tabela niżej) i root MySQL mają znane hasła, a admin może z panelu wyczyścić bazę, dlatego wszystkie porty są publikowane tylko na `127.0.0.1` - aplikacja nie jest dostępna z innych komputerów w sieci. Nie wystawiaj go publicznie bez zmiany haseł i wyłączenia `ALLOW_SEED_REFRESH`.
+
 Zatrzymanie: `docker compose down` (dane bazy zostają w wolumenie `db-data`; `docker compose down -v` usuwa je).
 
 Bez skryptu można też użyć bezpośrednio `docker compose up -d --build` - porty brane są wtedy z `.env` (wzór w `.env.example`) lub domyślne. W `.env` musi wtedy być ustawiony `JWT_SECRET`.
@@ -27,7 +29,7 @@ Zmienne w `.env`:
 
 ## Konta testowe
 
-Tworzone automatycznie przy pierwszym starcie (i po resecie danych demo):
+Tworzone automatycznie przy pierwszym starcie (i po resecie danych demo). Hasła są publicznie znane - konta służą tylko do lokalnego demo:
 
 | Rola | E-mail | Hasło |
 | --- | --- | --- |
