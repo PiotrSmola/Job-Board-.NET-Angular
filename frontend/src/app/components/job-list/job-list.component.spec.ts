@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HttpErrorResponse } from '@angular/common/http';
 import { provideRouter, Router } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
 import { JobListComponent } from './job-list.component';
@@ -26,6 +27,7 @@ describe('JobListComponent', () => {
   let component: JobListComponent;
   let getJobs: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
+  let consoleLog: ReturnType<typeof vi.spyOn>;
 
   // JobParams jest mutowany przez komponent, więc zapamiętujemy kopię w chwili wywołania
   let calls: JobParams[];
@@ -49,7 +51,7 @@ describe('JobListComponent', () => {
     getJobs = vi.fn();
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
@@ -74,11 +76,66 @@ describe('JobListComponent', () => {
     expect(component.loading).toBe(false);
   });
 
+  it('does not write debug output to the console', () => {
+    create();
+
+    expect(consoleLog).not.toHaveBeenCalled();
+  });
+
   it('stops loading and keeps working after a load error', () => {
     create(throwError(() => new Error('fail')));
 
     expect(component.loading).toBe(false);
     expect(component.jobs).toEqual([]);
+  });
+
+  describe('load error state', () => {
+    function root(): HTMLElement {
+      fixture.detectChanges();
+      return fixture.nativeElement as HTMLElement;
+    }
+
+    it('shows an error message with a retry button instead of the empty list', () => {
+      create(throwError(() => new HttpErrorResponse({ status: 500, url: '/api/jobs' })));
+
+      expect(component.loadError).toBe('Nie udało się wczytać ofert');
+      const el = root();
+      expect(el.querySelector('.load-error h3')?.textContent).toContain('Nie udało się wczytać ofert');
+      expect(el.querySelector('.load-error button')?.textContent).toContain('Spróbuj ponownie');
+      expect(el.querySelector('.no-results')).toBeNull();
+      expect(el.querySelector('.results-info')).toBeNull();
+      expect(el.querySelector('mat-paginator')).toBeNull();
+    });
+
+    it('shows a connection message when the server is unreachable', () => {
+      create(throwError(() => new HttpErrorResponse({ status: 0, url: '/api/jobs' })));
+
+      expect(root().querySelector('.load-error h3')?.textContent).toContain('Brak połączenia z serwerem');
+    });
+
+    it('retry reloads the same params and clears the error on success', () => {
+      create(throwError(() => new HttpErrorResponse({ status: 500, url: '/api/jobs' })));
+      const before = calls.length;
+      getJobs.mockImplementation((params: JobParams) => {
+        calls.push(Object.assign(new JobParams(), params));
+        return of(page(10, 35));
+      });
+
+      root().querySelector<HTMLButtonElement>('.load-error button')!.click();
+
+      expect(calls.length).toBe(before + 1);
+      expect(component.loadError).toBeNull();
+      const el = root();
+      expect(el.querySelector('.load-error')).toBeNull();
+      expect(el.querySelectorAll('.job-card').length).toBe(10);
+    });
+
+    it('does not show the error block when loading succeeds', () => {
+      create();
+
+      expect(component.loadError).toBeNull();
+      expect(root().querySelector('.load-error')).toBeNull();
+    });
   });
 
   it('onPageChange sends a 1-based page number and page size', () => {

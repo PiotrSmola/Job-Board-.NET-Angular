@@ -15,6 +15,7 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { JobService } from '../../services/job.service';
 import { JobOffer, WorkType } from '../../models/job-offer.model';
 import { JobParams } from '../../models/job-params.model';
+import { getApiErrorMessage } from '../../utils/http-errors';
 import { Subject, debounceTime, filter, takeUntil } from 'rxjs';
 
 @Component({
@@ -45,6 +46,8 @@ export class JobListComponent implements OnInit, OnDestroy {
   jobs: JobOffer[] = [];
   loading = false;
   totalItems = 0;
+  /** Komunikat błędu ostatniego ładowania (null = brak błędu). */
+  loadError: string | null = null;
 
   jobParams = new JobParams();
   private searchSubject = new Subject<string>();
@@ -100,19 +103,17 @@ export class JobListComponent implements OnInit, OnDestroy {
 
   loadJobs(): void {
     this.loading = true;
+    this.loadError = null;
     this.jobService.getJobs(this.jobParams).subscribe({
       next: (result) => {
-        console.log('✅ Jobs loaded - Full result:', result);
-        console.log('📊 Pagination object:', result.pagination);
-        console.log('📈 Total items:', result.pagination.TotalItems);
-        console.log('📦 Jobs array length:', result.result.length);
         this.jobs = result.result;
         this.totalItems = result.pagination.TotalItems;
         this.loading = false;
         this.cdr.detectChanges();
       },
       error: (error) => {
-        console.error('❌ Error loading jobs:', error);
+        console.error('Error loading jobs:', error);
+        this.loadError = getApiErrorMessage(error, 'Nie udało się wczytać ofert');
         this.loading = false;
         this.cdr.detectChanges();
       }
