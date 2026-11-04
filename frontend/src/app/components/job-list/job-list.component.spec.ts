@@ -156,10 +156,7 @@ describe('JobListComponent', () => {
       expect(lastParams().searchTerm).toBe('');
     });
 
-    // Bug: job-list.component.ts clearFilters() resets jobParams without telling searchSubject, so
-    // distinctUntilChanged still remembers the last term and swallows an identical search typed afterwards.
-    // Scenario: search "angular" -> "Wyczyść filtry" -> type "angular" again -> no request is sent.
-    it.skip('applies the same search term again after clearFilters', () => {
+    it('applies the same search term again after clearFilters', () => {
       vi.useFakeTimers();
       create();
       component.onSearchTermChange('angular');
@@ -172,6 +169,51 @@ describe('JobListComponent', () => {
 
       expect(calls.length).toBe(before + 1);
       expect(lastParams().searchTerm).toBe('angular');
+    });
+
+    it('clearFilters drops a search term still waiting in the debounce', () => {
+      vi.useFakeTimers();
+      create();
+      component.onSearchTermChange('angular');
+      vi.advanceTimersByTime(200);
+
+      component.clearFilters();
+      const afterClear = calls.length;
+      vi.advanceTimersByTime(1000);
+
+      expect(calls.length).toBe(afterClear);
+      expect(component.jobParams.searchTerm).toBe('');
+    });
+
+    it('clearSearch reloads immediately and ignores a term still waiting in the debounce', () => {
+      vi.useFakeTimers();
+      create();
+      component.onSearchTermChange('angular');
+      vi.advanceTimersByTime(500);
+      component.onSearchTermChange('angularx');
+      vi.advanceTimersByTime(200);
+      const before = calls.length;
+
+      component.clearSearch();
+      expect(calls.length).toBe(before + 1);
+      expect(lastParams().searchTerm).toBe('');
+
+      vi.advanceTimersByTime(1000);
+      expect(calls.length).toBe(before + 1);
+    });
+
+    it('does not reload when the debounced term equals the applied one', () => {
+      vi.useFakeTimers();
+      create();
+      component.onSearchTermChange('angular');
+      vi.advanceTimersByTime(500);
+      const before = calls.length;
+
+      component.onSearchTermChange('angularx');
+      component.onSearchTermChange('angular');
+      vi.advanceTimersByTime(500);
+
+      expect(calls.length).toBe(before);
     });
   });
 
