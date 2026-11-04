@@ -36,7 +36,9 @@ Tworzone automatycznie przy pierwszym starcie (i po resecie danych demo). Hasła
 | Admin | `admin@jobboard.com` | `Admin123!` |
 | Użytkownik | `jan.kowalski@example.com` | `User123!` |
 
-Po 5 nieudanych próbach logowania konto jest blokowane na 5 minut (API zwraca `423 Locked`).
+Po 5 nieudanych próbach logowania konto jest blokowane na 5 minut (API zwraca `423 Locked`). To świadomy kompromis na rzecz czytelnego komunikatu dla użytkownika: odpowiedź `423` ujawnia, że konto o danym adresie istnieje (i jest zablokowane), podczas gdy błędne dane logowania zwracają zawsze `401`.
+
+Tokeny JWT zawierają security stamp użytkownika i są sprawdzane przy każdym żądaniu: token konta, które zostało usunięte (np. przez reset danych demo, który odtwarza też konta z seeda) albo którego security stamp się zmienił (np. po zmianie hasła), jest odrzucany z `401` - trzeba zalogować się ponownie.
 
 ## Uruchomienie lokalne (bez Dockera)
 
