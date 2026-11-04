@@ -12,5 +12,4 @@ public interface IJobApplicationRepository
     Task<bool> HasUserAppliedAsync(int jobId, string userId);
     Task<JobApplication> AddApplicationAsync(JobApplication application);
     Task<bool> DeleteApplicationAsync(int id);
-    Task<bool> SaveAllAsync();
 }

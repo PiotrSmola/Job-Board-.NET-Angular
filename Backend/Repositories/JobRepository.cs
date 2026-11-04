@@ -122,7 +122,7 @@ public class JobRepository : IJobRepository
         return await _context.JobOffers.AnyAsync(j => j.Id == id);
     }
 
-    public async Task<bool> SaveAllAsync()
+    private async Task<bool> SaveAllAsync()
     {
         return await _context.SaveChangesAsync() > 0;
     }

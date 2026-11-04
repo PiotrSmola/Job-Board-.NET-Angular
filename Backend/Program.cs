@@ -91,12 +91,8 @@ builder.Services.AddScoped<IJobRepository, JobRepository>();
 builder.Services.AddScoped<IJobApplicationRepository, JobApplicationRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 
-// Kontrolery
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
-    });
+// Kontrolery - odpowiedzi to wyłącznie DTO (bez cykli nawigacji encji EF)
+builder.Services.AddControllers();
 
 // Konfiguracja Swagger z obsługą JWT
 builder.Services.AddEndpointsApiExplorer();

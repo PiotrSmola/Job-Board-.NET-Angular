@@ -102,7 +102,7 @@ public class JobApplicationRepository : IJobApplicationRepository
         return await SaveAllAsync();
     }
 
-    public async Task<bool> SaveAllAsync()
+    private async Task<bool> SaveAllAsync()
     {
         return await _context.SaveChangesAsync() > 0;
     }
