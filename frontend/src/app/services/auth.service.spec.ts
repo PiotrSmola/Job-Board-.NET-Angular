@@ -378,6 +378,22 @@ describe('AuthService', () => {
       expect(navigate).toHaveBeenCalledWith(['/login'], { queryParams: { returnUrl: '/protected/7?x=1' } });
     });
 
+    it('clears the session and shows a notice without redirecting on a public route', async () => {
+      const router = TestBed.inject(Router);
+      await router.navigateByUrl('/public?x=1');
+      const user = makeUser(makeJwtExpiringIn(3600));
+      storeSession(user);
+      const { service, navigate } = setup();
+
+      service.handleUnauthorized(user.token);
+
+      expect(service.currentUser()).toBeNull();
+      expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+      expect(snackBarOpen).toHaveBeenCalledTimes(1);
+      expect(snackBarOpen.mock.calls[0][0]).toBe(SESSION_EXPIRED_MESSAGE);
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
     it.each(['/login', '/login?returnUrl=%2Fjobs', '/register'])(
       'only clears the session without notice or redirect on the auth page %s',
       async url => {

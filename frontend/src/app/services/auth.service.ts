@@ -70,13 +70,12 @@ export class AuthService {
   handleUnauthorized(requestToken: string | null): void {
     if (!requestToken || requestToken !== this.session()?.token) return;
 
-    this.clearSession();
+    if (this.isAuthPage(this.router.url)) {
+      this.clearSession();
+      return;
+    }
 
-    const currentUrl = this.router.url;
-    if (this.isAuthPage(currentUrl)) return;
-
-    this.notify('Sesja wygasła, zaloguj się ponownie');
-    this.redirectToLogin(currentUrl);
+    this.expireSession();
   }
 
   private redirectToLogin(returnUrl: string): void {
@@ -125,7 +124,7 @@ export class AuthService {
     this.expiryTimer = setTimeout(() => {
       this.expiryTimer = null;
       if (isJwtExpired(token)) {
-        this.onTokenExpired();
+        this.expireSession();
       } else {
         // Timer ograniczony do MAX_TIMER_DELAY – planujemy kolejne sprawdzenie
         this.scheduleExpiry(token);
@@ -140,7 +139,8 @@ export class AuthService {
     }
   }
 
-  private onTokenExpired(): void {
+  /** Wspólna obsługa wygaśnięcia sesji – z timera i z 401 z API. */
+  private expireSession(): void {
     this.clearSession();
     this.notify('Sesja wygasła, zaloguj się ponownie');
 

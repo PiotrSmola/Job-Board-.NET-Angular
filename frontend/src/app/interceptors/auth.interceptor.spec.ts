@@ -43,6 +43,7 @@ describe('authInterceptor', () => {
       providers: [
         provideRouter([
           { path: 'jobs/:id', component: DummyComponent },
+          { path: 'my-applications', component: DummyComponent, canActivate: [() => true] },
           { path: 'login', component: DummyComponent }
         ]),
         provideHttpClient(withInterceptors([authInterceptor])),
@@ -109,10 +110,10 @@ describe('authInterceptor', () => {
   });
 
   describe('401 handling', () => {
-    it('logs out and redirects to /login with the current URL as returnUrl', async () => {
+    it('logs out and redirects to /login with the current URL as returnUrl on a protected route', async () => {
       storeSession(makeJwtExpiringIn(3600));
       init();
-      await router.navigateByUrl('/jobs/5?x=1');
+      await router.navigateByUrl('/my-applications?x=1');
       const auth = TestBed.inject(AuthService);
       expect(auth.isAuthenticated()).toBe(true);
 
@@ -126,7 +127,22 @@ describe('authInterceptor', () => {
       expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
       expect(snackBarOpen).toHaveBeenCalledTimes(1);
       expect(snackBarOpen.mock.calls[0][0]).toBe('Sesja wygasła, zaloguj się ponownie');
-      expect(navigate).toHaveBeenCalledWith(['/login'], { queryParams: { returnUrl: '/jobs/5?x=1' } });
+      expect(navigate).toHaveBeenCalledWith(['/login'], { queryParams: { returnUrl: '/my-applications?x=1' } });
+    });
+
+    it('logs out with a notice but stays on a public route', async () => {
+      storeSession(makeJwtExpiringIn(3600));
+      init();
+      await router.navigateByUrl('/jobs/5');
+      const auth = TestBed.inject(AuthService);
+
+      http.get('/api/jobapplications/check/5').subscribe({ error: () => undefined });
+      controller.expectOne('/api/jobapplications/check/5').flush({}, { status: 401, statusText: 'Unauthorized' });
+
+      expect(auth.currentUser()).toBeNull();
+      expect(snackBarOpen).toHaveBeenCalledTimes(1);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Sesja wygasła, zaloguj się ponownie');
+      expect(navigate).not.toHaveBeenCalled();
     });
 
     it('ignores a late 401 for a request sent with the previous session token', async () => {
