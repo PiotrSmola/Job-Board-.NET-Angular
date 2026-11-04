@@ -129,6 +129,54 @@ describe('authInterceptor', () => {
       expect(navigate).toHaveBeenCalledWith(['/login'], { queryParams: { returnUrl: '/jobs/5?x=1' } });
     });
 
+    it('ignores a late 401 for a request sent with the previous session token', async () => {
+      const oldToken = makeJwtExpiringIn(3600, { sub: 'old' });
+      storeSession(oldToken);
+      init();
+      await router.navigateByUrl('/jobs/5');
+      const auth = TestBed.inject(AuthService);
+
+      let status: number | undefined;
+      http.get('/api/jobapplications/my-applications').subscribe({ error: e => (status = e.status) });
+      const req = controller.expectOne('/api/jobapplications/my-applications');
+      expect(req.request.headers.get('Authorization')).toBe(`Bearer ${oldToken}`);
+
+      // W międzyczasie użytkownik loguje się ponownie (nowy token)
+      const newToken = makeJwtExpiringIn(3600, { sub: 'new' });
+      auth.login({ email: 'jan@example.com', password: 'secret1' }).subscribe();
+      controller.expectOne('/api/auth/login')
+        .flush({ email: 'jan@example.com', firstName: 'Jan', lastName: 'Kowalski', token: newToken });
+
+      req.flush({ message: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+
+      expect(status).toBe(401);
+      expect(auth.getToken()).toBe(newToken);
+      expect(localStorage.getItem(TOKEN_KEY)).toBe(newToken);
+      expect(snackBarOpen).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('ignores a 401 for a request sent without a token even if the user logged in meanwhile', async () => {
+      init();
+      await router.navigateByUrl('/jobs/5');
+      const auth = TestBed.inject(AuthService);
+
+      http.get('/api/jobapplications/check/5').subscribe({ error: () => undefined });
+      const req = controller.expectOne('/api/jobapplications/check/5');
+      expect(req.request.headers.has('Authorization')).toBe(false);
+
+      const newToken = makeJwtExpiringIn(3600);
+      auth.login({ email: 'jan@example.com', password: 'secret1' }).subscribe();
+      controller.expectOne('/api/auth/login')
+        .flush({ email: 'jan@example.com', firstName: 'Jan', lastName: 'Kowalski', token: newToken });
+
+      req.flush({}, { status: 401, statusText: 'Unauthorized' });
+
+      expect(auth.getToken()).toBe(newToken);
+      expect(snackBarOpen).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
     it.each(['/api/auth/login', '/api/auth/register', '/api/auth/login?x=1'])(
       'does not log out on 401 from %s',
       url => {

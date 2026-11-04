@@ -63,8 +63,13 @@ export class AuthService {
     return token && !isJwtExpired(token) ? token : null;
   }
 
-  /** Reakcja na 401 z API: wylogowanie i przekierowanie na logowanie z powrotem na bieżący URL. */
-  handleUnauthorized(): void {
+  /**
+   * Reakcja na 401 z API dla żądania wysłanego z tokenem `requestToken`.
+   * Spóźnione 401 dla starego tokena (lub żądania bez tokena) nie może wylogować nowej sesji.
+   */
+  handleUnauthorized(requestToken: string | null): void {
+    if (!requestToken || requestToken !== this.session()?.token) return;
+
     this.clearSession();
 
     const currentUrl = this.router.url;

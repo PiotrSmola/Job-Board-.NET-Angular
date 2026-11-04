@@ -37,7 +37,8 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     catchError((error: unknown) => {
       if (error instanceof HttpErrorResponse && !isAuthEndpoint) {
         if (error.status === 401) {
-          authService.handleUnauthorized();
+          // Przekazujemy token, z którym poszło żądanie – serwis zignoruje 401 dla starej sesji
+          authService.handleUnauthorized(token);
         } else if (error.status === 403 && !req.context.get(SKIP_FORBIDDEN_NOTICE)) {
           snackBar.open('Brak uprawnień', 'OK', { duration: 5000 });
         }

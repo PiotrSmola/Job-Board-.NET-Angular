@@ -366,10 +366,11 @@ describe('AuthService', () => {
     it('clears the session, shows a notice and redirects to login with the current URL', async () => {
       const router = TestBed.inject(Router);
       await router.navigateByUrl('/protected/7?x=1');
-      storeSession(makeUser(makeJwtExpiringIn(3600)));
+      const user = makeUser(makeJwtExpiringIn(3600));
+      storeSession(user);
       const { service, navigate } = setup();
 
-      service.handleUnauthorized();
+      service.handleUnauthorized(user.token);
 
       expect(service.currentUser()).toBeNull();
       expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
@@ -382,15 +383,55 @@ describe('AuthService', () => {
       async url => {
         const router = TestBed.inject(Router);
         await router.navigateByUrl(url);
-        storeSession(makeUser(makeJwtExpiringIn(3600)));
+        const user = makeUser(makeJwtExpiringIn(3600));
+        storeSession(user);
         const { service, navigate } = setup();
 
-        service.handleUnauthorized();
+        service.handleUnauthorized(user.token);
 
         expect(service.currentUser()).toBeNull();
         expect(snackBarOpen).not.toHaveBeenCalled();
         expect(navigate).not.toHaveBeenCalled();
       }
     );
+
+    it('ignores a 401 for a request sent without a token', async () => {
+      const router = TestBed.inject(Router);
+      await router.navigateByUrl('/protected/7');
+      const user = makeUser(makeJwtExpiringIn(3600));
+      storeSession(user);
+      const { service, navigate } = setup();
+
+      service.handleUnauthorized(null);
+
+      expect(service.currentUser()).toEqual(user);
+      expect(localStorage.getItem(TOKEN_KEY)).toBe(user.token);
+      expect(snackBarOpen).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('ignores a late 401 for a token from a previous session', async () => {
+      const router = TestBed.inject(Router);
+      await router.navigateByUrl('/protected/7');
+      const oldToken = makeJwtExpiringIn(3600, { sub: 'old' });
+      const user = makeUser(makeJwtExpiringIn(3600, { sub: 'new' }));
+      storeSession(user);
+      const { service, navigate } = setup();
+
+      service.handleUnauthorized(oldToken);
+
+      expect(service.currentUser()).toEqual(user);
+      expect(snackBarOpen).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when there is no session anymore', () => {
+      const { service, navigate } = setup();
+
+      service.handleUnauthorized(makeJwtExpiringIn(3600));
+
+      expect(snackBarOpen).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
   });
 });
