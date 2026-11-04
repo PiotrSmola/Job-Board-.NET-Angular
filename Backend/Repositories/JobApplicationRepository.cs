@@ -15,13 +15,30 @@ public class JobApplicationRepository : IJobApplicationRepository
         _context = context;
     }
 
-    public async Task<JobApplication?> GetApplicationByIdAsync(int id)
+    public async Task<JobApplication?> GetApplicationByIdAsync(int id, bool includeHistory = false)
     {
-        return await _context.JobApplications
+        var query = _context.JobApplications
             .Include(a => a.JobOffer)
             .Include(a => a.User)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(a => a.Id == id);
+            .AsNoTracking();
+
+        if (includeHistory)
+        {
+            query = query.Include(a => a.StatusHistory).ThenInclude(h => h.ChangedByUser);
+        }
+
+        return await query.FirstOrDefaultAsync(a => a.Id == id);
+    }
+
+    public async Task<JobApplication?> GetApplicationForUpdateAsync(int id)
+    {
+        return await _context.JobApplications.FirstOrDefaultAsync(a => a.Id == id);
+    }
+
+    public async Task<JobApplication?> GetUserApplicationForJobAsync(int jobId, string userId)
+    {
+        return await _context.JobApplications
+            .FirstOrDefaultAsync(a => a.JobOfferId == jobId && a.UserId == userId);
     }
 
     public async Task<IEnumerable<JobApplication>> GetApplicationsByUserIdAsync(string userId)
@@ -58,6 +75,11 @@ public class JobApplicationRepository : IJobApplicationRepository
             query = query.Where(a => a.JobOfferId == applicationParams.JobOfferId.Value);
         }
 
+        if (applicationParams.Status.HasValue)
+        {
+            query = query.Where(a => a.Status == applicationParams.Status.Value);
+        }
+
         if (!string.IsNullOrWhiteSpace(applicationParams.SearchTerm))
         {
             var term = applicationParams.SearchTerm.Trim().ToLower();
@@ -80,17 +102,23 @@ public class JobApplicationRepository : IJobApplicationRepository
         return await PagedList<JobApplication>.CreateAsync(query, applicationParams.PageNumber, applicationParams.PageSize);
     }
 
-    public async Task<bool> HasUserAppliedAsync(int jobId, string userId)
-    {
-        return await _context.JobApplications
-            .AnyAsync(a => a.JobOfferId == jobId && a.UserId == userId);
-    }
-
     public async Task<JobApplication> AddApplicationAsync(JobApplication application)
     {
+        // aplikacja i jej pierwszy wpis historii w jednym SaveChanges
         _context.JobApplications.Add(application);
         await _context.SaveChangesAsync();
         return application;
+    }
+
+    public async Task UpdateApplicationAsync(JobApplication application)
+    {
+        if (_context.Entry(application).State == EntityState.Detached)
+        {
+            throw new InvalidOperationException("Application must be loaded with GetApplicationForUpdateAsync or GetUserApplicationForJobAsync");
+        }
+
+        // StatusChangedAt jest tokenem współbieżności - równoległa zmiana kończy się DbUpdateConcurrencyException
+        await _context.SaveChangesAsync();
     }
 
     public async Task<bool> DeleteApplicationAsync(int id)
