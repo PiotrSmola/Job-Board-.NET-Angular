@@ -3,17 +3,19 @@ using System.Security.Claims;
 using System.Text;
 using Backend.Interfaces;
 using Backend.Models;
+using Backend.Settings;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Backend.Services;
 
 public class TokenService : ITokenService
 {
-    private readonly IConfiguration _configuration;
+    private readonly JwtSettings _jwtSettings;
 
-    public TokenService(IConfiguration configuration)
+    public TokenService(IOptions<JwtSettings> jwtSettings)
     {
-        _configuration = configuration;
+        _jwtSettings = jwtSettings.Value;
     }
 
     public string CreateToken(ApplicationUser user, IList<string> roles)
@@ -30,21 +32,16 @@ public class TokenService : ITokenService
             claims.Add(new Claim(ClaimTypes.Role, role));
         }
 
-        var secret = _configuration["JwtSettings:Secret"]
-            ?? throw new InvalidOperationException("JWT Secret not configured");
-
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Secret));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var expirationMinutes = int.Parse(_configuration["JwtSettings:ExpirationInMinutes"] ?? "1440");
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
-            Expires = DateTime.UtcNow.AddMinutes(expirationMinutes),
+            Expires = DateTime.UtcNow.AddMinutes(_jwtSettings.ExpirationInMinutes),
             SigningCredentials = credentials,
-            Issuer = _configuration["JwtSettings:Issuer"],
-            Audience = _configuration["JwtSettings:Audience"]
+            Issuer = _jwtSettings.Issuer,
+            Audience = _jwtSettings.Audience
         };
 
         var tokenHandler = new JwtSecurityTokenHandler();

@@ -66,6 +66,7 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(object), StatusCodes.Status423Locked)]
     public async Task<ActionResult<UserDto>> Login(LoginDto loginDto)
     {
         var user = await _userManager.FindByEmailAsync(loginDto.Email);
@@ -75,7 +76,13 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Invalid email or password" });
         }
 
-        var result = await _signInManager.CheckPasswordSignInAsync(user, loginDto.Password, false);
+        var result = await _signInManager.CheckPasswordSignInAsync(user, loginDto.Password, lockoutOnFailure: true);
+
+        if (result.IsLockedOut)
+        {
+            return StatusCode(StatusCodes.Status423Locked,
+                new { message = "Account is temporarily locked due to too many failed login attempts" });
+        }
 
         if (!result.Succeeded)
         {

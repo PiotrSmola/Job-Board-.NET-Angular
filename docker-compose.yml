@@ -26,6 +26,8 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__DefaultConnection: "Server=db;Port=3306;Database=JobBoardDb;User=root;Password=${DB_PASSWORD:-jobboard};AllowPublicKeyRetrieval=true;"
+      # sekret do podpisywania JWT - generowany przez docker-up.ps1 i zapisywany w .env
+      JwtSettings__Secret: "${JWT_SECRET:?JWT_SECRET is not set - run docker-up.ps1 or set it in .env}"
       # lokalny stack demo: przycisk w panelu admina resetuje dane demo (usuwa wszystkich użytkowników, oferty i aplikacje)
       Admin__AllowSeedRefresh: ${ALLOW_SEED_REFRESH:-true}
     ports:
