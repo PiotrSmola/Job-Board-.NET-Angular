@@ -60,12 +60,19 @@ public class JobRepository : IJobRepository
             );
         }
 
+        // Id jako drugi klucz sortowania zapewnia stabilną kolejność między stronami
         query = jobParams.OrderBy switch
         {
-            "oldest" => query.OrderBy(j => j.CreatedAt),
-            "salaryHigh" => query.OrderByDescending(j => j.SalaryMax ?? 0),
-            "salaryLow" => query.OrderBy(j => j.SalaryMin ?? decimal.MaxValue),
-            _ => query.OrderByDescending(j => j.CreatedAt)
+            "oldest" => query.OrderBy(j => j.CreatedAt).ThenBy(j => j.Id),
+            "salaryHigh" => query.OrderByDescending(j => j.SalaryMax ?? 0).ThenByDescending(j => j.Id),
+            "salaryLow" => query.OrderBy(j => j.SalaryMin ?? decimal.MaxValue).ThenBy(j => j.Id),
+            "titleAsc" => query.OrderBy(j => j.Title).ThenBy(j => j.Id),
+            "titleDesc" => query.OrderByDescending(j => j.Title).ThenByDescending(j => j.Id),
+            "companyAsc" => query.OrderBy(j => j.Company).ThenBy(j => j.Id),
+            "companyDesc" => query.OrderByDescending(j => j.Company).ThenByDescending(j => j.Id),
+            "locationAsc" => query.OrderBy(j => j.Location).ThenBy(j => j.Id),
+            "locationDesc" => query.OrderByDescending(j => j.Location).ThenByDescending(j => j.Id),
+            _ => query.OrderByDescending(j => j.CreatedAt).ThenByDescending(j => j.Id)
         };
 
         return await PagedList<JobOffer>.CreateAsync(query, jobParams.PageNumber, jobParams.PageSize);

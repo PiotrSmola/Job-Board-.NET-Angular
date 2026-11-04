@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.Text.Json;
 using Backend.DTOs;
 using Backend.Helpers;
 using Backend.Interfaces;
@@ -26,15 +25,7 @@ public class JobsController : ControllerBase
     {
         var jobs = await _jobRepository.GetJobsAsync(jobParams);
 
-        // Add pagination header
-        var paginationHeader = new PaginationHeader(
-            jobs.CurrentPage,
-            jobs.PageSize,
-            jobs.TotalCount,
-            jobs.TotalPages
-        );
-
-        Response.Headers.Append("Pagination", JsonSerializer.Serialize(paginationHeader));
+        Response.AddPaginationHeader(jobs);
 
         var jobsDto = jobs.Select(j => new JobOfferDto
         {
