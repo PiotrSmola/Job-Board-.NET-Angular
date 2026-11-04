@@ -22,6 +22,10 @@
   grid-template-columns: 2fr 1fr;
   gap: 20px;
   margin-bottom: 16px;
+
+  &.three-columns {
+    grid-template-columns: 2fr 1fr 1fr;
+  }
 }
 
 .filter-actions {

@@ -94,6 +94,13 @@
     }
   }
 
+  .status-cell .expires {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+  }
+
   .actions-cell {
     display: flex;
     gap: 8px;

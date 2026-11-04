@@ -15,7 +15,7 @@ describe('AdminPanelComponent', () => {
   let component: AdminPanelComponent;
   let getSettings: ReturnType<typeof vi.fn>;
   let refreshSeed: ReturnType<typeof vi.fn>;
-  let getJobs: ReturnType<typeof vi.fn>;
+  let getManagedJobs: ReturnType<typeof vi.fn>;
   let getAllApplications: ReturnType<typeof vi.fn>;
   let logout: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
@@ -47,7 +47,7 @@ describe('AdminPanelComponent', () => {
   beforeEach(async () => {
     getSettings = vi.fn();
     refreshSeed = vi.fn().mockReturnValue(of({ message: 'ok', timestamp: 'now' }));
-    getJobs = vi.fn().mockReturnValue(of(EMPTY_PAGE));
+    getManagedJobs = vi.fn().mockReturnValue(of(EMPTY_PAGE));
     getAllApplications = vi.fn().mockReturnValue(of(EMPTY_PAGE));
     logout = vi.fn();
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
@@ -59,7 +59,7 @@ describe('AdminPanelComponent', () => {
       providers: [
         { provide: AdminService, useValue: { getSettings, refreshSeed } },
         { provide: AuthService, useValue: { logout } },
-        { provide: JobService, useValue: { getJobs, deleteJob: vi.fn() } },
+        { provide: JobService, useValue: { getManagedJobs, deleteJob: vi.fn() } },
         { provide: JobApplicationService, useValue: { getAllApplications, deleteApplication: vi.fn() } },
         { provide: MatDialog, useValue: { open: vi.fn() } }
       ]
@@ -153,23 +153,23 @@ describe('AdminPanelComponent', () => {
   describe('tab switching', () => {
     it('does not reload the jobs tab when entering the applications tab for the first time', async () => {
       await create();
-      const jobCalls = getJobs.mock.calls.length;
+      const jobCalls = getManagedJobs.mock.calls.length;
 
       await openTab(1);
 
       expect(component.selectedTabIndex()).toBe(1);
-      expect(getJobs.mock.calls.length).toBe(jobCalls);
+      expect(getManagedJobs.mock.calls.length).toBe(jobCalls);
     });
 
     it('reloads the jobs tab when returning to it', async () => {
       await create();
       await openTab(1);
-      const jobCalls = getJobs.mock.calls.length;
+      const jobCalls = getManagedJobs.mock.calls.length;
 
       await openTab(0);
 
       expect(component.selectedTabIndex()).toBe(0);
-      expect(getJobs.mock.calls.length).toBe(jobCalls + 1);
+      expect(getManagedJobs.mock.calls.length).toBe(jobCalls + 1);
     });
   });
 });

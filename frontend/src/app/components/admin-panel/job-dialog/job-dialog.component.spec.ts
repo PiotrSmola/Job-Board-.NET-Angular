@@ -3,15 +3,16 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { of, throwError } from 'rxjs';
-import { JobDialogComponent } from './job-dialog.component';
+import { JobDialogComponent, endOfLocalDay } from './job-dialog.component';
 import { JobService } from '../../../services/job.service';
-import { JobOffer, WorkType } from '../../../models/job-offer.model';
+import { JobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
 
 const DESCRIPTION = 'Opis stanowiska, który ma co najmniej pięćdziesiąt znaków długości.';
 
 const EXISTING_JOB: JobOffer = {
   id: 9, title: 'Backend Developer', company: 'Acme', description: DESCRIPTION, salaryMin: 8000, salaryMax: 12000,
-  location: 'Rzeszów', workType: WorkType.Hybrid, createdAt: new Date('2026-01-01')
+  location: 'Rzeszów', workType: WorkType.Hybrid, createdAt: new Date('2026-01-01'),
+  status: JobOfferStatus.Active, expiresAt: null, isExpired: false
 };
 
 describe('JobDialogComponent', () => {
@@ -48,6 +49,8 @@ describe('JobDialogComponent', () => {
       salaryMin: 8000,
       salaryMax: 12000,
       description: DESCRIPTION,
+      status: JobOfferStatus.Active,
+      expiresAt: null,
       ...overrides
     });
   }
@@ -124,6 +127,65 @@ describe('JobDialogComponent', () => {
 
       component.onSubmit();
       expect(createJob).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('status and expiration date', () => {
+    const yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return d; };
+    const inDays = (days: number) => { const d = new Date(); d.setDate(d.getDate() + days); return d; };
+
+    it('rejects an active offer with an expiration date in the past', async () => {
+      await create();
+      fillValidForm({ expiresAt: yesterday() });
+      fixture.detectChanges();
+
+      expect(component.jobForm.hasError('expiresAtInPast')).toBe(true);
+      expect((fixture.nativeElement as HTMLElement).querySelector('.expiry-error')?.textContent)
+        .toContain('Aktywna oferta musi mieć datę wygaśnięcia w przyszłości');
+    });
+
+    it.each([JobOfferStatus.Draft, JobOfferStatus.Closed])('accepts a past expiration date for status %s', async status => {
+      await create();
+      fillValidForm({ status, expiresAt: yesterday() });
+
+      expect(component.jobForm.valid).toBe(true);
+    });
+
+    it('accepts today as the expiration date of an active offer (valid until the end of the day)', async () => {
+      await create();
+      fillValidForm({ expiresAt: new Date() });
+
+      expect(component.jobForm.valid).toBe(true);
+    });
+
+    it('sends the end of the selected local day as an ISO UTC string together with the status', async () => {
+      await create();
+      const selected = inDays(10);
+      fillValidForm({ status: JobOfferStatus.Draft, expiresAt: selected });
+
+      component.onSubmit();
+
+      const expected = endOfLocalDay(selected).toISOString();
+      expect(createJob).toHaveBeenCalledWith(expect.objectContaining({ status: JobOfferStatus.Draft, expiresAt: expected }));
+    });
+
+    it('sends null when no expiration date is selected', async () => {
+      await create();
+      fillValidForm();
+
+      component.onSubmit();
+
+      expect(createJob).toHaveBeenCalledWith(expect.objectContaining({ expiresAt: null }));
+    });
+
+    it('keeps the exact expiration date of an edited offer when the day is unchanged', async () => {
+      const expiresAt = inDays(5).toISOString();
+      await create({ ...EXISTING_JOB, status: JobOfferStatus.Closed, expiresAt });
+
+      expect(component.jobForm.value.status).toBe(JobOfferStatus.Closed);
+      component.onSubmit();
+
+      expect(updateJob).toHaveBeenCalledWith(9, expect.objectContaining({ status: JobOfferStatus.Closed, expiresAt }));
     });
   });
 
