@@ -26,6 +26,8 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__DefaultConnection: "Server=db;Port=3306;Database=JobBoardDb;User=root;Password=${DB_PASSWORD:-jobboard};AllowPublicKeyRetrieval=true;"
+      # lokalny stack demo: przycisk w panelu admina resetuje dane demo (usuwa wszystkich użytkowników, oferty i aplikacje)
+      Admin__AllowSeedRefresh: ${ALLOW_SEED_REFRESH:-true}
     ports:
       - "${BACKEND_PORT:-5285}:8080"
 
