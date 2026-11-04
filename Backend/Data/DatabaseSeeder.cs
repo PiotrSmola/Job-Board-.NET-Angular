@@ -354,6 +354,58 @@ public static class DatabaseSeeder
             }
         };
 
+        // oferty publiczne: aktywne, ważne od 14 do 60 dni (różne terminy)
+        var now = DateTime.UtcNow;
+        for (var i = 0; i < jobOffers.Count; i++)
+        {
+            jobOffers[i].Status = JobOfferStatus.Active;
+            jobOffers[i].ExpiresAt = now.AddDays(14 + (i * 7) % 47);
+        }
+
+        // przykłady pozostałych stanów - niewidoczne na publicznej liście
+        jobOffers.AddRange(new[]
+        {
+            new JobOffer
+            {
+                Title = "Go Backend Developer",
+                Company = "CloudNative Labs",
+                Description = "Szkic oferty: mikroserwisy w Go, gRPC, Kubernetes. Oferta w przygotowaniu - jeszcze nieopublikowana.",
+                SalaryMin = 16000,
+                SalaryMax = 23000,
+                Location = "Warszawa",
+                WorkType = WorkType.Remote,
+                CreatedAt = now.AddHours(-5),
+                Status = JobOfferStatus.Draft,
+                ExpiresAt = now.AddDays(45)
+            },
+            new JobOffer
+            {
+                Title = "iOS Developer (Swift)",
+                Company = "AppFactory",
+                Description = "Rekrutacja zakończona. Tworzenie aplikacji iOS w Swift i SwiftUI, współpraca z zespołem produktowym.",
+                SalaryMin = 13000,
+                SalaryMax = 19000,
+                Location = "Kraków",
+                WorkType = WorkType.Hybrid,
+                CreatedAt = now.AddDays(-30),
+                Status = JobOfferStatus.Closed,
+                ExpiresAt = now.AddDays(10)
+            },
+            new JobOffer
+            {
+                Title = "Junior Tester Manualny",
+                Company = "TestHouse",
+                Description = "Oferta wygasła. Testy manualne aplikacji webowych, raportowanie błędów w Jira, praca z dokumentacją.",
+                SalaryMin = 6000,
+                SalaryMax = 8000,
+                Location = "Lublin",
+                WorkType = WorkType.Onsite,
+                CreatedAt = now.AddDays(-40),
+                Status = JobOfferStatus.Active,
+                ExpiresAt = now.AddDays(-3)
+            }
+        });
+
         await context.JobOffers.AddRangeAsync(jobOffers);
         await context.SaveChangesAsync();
     }

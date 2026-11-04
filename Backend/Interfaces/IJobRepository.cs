@@ -5,7 +5,10 @@ namespace Backend.Interfaces;
 
 public interface IJobRepository
 {
-    Task<PagedList<JobOffer>> GetJobsAsync(JobParams jobParams);
+    // tylko oferty widoczne publicznie (Active i niewygasłe)
+    Task<PagedList<JobOffer>> GetPublicJobsAsync(JobParams jobParams);
+    // wszystkie oferty z opcjonalnym filtrem stanu (panel admina)
+    Task<PagedList<JobOffer>> GetManagedJobsAsync(ManageJobParams jobParams);
     Task<JobOffer?> GetJobByIdAsync(int id);
     Task<JobOffer> AddJobAsync(JobOffer jobOffer);
     Task<JobOffer> UpdateJobAsync(JobOffer jobOffer);

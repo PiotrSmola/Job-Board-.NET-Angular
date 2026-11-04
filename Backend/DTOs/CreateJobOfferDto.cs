@@ -34,6 +34,15 @@ public class CreateJobOfferDto : IValidatableObject
     [EnumDataType(typeof(WorkType))]
     public WorkType WorkType { get; set; }
 
+    // brak pola = oferta od razu aktywna (zgodnie z dotychczasowym zachowaniem API)
+    [EnumDataType(typeof(JobOfferStatus))]
+    public JobOfferStatus Status { get; set; } = JobOfferStatus.Active;
+
+    // data bez strefy traktowana jest jako UTC (patrz GetExpiresAtUtc)
+    public DateTime? ExpiresAt { get; set; }
+
+    public DateTime? GetExpiresAtUtc() => ExpiresAt.HasValue ? ToUtc(ExpiresAt.Value) : null;
+
     // walidacja między polami - uruchamiana po walidacji atrybutów
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
@@ -43,5 +52,19 @@ public class CreateJobOfferDto : IValidatableObject
                 "SalaryMin cannot be greater than SalaryMax",
                 new[] { nameof(SalaryMin), nameof(SalaryMax) });
         }
+
+        if (Status == JobOfferStatus.Active && GetExpiresAtUtc() is { } expiresAt && expiresAt <= DateTime.UtcNow)
+        {
+            yield return new ValidationResult(
+                "ExpiresAt must be in the future for an active job offer",
+                new[] { nameof(ExpiresAt) });
+        }
     }
+
+    private static DateTime ToUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+    };
 }

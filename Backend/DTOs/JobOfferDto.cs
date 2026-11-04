@@ -22,4 +22,11 @@ public class JobOfferDto
     public WorkType WorkType { get; set; }
 
     public DateTime CreatedAt { get; set; }
+
+    public JobOfferStatus Status { get; set; }
+
+    public DateTime? ExpiresAt { get; set; }
+
+    // Active z ExpiresAt w przeszłości (wyliczane w chwili odpowiedzi)
+    public bool IsExpired { get; set; }
 }

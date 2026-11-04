@@ -2,6 +2,7 @@ using Backend.DTOs;
 using Backend.Helpers;
 using Backend.Interfaces;
 using Backend.Mappings;
+using Backend.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,15 +19,34 @@ public class JobsController : ControllerBase
         _jobRepository = jobRepository;
     }
 
+    // Publiczna lista - wyłącznie oferty aktywne i niewygasłe
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<JobOfferDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<JobOfferDto>>> GetJobs([FromQuery] JobParams jobParams)
     {
-        var jobs = await _jobRepository.GetJobsAsync(jobParams);
+        var jobs = await _jobRepository.GetPublicJobsAsync(jobParams);
 
         Response.AddPaginationHeader(jobs);
 
-        return Ok(jobs.Select(j => j.ToDto()));
+        var now = DateTime.UtcNow;
+        return Ok(jobs.Select(j => j.ToDto(now)));
+    }
+
+    // Lista dla panelu admina - wszystkie oferty, opcjonalny filtr stanu (draft/active/expired/closed)
+    [HttpGet("manage")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(IEnumerable<JobOfferDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IEnumerable<JobOfferDto>>> GetManagedJobs([FromQuery] ManageJobParams jobParams)
+    {
+        var jobs = await _jobRepository.GetManagedJobsAsync(jobParams);
+
+        Response.AddPaginationHeader(jobs);
+
+        var now = DateTime.UtcNow;
+        return Ok(jobs.Select(j => j.ToDto(now)));
     }
 
     [HttpGet("{id}")]
@@ -36,7 +56,8 @@ public class JobsController : ControllerBase
     {
         var job = await _jobRepository.GetJobByIdAsync(id);
 
-        if (job == null)
+        // szkic widzi tylko admin; oferty zamknięte i wygasłe są zwracane (frontend pokazuje baner)
+        if (job == null || (job.Status == JobOfferStatus.Draft && !User.IsInRole("Admin")))
         {
             return NotFound(new { message = "Job offer not found" });
         }
@@ -81,6 +102,40 @@ public class JobsController : ControllerBase
         var updatedJob = await _jobRepository.UpdateJobAsync(job);
 
         return Ok(updatedJob.ToDto());
+    }
+
+    // Szybka zmiana stanu oferty: publikacja, zamknięcie, wznowienie, powrót do szkicu
+    [HttpPatch("{id}/status")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(JobOfferDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<JobOfferDto>> UpdateJobStatus(int id, UpdateJobOfferStatusDto statusDto)
+    {
+        var job = await _jobRepository.GetJobByIdAsync(id);
+        if (job == null)
+        {
+            return NotFound(new { message = "Job offer not found" });
+        }
+
+        var status = statusDto.Status!.Value;
+        var now = DateTime.UtcNow;
+
+        // publikacja oferty z datą ważności w przeszłości od razu dałaby ofertę wygasłą
+        if (status == JobOfferStatus.Active && job.ExpiresAt.HasValue && job.ExpiresAt.Value <= now)
+        {
+            return BadRequest(new { message = "Expiration date must be in the future to publish" });
+        }
+
+        if (job.Status != status)
+        {
+            job.Status = status;
+            job = await _jobRepository.UpdateJobAsync(job);
+        }
+
+        return Ok(job.ToDto(now));
     }
 
     [HttpDelete("{id}")]
