@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { AdminApplicationsTabComponent } from './admin-applications-tab.component';
 import { JobApplicationService } from '../../../services/job-application.service';
-import { JobApplication } from '../../../models/job-application.model';
+import { ApplicationStatus, JobApplication } from '../../../models/job-application.model';
 import { ApplicationParams } from '../../../models/application-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
 
@@ -17,7 +17,9 @@ function makeApplication(id: number): JobApplication {
     jobTitle: 'Programista',
     company: 'Acme',
     note: null,
-    appliedAt: new Date('2026-01-01T10:00:00Z')
+    appliedAt: new Date('2026-01-01T10:00:00Z'),
+    status: ApplicationStatus.Submitted,
+    statusChangedAt: '2026-01-01T10:00:00Z'
   };
 }
 

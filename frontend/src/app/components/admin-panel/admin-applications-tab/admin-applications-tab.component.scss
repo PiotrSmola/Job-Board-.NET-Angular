@@ -65,4 +65,10 @@
     color: #666;
     font-style: italic;
   }
+
+  .actions-cell {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
 }

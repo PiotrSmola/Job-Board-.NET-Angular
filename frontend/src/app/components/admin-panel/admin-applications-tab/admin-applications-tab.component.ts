@@ -9,15 +9,21 @@ import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
+import { MatDialog } from '@angular/material/dialog';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { Subject, catchError, debounceTime, filter, map, of, switchMap, tap } from 'rxjs';
 import { JobApplicationService } from '../../../services/job-application.service';
-import { JobApplication } from '../../../models/job-application.model';
+import { ApplicationStatus, JobApplication } from '../../../models/job-application.model';
 import { ApplicationOrderBy, ApplicationParams } from '../../../models/application-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
 import { isHandledByInterceptor } from '../../../utils/http-errors';
+import { APPLICATION_STATUS_FILTER_OPTIONS, getApplicationStatusPresentation } from '../../../utils/status-labels';
+import { StatusChipComponent } from '../../shared/status-chip.component';
+import { ApplicationStatusDialogComponent } from '../application-status-dialog/application-status-dialog.component';
+import { ApplicationHistoryDialogComponent } from '../application-history-dialog/application-history-dialog.component';
 
 // API sortuje aplikacje tylko po dacie złożenia
 const DEFAULT_SORT: Sort = { active: 'appliedAt', direction: 'desc' };
@@ -36,17 +42,22 @@ const DEFAULT_SORT: Sort = { active: 'appliedAt', direction: 'desc' };
     MatTooltipModule,
     MatFormFieldModule,
     MatInputModule,
+    MatSelectModule,
     MatPaginatorModule,
-    MatSortModule
+    MatSortModule,
+    StatusChipComponent
   ],
   templateUrl: './admin-applications-tab.component.html',
   styleUrl: './admin-applications-tab.component.scss'
 })
 export class AdminApplicationsTabComponent {
   private applicationService = inject(JobApplicationService);
+  private dialog = inject(MatDialog);
 
-  readonly displayedColumns = ['id', 'jobTitle', 'company', 'user', 'appliedAt', 'note', 'actions'];
+  readonly displayedColumns = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt', 'note', 'actions'];
   readonly pageSizeOptions = [5, 10, 25, 50];
+  readonly statusOptions = APPLICATION_STATUS_FILTER_OPTIONS;
+  readonly ApplicationStatus = ApplicationStatus;
 
   readonly applications = signal<JobApplication[]>([]);
   readonly totalItems = signal(0);
@@ -56,11 +67,12 @@ export class AdminApplicationsTabComponent {
   readonly pageIndex = signal(0);
   readonly pageSize = signal(10);
   readonly searchInput = signal('');
+  readonly status = signal<ApplicationStatus | null>(null);
   readonly sort = signal<Sort>(DEFAULT_SORT);
 
   // Fraza faktycznie wysłana do API (po debounce)
   private readonly searchTerm = signal('');
-  readonly hasActiveFilters = computed(() => this.searchTerm() !== '');
+  readonly hasActiveFilters = computed(() => this.searchTerm() !== '' || this.status() !== null);
 
   private readonly search$ = new Subject<string>();
   private readonly load$ = new Subject<void>();
@@ -110,6 +122,30 @@ export class AdminApplicationsTabComponent {
     this.applySearch('');
   }
 
+  onStatusChange(status: ApplicationStatus | null): void {
+    this.status.set(status);
+    this.reload(true);
+  }
+
+  statusPresentation(status: ApplicationStatus) {
+    return getApplicationStatusPresentation(status);
+  }
+
+  openStatusDialog(application: JobApplication): void {
+    const dialogRef = this.dialog.open(ApplicationStatusDialogComponent, { width: '520px', data: application });
+
+    dialogRef.afterClosed().subscribe(updated => {
+      if (updated) {
+        // przy aktywnym filtrze statusu aplikacja może zniknąć z bieżącej listy
+        this.reload();
+      }
+    });
+  }
+
+  openHistoryDialog(application: JobApplication): void {
+    this.dialog.open(ApplicationHistoryDialogComponent, { width: '560px', data: application });
+  }
+
   onSortChange(sort: Sort): void {
     this.sort.set(sort);
     this.reload(true);
@@ -125,6 +161,7 @@ export class AdminApplicationsTabComponent {
     this.searchInput.set('');
     this.search$.next('');
     this.searchTerm.set('');
+    this.status.set(null);
     this.sort.set(DEFAULT_SORT);
     this.reload(true);
   }
@@ -175,6 +212,7 @@ export class AdminApplicationsTabComponent {
     params.pageNumber = this.pageIndex() + 1;
     params.pageSize = this.pageSize();
     params.searchTerm = this.searchTerm();
+    params.status = this.status();
     params.orderBy = this.toOrderBy(this.sort());
     return params;
   }
