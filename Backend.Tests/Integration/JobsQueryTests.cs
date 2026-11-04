@@ -145,8 +145,8 @@ public class JobsQueryTests
     [InlineData("locationDesc", "3,1,2,4")]
     [InlineData("newest", "4,3,2,1")]
     [InlineData("oldest", "1,2,3,4")]
-    [InlineData("salaryHigh", "2,1,3,4")]     // SalaryMax malejąco, brak widełek na końcu
-    [InlineData("salaryLow", "2,3,1,4")]      // SalaryMin rosnąco, brak widełek na końcu
+    [InlineData("salaryHigh", "2,1,3,4")]     // COALESCE(SalaryMax, SalaryMin) malejąco, brak widełek na końcu
+    [InlineData("salaryLow", "3,1,2,4")]      // ten sam klucz rosnąco, brak widełek na końcu
     [InlineData("unknownOrder", "4,3,2,1")]   // nieznany klucz = domyślnie najnowsze
     public async Task GetJobs_OrderBy_ReturnsExpectedSequence(string orderBy, string expectedSequence)
     {
@@ -156,6 +156,33 @@ public class JobsQueryTests
 
         var expectedIds = expectedSequence.Split(',').Select(n => jobs[int.Parse(n) - 1].Id).ToArray();
         Assert.Equal(expectedIds, items.Select(i => i.Id).ToArray());
+    }
+
+    [Fact]
+    public async Task GetJobs_SalaryOrder_UsesMaxOrMinSalaryAndLowIsExactReverseOfHigh()
+    {
+        var token = Guid.NewGuid().ToString("N");
+        async Task<int> Create(decimal? min, decimal? max) =>
+            (await _api.CreateJobAsync(j => { j.SalaryMin = min; j.SalaryMax = max; j.Description = $"salary {token}"; })).Id;
+
+        var range = await Create(3000, 9000);        // klucz 9000
+        var minOnly = await Create(9500, null);      // klucz 9500 (tylko dolna granica)
+        var maxOnly = await Create(null, 5000);      // klucz 5000
+        var tie = await Create(1000, 9000);          // klucz 9000 - remis z "range", rozstrzyga Id
+        var none1 = await Create(null, null);
+        var none2 = await Create(null, null);
+
+        var (_, high) = await GetJobsAsync($"?searchTerm={token}&orderBy=salaryHigh");
+        var (_, low) = await GetJobsAsync($"?searchTerm={token}&orderBy=salaryLow");
+
+        Assert.Equal(new[] { minOnly, tie, range, maxOnly, none2, none1 }, high.Select(j => j.Id).ToArray());
+        Assert.Equal(new[] { maxOnly, range, tie, minOnly, none1, none2 }, low.Select(j => j.Id).ToArray());
+
+        // oferty z wynagrodzeniem: dokładne odwrócenie kolejności; bez wynagrodzenia - na końcu w obu kierunkach
+        var withSalary = new[] { range, minOnly, maxOnly, tie };
+        Assert.Equal(
+            high.Select(j => j.Id).Where(withSalary.Contains).Reverse().ToArray(),
+            low.Select(j => j.Id).Where(withSalary.Contains).ToArray());
     }
 
     [Fact]
