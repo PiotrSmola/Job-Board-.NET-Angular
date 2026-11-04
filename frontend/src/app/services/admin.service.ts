@@ -7,7 +7,7 @@ import { Observable } from 'rxjs';
 })
 export class AdminService {
   private http = inject(HttpClient);
-  private readonly API_URL = 'http://localhost:5285/api/admin';
+  private readonly API_URL = '/api/admin';
 
   refreshSeed(): Observable<{ message: string; timestamp: string }> {
     return this.http.post<{ message: string; timestamp: string }>(`${this.API_URL}/refresh-seed`, {});

@@ -11,7 +11,7 @@ export class AuthService {
   private http = inject(HttpClient);
   private router = inject(Router);
 
-  private readonly API_URL = 'http://localhost:5285/api';
+  private readonly API_URL = '/api';
   private readonly TOKEN_KEY = 'jobboard_token';
   private readonly USER_KEY = 'jobboard_user';
 

@@ -10,7 +10,7 @@ import { JobParams } from '../models/job-params.model';
 })
 export class JobService {
   private http = inject(HttpClient);
-  private readonly API_URL = 'http://localhost:5285/api/jobs';
+  private readonly API_URL = '/api/jobs';
 
   getJobs(jobParams: JobParams): Observable<PaginatedResult<JobOffer>> {
     let params = new HttpParams();

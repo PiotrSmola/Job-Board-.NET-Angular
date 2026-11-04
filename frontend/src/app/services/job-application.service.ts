@@ -8,7 +8,7 @@ import { JobApplication, CreateJobApplication } from '../models/job-application.
 })
 export class JobApplicationService {
   private http = inject(HttpClient);
-  private readonly API_URL = 'http://localhost:5285/api/jobapplications';
+  private readonly API_URL = '/api/jobapplications';
 
   getMyApplications(): Observable<JobApplication[]> {
     return this.http.get<JobApplication[]>(`${this.API_URL}/my-applications`);
