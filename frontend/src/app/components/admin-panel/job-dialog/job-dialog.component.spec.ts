@@ -67,6 +67,66 @@ describe('JobDialogComponent', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  describe('salary validation', () => {
+    function root(): HTMLElement {
+      component.jobForm.markAllAsTouched();
+      fixture.detectChanges();
+      return fixture.nativeElement as HTMLElement;
+    }
+
+    it.each([
+      [null, null],
+      [8000, null],
+      [null, 12000],
+      [0, 0],
+      [0, 5000],
+      [10000, 10000]
+    ])('accepts salaryMin=%s and salaryMax=%s', async (salaryMin, salaryMax) => {
+      await create();
+      fillValidForm({ salaryMin, salaryMax });
+
+      expect(component.jobForm.valid).toBe(true);
+    });
+
+    it('rejects salaryMin greater than salaryMax and shows the message below the fields', async () => {
+      await create();
+      fillValidForm({ salaryMin: 15000, salaryMax: 8000 });
+
+      expect(component.jobForm.hasError('salaryRangeInvalid')).toBe(true);
+      expect(component.jobForm.valid).toBe(false);
+      expect(root().querySelector('.salary-error')?.textContent).toContain('Wynagrodzenie "Od" nie może być wyższe niż "Do"');
+    });
+
+    it('compares salaries numerically', async () => {
+      await create();
+      fillValidForm({ salaryMin: '9000', salaryMax: '10000' });
+
+      expect(component.jobForm.hasError('salaryRangeInvalid')).toBe(false);
+    });
+
+    it.each(['salaryMin', 'salaryMax'])('rejects a negative %s and shows the message under the field', async field => {
+      await create();
+      fillValidForm({ salaryMin: null, salaryMax: null, [field]: -1 });
+
+      expect(component.jobForm.get(field)!.hasError('min')).toBe(true);
+      expect(component.jobForm.valid).toBe(false);
+      const errors = Array.from(root().querySelectorAll('.salary-field mat-error')).map(e => e.textContent?.trim());
+      expect(errors).toEqual(['Wynagrodzenie nie może być ujemne']);
+    });
+
+    it('does not send the request and keeps the submit button disabled for an invalid salary range', async () => {
+      await create();
+      fillValidForm({ salaryMin: 15000, salaryMax: 8000 });
+      fixture.detectChanges();
+
+      const submit = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('mat-dialog-actions button')).pop()!;
+      expect(submit.disabled).toBe(true);
+
+      component.onSubmit();
+      expect(createJob).not.toHaveBeenCalled();
+    });
+  });
+
   describe('saving', () => {
     it('creates a new job, shows a snackbar and closes the dialog', async () => {
       await create();

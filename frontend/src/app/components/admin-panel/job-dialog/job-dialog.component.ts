@@ -77,16 +77,22 @@ import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-
         <div class="salary-row">
           <mat-form-field appearance="outline" class="salary-field">
             <mat-label>Wynagrodzenie od</mat-label>
-            <input matInput type="number" formControlName="salaryMin" placeholder="8000">
+            <input matInput type="number" min="0" formControlName="salaryMin" placeholder="8000">
             <span matTextPrefix>$&nbsp;</span>
             <span matTextSuffix>&nbsp;PLN</span>
+            @if (jobForm.get('salaryMin')?.hasError('min')) {
+              <mat-error>Wynagrodzenie nie może być ujemne</mat-error>
+            }
           </mat-form-field>
 
           <mat-form-field appearance="outline" class="salary-field">
             <mat-label>Wynagrodzenie do</mat-label>
-            <input matInput type="number" formControlName="salaryMax" placeholder="15000">
+            <input matInput type="number" min="0" formControlName="salaryMax" placeholder="15000">
             <span matTextPrefix>$&nbsp;</span>
             <span matTextSuffix>&nbsp;PLN</span>
+            @if (jobForm.get('salaryMax')?.hasError('min')) {
+              <mat-error>Wynagrodzenie nie może być ujemne</mat-error>
+            }
           </mat-form-field>
         </div>
         @if (jobForm.hasError('salaryRangeInvalid') && (jobForm.get('salaryMin')?.touched || jobForm.get('salaryMax')?.touched)) {
@@ -213,8 +219,9 @@ export class JobDialogComponent {
     company: ['', [Validators.required]],
     location: ['', [Validators.required]],
     workType: [WorkType.Remote, [Validators.required]],
-    salaryMin: [null],
-    salaryMax: [null],
+    // Te same reguły co walidacja API (wynagrodzenia >= 0, "Od" <= "Do") – bez nich backend zwraca 400
+    salaryMin: [null, [Validators.min(0)]],
+    salaryMax: [null, [Validators.min(0)]],
     description: ['', [Validators.required, Validators.minLength(50)]]
   }, { validators: this.salaryRangeValidator });
 
@@ -236,7 +243,8 @@ export class JobDialogComponent {
     const salaryMin = group.get('salaryMin')?.value;
     const salaryMax = group.get('salaryMax')?.value;
 
-    if (!salaryMin || !salaryMax) {
+    // Puste pole = brak ograniczenia; 0 jest poprawną wartością
+    if (salaryMin === null || salaryMin === '' || salaryMax === null || salaryMax === '') {
       return null;
     }
 
