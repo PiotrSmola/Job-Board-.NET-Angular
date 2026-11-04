@@ -1,7 +1,10 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable, map } from 'rxjs';
 import { JobApplication, CreateJobApplication } from '../models/job-application.model';
+import { ApplicationParams } from '../models/application-params.model';
+import { PaginatedResult } from '../models/pagination.model';
+import { toPaginatedResult } from '../utils/pagination';
 
 @Injectable({
   providedIn: 'root'
@@ -26,7 +29,22 @@ export class JobApplicationService {
     return this.http.delete<void>(`${this.API_URL}/${id}`);
   }
 
-  getAllApplications(): Observable<JobApplication[]> {
-    return this.http.get<JobApplication[]>(`${this.API_URL}/all`);
+  getAllApplications(applicationParams: ApplicationParams): Observable<PaginatedResult<JobApplication>> {
+    let params = new HttpParams()
+      .append('pageNumber', applicationParams.pageNumber.toString())
+      .append('pageSize', applicationParams.pageSize.toString())
+      .append('orderBy', applicationParams.orderBy);
+
+    if (applicationParams.searchTerm) {
+      params = params.append('searchTerm', applicationParams.searchTerm);
+    }
+
+    if (applicationParams.jobOfferId !== null) {
+      params = params.append('jobOfferId', applicationParams.jobOfferId.toString());
+    }
+
+    return this.http.get<JobApplication[]>(`${this.API_URL}/all`, { params, observe: 'response' }).pipe(
+      map(response => toPaginatedResult(response, applicationParams.pageSize))
+    );
   }
 }
