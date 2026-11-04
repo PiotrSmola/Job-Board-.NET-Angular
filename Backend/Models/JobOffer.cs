@@ -30,6 +30,19 @@ public class JobOffer
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    public JobOfferStatus Status { get; set; } = JobOfferStatus.Active;
+
+    // UTC; null = oferta bezterminowa
+    public DateTime? ExpiresAt { get; set; }
+
     // Navigation property
     public ICollection<JobApplication> Applications { get; set; } = new List<JobApplication>();
+
+    // Aktywna, ale z datą ważności w przeszłości (stan wyliczany, nie zapisywany)
+    public bool IsExpired(DateTime now) =>
+        Status == JobOfferStatus.Active && ExpiresAt.HasValue && ExpiresAt.Value <= now;
+
+    // Widoczna na publicznej liście i przyjmuje aplikacje
+    public bool IsPubliclyVisible(DateTime now) =>
+        Status == JobOfferStatus.Active && (!ExpiresAt.HasValue || ExpiresAt.Value > now);
 }
