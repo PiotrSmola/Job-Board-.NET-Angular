@@ -1,6 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-using Backend.Models;
-
 namespace Backend.DTOs;
 
 public class JobApplicationDto
@@ -12,6 +9,8 @@ public class JobApplicationDto
     public DateTime AppliedAt { get; set; }
 
     public string UserEmail { get; set; } = string.Empty;
+    public string UserFullName { get; set; } = string.Empty;
     public string JobTitle { get; set; } = string.Empty;
-    public JobOffer? JobOffer { get; set; }
+    public string Company { get; set; } = string.Empty;
+    public JobOfferDto? JobOffer { get; set; }
 }

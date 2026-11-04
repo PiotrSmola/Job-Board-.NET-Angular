@@ -20,6 +20,7 @@ public class JobApplicationRepository : IJobApplicationRepository
         return await _context.JobApplications
             .Include(a => a.JobOffer)
             .Include(a => a.User)
+            .AsNoTracking()
             .FirstOrDefaultAsync(a => a.Id == id);
     }
 
@@ -28,6 +29,7 @@ public class JobApplicationRepository : IJobApplicationRepository
         return await _context.JobApplications
             .Include(a => a.JobOffer)
             .Include(a => a.User)
+            .AsNoTracking()
             .Where(a => a.UserId == userId)
             .OrderByDescending(a => a.AppliedAt)
             .ToListAsync();
@@ -36,7 +38,9 @@ public class JobApplicationRepository : IJobApplicationRepository
     public async Task<IEnumerable<JobApplication>> GetApplicationsByJobIdAsync(int jobId)
     {
         return await _context.JobApplications
+            .Include(a => a.JobOffer)
             .Include(a => a.User)
+            .AsNoTracking()
             .Where(a => a.JobOfferId == jobId)
             .OrderByDescending(a => a.AppliedAt)
             .ToListAsync();

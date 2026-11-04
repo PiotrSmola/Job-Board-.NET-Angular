@@ -17,7 +17,7 @@ public class JobRepository : IJobRepository
 
     public async Task<PagedList<JobOffer>> GetJobsAsync(JobParams jobParams)
     {
-        var query = _context.JobOffers.AsQueryable();
+        var query = _context.JobOffers.AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(jobParams.SearchTerm))
         {
@@ -80,8 +80,9 @@ public class JobRepository : IJobRepository
 
     public async Task<JobOffer?> GetJobByIdAsync(int id)
     {
+        // bez śledzenia - przy aktualizacji UpdateJobAsync dołącza encję do kontekstu
         return await _context.JobOffers
-            .Include(j => j.Applications)
+            .AsNoTracking()
             .FirstOrDefaultAsync(j => j.Id == id);
     }
 

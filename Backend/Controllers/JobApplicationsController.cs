@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Backend.DTOs;
 using Backend.Helpers;
 using Backend.Interfaces;
+using Backend.Mappings;
 using Backend.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -37,19 +38,7 @@ public class JobApplicationsController : ControllerBase
 
         var applications = await _applicationRepository.GetApplicationsByUserIdAsync(userId);
 
-        var applicationsDto = applications.Select(a => new JobApplicationDto
-        {
-            Id = a.Id,
-            JobOfferId = a.JobOfferId,
-            UserId = a.UserId,
-            Note = a.Note,
-            AppliedAt = a.AppliedAt,
-            UserEmail = a.User.Email ?? string.Empty,
-            JobTitle = a.JobOffer.Title,
-            JobOffer = a.JobOffer
-        });
-
-        return Ok(applicationsDto);
+        return Ok(applications.Select(a => a.ToDto()));
     }
 
     [HttpGet("job/{jobId}")]
@@ -67,19 +56,7 @@ public class JobApplicationsController : ControllerBase
 
         var applications = await _applicationRepository.GetApplicationsByJobIdAsync(jobId);
 
-        var applicationsDto = applications.Select(a => new JobApplicationDto
-        {
-            Id = a.Id,
-            JobOfferId = a.JobOfferId,
-            UserId = a.UserId,
-            Note = a.Note,
-            AppliedAt = a.AppliedAt,
-            UserEmail = a.User.Email ?? string.Empty,
-            JobTitle = a.JobOffer.Title,
-            JobOffer = a.JobOffer
-        });
-
-        return Ok(applicationsDto);
+        return Ok(applications.Select(a => a.ToDto()));
     }
 
     [HttpPost]
@@ -115,18 +92,9 @@ public class JobApplicationsController : ControllerBase
 
         var createdApplication = await _applicationRepository.AddApplicationAsync(application);
 
+        // ponowne pobranie z ofertą i użytkownikiem, żeby zwrócić pełne DTO
         var fullApplication = await _applicationRepository.GetApplicationByIdAsync(createdApplication.Id);
-
-        var applicationDto = new JobApplicationDto
-        {
-            Id = fullApplication!.Id,
-            JobOfferId = fullApplication.JobOfferId,
-            UserId = fullApplication.UserId,
-            Note = fullApplication.Note,
-            AppliedAt = fullApplication.AppliedAt,
-            UserEmail = fullApplication.User.Email ?? string.Empty,
-            JobTitle = fullApplication.JobOffer.Title
-        };
+        var applicationDto = (fullApplication ?? createdApplication).ToDto();
 
         return CreatedAtAction(nameof(GetMyApplications), new { id = applicationDto.Id }, applicationDto);
     }
@@ -193,18 +161,6 @@ public class JobApplicationsController : ControllerBase
 
         Response.AddPaginationHeader(applications);
 
-        var applicationsDto = applications.Select(a => new JobApplicationDto
-        {
-            Id = a.Id,
-            JobOfferId = a.JobOfferId,
-            UserId = a.UserId,
-            Note = a.Note,
-            AppliedAt = a.AppliedAt,
-            UserEmail = a.User.Email ?? string.Empty,
-            JobTitle = a.JobOffer.Title,
-            JobOffer = a.JobOffer
-        });
-
-        return Ok(applicationsDto);
+        return Ok(applications.Select(a => a.ToDto()));
     }
 }
