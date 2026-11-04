@@ -82,7 +82,7 @@
             </button>
           }
         } @else if (!authService.isAuthenticated()) {
-          <button mat-raised-button color="primary" [routerLink]="['/login']">
+          <button mat-raised-button color="primary" [routerLink]="['/login']" [queryParams]="{ returnUrl: '/jobs/' + job.id }">
             <mat-icon>login</mat-icon>
             Zaloguj się, aby aplikować
           </button>
