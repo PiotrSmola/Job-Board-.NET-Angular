@@ -47,6 +47,29 @@ public class JobApplicationsController : ControllerBase
         return Ok(applications.Select(a => a.ToDto()));
     }
 
+    [HttpGet("{id:int}")]
+    [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<JobApplicationDto>> GetApplication(int id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        var application = await _applicationRepository.GetApplicationByIdAsync(id);
+
+        // cudza aplikacja (poza adminem) - 404 zamiast 403, żeby nie ujawniać jej istnienia
+        if (application == null || (application.UserId != userId && !User.IsInRole("Admin")))
+        {
+            return NotFound(new { message = "Application not found" });
+        }
+
+        return Ok(application.ToDto());
+    }
+
     [HttpGet("job/{jobId}")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(IEnumerable<JobApplicationDto>), StatusCodes.Status200OK)]
@@ -117,7 +140,7 @@ public class JobApplicationsController : ControllerBase
         var fullApplication = await _applicationRepository.GetApplicationByIdAsync(createdApplication.Id);
         var applicationDto = (fullApplication ?? createdApplication).ToDto();
 
-        return CreatedAtAction(nameof(GetMyApplications), new { id = applicationDto.Id }, applicationDto);
+        return CreatedAtAction(nameof(GetApplication), new { id = applicationDto.Id }, applicationDto);
     }
 
     [HttpDelete("{id}")]

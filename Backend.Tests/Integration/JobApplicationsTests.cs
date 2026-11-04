@@ -40,9 +40,9 @@ public class JobApplicationsTests
         var response = await client.PostJsonAsync(Url, Apply(job.Id, "My motivation"));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.NotNull(response.Headers.Location);
         var application = await response.ReadJsonAsync<JobApplicationDto>();
         Assert.True(application.Id > 0);
+        Assert.EndsWith($"/api/JobApplications/{application.Id}", response.Headers.Location?.ToString());
         Assert.Equal(job.Id, application.JobOfferId);
         Assert.Equal(user.Id, application.UserId);
         Assert.Equal("My motivation", application.Note);
@@ -140,6 +140,75 @@ public class JobApplicationsTests
         var response = await client.PostJsonAsync(Url, Apply(job.Id, new string('n', 1001)));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    // --- pojedyncza aplikacja ---
+
+    [Fact]
+    public async Task GetById_LocationFromApply_ReturnsTheCreatedApplicationToOwner()
+    {
+        var job = await _api.CreateJobAsync(j => j.Title = "Get by id");
+        var user = await _api.RegisterUserAsync("getbyid");
+        using var client = _api.CreateClient(user);
+        var created = await client.PostJsonAsync(Url, Apply(job.Id, "note"));
+        var createdDto = await created.ReadJsonAsync<JobApplicationDto>();
+
+        var response = await client.GetAsync(created.Headers.Location);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var application = await response.ReadJsonAsync<JobApplicationDto>();
+        Assert.Equal(createdDto.Id, application.Id);
+        Assert.Equal(user.Id, application.UserId);
+        Assert.Equal("note", application.Note);
+        Assert.Equal("Get by id", application.JobOffer!.Title);
+    }
+
+    [Fact]
+    public async Task GetById_SomeoneElsesApplicationAsUser_ReturnsNotFound()
+    {
+        var job = await _api.CreateJobAsync();
+        var owner = await _api.RegisterUserAsync("getowner");
+        var intruder = await _api.RegisterUserAsync("getintruder");
+        var application = await _api.ApplyAsync(owner, job.Id);
+        using var intruderClient = _api.CreateClient(intruder);
+
+        var response = await intruderClient.GetAsync($"{Url}/{application.Id}");
+
+        // tak samo jak dla nieistniejącej aplikacji - bez ujawniania, że istnieje
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Application not found", body.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task GetById_SomeoneElsesApplicationAsAdmin_ReturnsOk()
+    {
+        var job = await _api.CreateJobAsync();
+        var owner = await _api.RegisterUserAsync("getadmin");
+        var application = await _api.ApplyAsync(owner, job.Id);
+        using var admin = await _api.AdminClientAsync();
+
+        var response = await admin.GetAsync($"{Url}/{application.Id}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(owner.Email, (await response.ReadJsonAsync<JobApplicationDto>()).UserEmail);
+    }
+
+    [Fact]
+    public async Task GetById_NonexistentApplication_ReturnsNotFound()
+    {
+        var user = await _api.RegisterUserAsync("getmissing");
+        using var client = _api.CreateClient(user);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{Url}/999999999")).StatusCode);
+    }
+
+    [Fact]
+    public async Task GetById_WithoutToken_ReturnsUnauthorized()
+    {
+        using var client = _api.CreateClient();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync($"{Url}/1")).StatusCode);
     }
 
     // --- moje aplikacje ---
