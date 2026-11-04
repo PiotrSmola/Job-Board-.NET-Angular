@@ -4,6 +4,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { Observable, of, throwError } from 'rxjs';
 import { AdminPanelComponent } from './admin-panel.component';
 import { AdminService } from '../../services/admin.service';
+import { AuthService } from '../../services/auth.service';
 import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 
@@ -16,6 +17,7 @@ describe('AdminPanelComponent', () => {
   let refreshSeed: ReturnType<typeof vi.fn>;
   let getJobs: ReturnType<typeof vi.fn>;
   let getAllApplications: ReturnType<typeof vi.fn>;
+  let logout: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
   let confirmSpy: ReturnType<typeof vi.spyOn>;
 
@@ -47,6 +49,7 @@ describe('AdminPanelComponent', () => {
     refreshSeed = vi.fn().mockReturnValue(of({ message: 'ok', timestamp: 'now' }));
     getJobs = vi.fn().mockReturnValue(of(EMPTY_PAGE));
     getAllApplications = vi.fn().mockReturnValue(of(EMPTY_PAGE));
+    logout = vi.fn();
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -55,6 +58,7 @@ describe('AdminPanelComponent', () => {
       imports: [AdminPanelComponent],
       providers: [
         { provide: AdminService, useValue: { getSettings, refreshSeed } },
+        { provide: AuthService, useValue: { logout } },
         { provide: JobService, useValue: { getJobs, deleteJob: vi.fn() } },
         { provide: JobApplicationService, useValue: { getAllApplications, deleteApplication: vi.fn() } },
         { provide: MatDialog, useValue: { open: vi.fn() } }
@@ -97,16 +101,16 @@ describe('AdminPanelComponent', () => {
       expect(refreshSeed).not.toHaveBeenCalled();
     });
 
-    it('reloads the jobs tab from the first page after success', async () => {
+    it('logs the admin out after success because the seed recreates accounts', async () => {
       await create();
-      const callsBefore = getJobs.mock.calls.length;
 
       component.refreshSeedData();
 
       expect(refreshSeed).toHaveBeenCalledTimes(1);
-      expect(alertSpy).toHaveBeenCalledWith('Dane zostały pomyślnie przywrócone z seedera!');
-      expect(getJobs.mock.calls.length).toBe(callsBefore + 1);
-      expect(getJobs.mock.calls[callsBefore][0].pageNumber).toBe(1);
+      expect(alertSpy).toHaveBeenCalledWith(
+        'Dane zostały pomyślnie przywrócone z seedera! Konta zostały odtworzone – zaloguj się ponownie.'
+      );
+      expect(logout).toHaveBeenCalledTimes(1);
       expect(component.refreshingSeed()).toBe(false);
     });
 

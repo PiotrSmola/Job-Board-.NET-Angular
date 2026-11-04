@@ -5,6 +5,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTabsModule } from '@angular/material/tabs';
 import { AdminService } from '../../services/admin.service';
+import { AuthService } from '../../services/auth.service';
 import { AdminJobsTabComponent } from './admin-jobs-tab/admin-jobs-tab.component';
 import { AdminApplicationsTabComponent } from './admin-applications-tab/admin-applications-tab.component';
 
@@ -26,6 +27,7 @@ const APPLICATIONS_TAB = 1;
 })
 export class AdminPanelComponent {
   private adminService = inject(AdminService);
+  private authService = inject(AuthService);
 
   private readonly jobsTab = viewChild(AdminJobsTabComponent);
   private readonly applicationsTab = viewChild(AdminApplicationsTabComponent);
@@ -71,9 +73,9 @@ export class AdminPanelComponent {
     this.adminService.refreshSeed().subscribe({
       next: () => {
         this.refreshingSeed.set(false);
-        alert('Dane zostały pomyślnie przywrócone z seedera!');
-        this.jobsTab()?.reload(true);
-        this.applicationsTab()?.reload(true);
+        // Seed odtwarza konta z nowymi Id, więc obecny token przestaje być ważny
+        alert('Dane zostały pomyślnie przywrócone z seedera! Konta zostały odtworzone – zaloguj się ponownie.');
+        this.authService.logout();
       },
       error: (error: HttpErrorResponse) => {
         console.error('Error refreshing seed data:', error);
