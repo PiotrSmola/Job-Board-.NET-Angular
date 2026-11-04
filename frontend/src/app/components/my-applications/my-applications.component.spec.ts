@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router, provideRouter } from '@angular/router';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { Observable, of, throwError } from 'rxjs';
 import { MyApplicationsComponent } from './my-applications.component';
 import { JobApplicationService } from '../../services/job-application.service';
@@ -18,6 +19,7 @@ describe('MyApplicationsComponent', () => {
   let component: MyApplicationsComponent;
   let getMyApplications: ReturnType<typeof vi.fn>;
   let deleteApplication: ReturnType<typeof vi.fn>;
+  let snackBarOpen: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
   let confirmSpy: ReturnType<typeof vi.spyOn>;
 
@@ -31,13 +33,18 @@ describe('MyApplicationsComponent', () => {
   beforeEach(async () => {
     getMyApplications = vi.fn();
     deleteApplication = vi.fn().mockReturnValue(of(undefined));
+    snackBarOpen = vi.fn();
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
       imports: [MyApplicationsComponent],
-      providers: [provideRouter([]), { provide: JobApplicationService, useValue: { getMyApplications, deleteApplication } }]
+      providers: [
+        provideRouter([]),
+        { provide: JobApplicationService, useValue: { getMyApplications, deleteApplication } },
+        { provide: MatSnackBar, useValue: { open: snackBarOpen } }
+      ]
     }).compileComponents();
   });
 
@@ -50,10 +57,20 @@ describe('MyApplicationsComponent', () => {
     expect(component.loading).toBe(false);
   });
 
-  it('alerts when loading fails', () => {
+  it('shows a snackbar when loading fails', () => {
     create(throwError(() => new HttpErrorResponse({ status: 500 })));
 
-    expect(alertSpy).toHaveBeenCalledWith('Błąd podczas ładowania aplikacji');
+    expect(snackBarOpen).toHaveBeenCalledTimes(1);
+    expect(snackBarOpen.mock.calls[0][0]).toBe('Błąd podczas ładowania aplikacji');
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(component.loading).toBe(false);
+  });
+
+  it.each([401, 403])('does not duplicate the interceptor notice when loading fails with %i', status => {
+    create(throwError(() => new HttpErrorResponse({ status, statusText: 'Error', url: '/api/jobapplications/my-applications' })));
+
+    expect(snackBarOpen).not.toHaveBeenCalled();
+    expect(alertSpy).not.toHaveBeenCalled();
     expect(component.loading).toBe(false);
   });
 
@@ -65,7 +82,7 @@ describe('MyApplicationsComponent', () => {
     expect(deleteApplication).toHaveBeenCalledWith(1);
     expect(component.applications.map(a => a.id)).toEqual([2]);
     expect(component.deletingId).toBeNull();
-    expect(alertSpy).toHaveBeenCalledWith('Aplikacja została usunięta');
+    expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja została usunięta');
   });
 
   it('does not delete when the confirmation is declined', () => {
@@ -86,7 +103,29 @@ describe('MyApplicationsComponent', () => {
 
     expect(component.applications.length).toBe(2);
     expect(component.deleting).toBe(false);
-    expect(alertSpy).toHaveBeenCalledWith('Błąd podczas usuwania aplikacji');
+    expect(snackBarOpen.mock.calls[0][0]).toBe('Błąd podczas usuwania aplikacji');
+  });
+
+  it('shows the translated API message when deletion fails with 404', () => {
+    create();
+    deleteApplication.mockReturnValue(throwError(() => new HttpErrorResponse({
+      status: 404, error: { message: 'Application not found' }
+    })));
+
+    component.deleteApplication(1);
+
+    expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja nie została znaleziona');
+  });
+
+  it.each([401, 403])('does not duplicate the interceptor notice when deletion fails with %i', status => {
+    create();
+    deleteApplication.mockReturnValue(throwError(() => new HttpErrorResponse({ status, statusText: 'Error' })));
+
+    component.deleteApplication(1);
+
+    expect(snackBarOpen).not.toHaveBeenCalled();
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(component.deletingId).toBeNull();
   });
 
   it('viewJobDetails navigates to the job page', () => {

@@ -8,8 +8,10 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { JobService } from '../../../services/job.service';
 import { JobOffer, CreateJobOffer, WorkType } from '../../../models/job-offer.model';
+import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
 
 @Component({
   selector: 'app-job-dialog',
@@ -199,6 +201,7 @@ export class JobDialogComponent {
   private jobService = inject(JobService);
   private dialogRef = inject(MatDialogRef<JobDialogComponent>);
   private cdr = inject(ChangeDetectorRef);
+  private snackBar = inject(MatSnackBar);
 
   // null = tryb dodawania, oferta = tryb edycji
   data: JobOffer | null = inject<JobOffer | null>(MAT_DIALOG_DATA, { optional: true }) ?? null;
@@ -264,16 +267,21 @@ export class JobDialogComponent {
       next: () => {
         this.submitting = false;
         this.cdr.detectChanges();
-        alert(this.data ? 'Oferta zaktualizowana!' : 'Oferta dodana!');
+        this.notify(this.data ? 'Oferta zaktualizowana!' : 'Oferta dodana!');
         this.dialogRef.close(true);
       },
       error: (error) => {
         this.submitting = false;
         this.cdr.detectChanges();
         console.error('Error saving job:', error);
-        const errorMessage = error.error?.message || error.error?.title || error.message || 'Błąd podczas zapisywania oferty';
-        alert(errorMessage);
+        if (!isHandledByInterceptor(error)) {
+          this.notify(getApiErrorMessage(error, 'Błąd podczas zapisywania oferty'));
+        }
       }
     });
+  }
+
+  private notify(message: string): void {
+    this.snackBar.open(message, 'OK', { duration: 5000 });
   }
 }
