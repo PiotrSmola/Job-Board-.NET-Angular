@@ -17,7 +17,7 @@ public class JobRepository : IJobRepository
 
     public async Task<PagedList<JobOffer>> GetJobsAsync(JobParams jobParams)
     {
-        var query = _context.JobOffers.AsQueryable();
+        var query = _context.JobOffers.AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(jobParams.SearchTerm))
         {
@@ -60,12 +60,27 @@ public class JobRepository : IJobRepository
             );
         }
 
+        // Id jako drugi klucz sortowania zapewnia stabilną kolejność między stronami
         query = jobParams.OrderBy switch
         {
-            "oldest" => query.OrderBy(j => j.CreatedAt),
-            "salaryHigh" => query.OrderByDescending(j => j.SalaryMax ?? 0),
-            "salaryLow" => query.OrderBy(j => j.SalaryMin ?? decimal.MaxValue),
-            _ => query.OrderByDescending(j => j.CreatedAt)
+            "oldest" => query.OrderBy(j => j.CreatedAt).ThenBy(j => j.Id),
+            // wynagrodzenie: oba kierunki po tym samym kluczu (górna granica widełek, a gdy jej brak - dolna),
+            // więc salaryLow jest dokładnym odwróceniem salaryHigh; oferty bez widełek zawsze na końcu
+            "salaryHigh" => query
+                .OrderBy(j => (j.SalaryMax ?? j.SalaryMin) == null)
+                .ThenByDescending(j => j.SalaryMax ?? j.SalaryMin)
+                .ThenByDescending(j => j.Id),
+            "salaryLow" => query
+                .OrderBy(j => (j.SalaryMax ?? j.SalaryMin) == null)
+                .ThenBy(j => j.SalaryMax ?? j.SalaryMin)
+                .ThenBy(j => j.Id),
+            "titleAsc" => query.OrderBy(j => j.Title).ThenBy(j => j.Id),
+            "titleDesc" => query.OrderByDescending(j => j.Title).ThenByDescending(j => j.Id),
+            "companyAsc" => query.OrderBy(j => j.Company).ThenBy(j => j.Id),
+            "companyDesc" => query.OrderByDescending(j => j.Company).ThenByDescending(j => j.Id),
+            "locationAsc" => query.OrderBy(j => j.Location).ThenBy(j => j.Id),
+            "locationDesc" => query.OrderByDescending(j => j.Location).ThenByDescending(j => j.Id),
+            _ => query.OrderByDescending(j => j.CreatedAt).ThenByDescending(j => j.Id)
         };
 
         return await PagedList<JobOffer>.CreateAsync(query, jobParams.PageNumber, jobParams.PageSize);
@@ -73,8 +88,9 @@ public class JobRepository : IJobRepository
 
     public async Task<JobOffer?> GetJobByIdAsync(int id)
     {
+        // bez śledzenia - przy aktualizacji UpdateJobAsync dołącza encję do kontekstu
         return await _context.JobOffers
-            .Include(j => j.Applications)
+            .AsNoTracking()
             .FirstOrDefaultAsync(j => j.Id == id);
     }
 
@@ -106,7 +122,7 @@ public class JobRepository : IJobRepository
         return await _context.JobOffers.AnyAsync(j => j.Id == id);
     }
 
-    public async Task<bool> SaveAllAsync()
+    private async Task<bool> SaveAllAsync()
     {
         return await _context.SaveChangesAsync() > 0;
     }

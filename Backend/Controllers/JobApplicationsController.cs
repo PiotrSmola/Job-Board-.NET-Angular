@@ -1,9 +1,14 @@
 using System.Security.Claims;
 using Backend.DTOs;
+using Backend.Helpers;
 using Backend.Interfaces;
+using Backend.Mappings;
 using Backend.Models;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using MySqlConnector;
 
 namespace Backend.Controllers;
 
@@ -14,13 +19,16 @@ public class JobApplicationsController : ControllerBase
 {
     private readonly IJobApplicationRepository _applicationRepository;
     private readonly IJobRepository _jobRepository;
+    private readonly UserManager<ApplicationUser> _userManager;
 
     public JobApplicationsController(
         IJobApplicationRepository applicationRepository,
-        IJobRepository jobRepository)
+        IJobRepository jobRepository,
+        UserManager<ApplicationUser> userManager)
     {
         _applicationRepository = applicationRepository;
         _jobRepository = jobRepository;
+        _userManager = userManager;
     }
 
     [HttpGet("my-applications")]
@@ -36,19 +44,30 @@ public class JobApplicationsController : ControllerBase
 
         var applications = await _applicationRepository.GetApplicationsByUserIdAsync(userId);
 
-        var applicationsDto = applications.Select(a => new JobApplicationDto
-        {
-            Id = a.Id,
-            JobOfferId = a.JobOfferId,
-            UserId = a.UserId,
-            Note = a.Note,
-            AppliedAt = a.AppliedAt,
-            UserEmail = a.User.Email ?? string.Empty,
-            JobTitle = a.JobOffer.Title,
-            JobOffer = a.JobOffer
-        });
+        return Ok(applications.Select(a => a.ToDto()));
+    }
 
-        return Ok(applicationsDto);
+    [HttpGet("{id:int}")]
+    [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<JobApplicationDto>> GetApplication(int id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        var application = await _applicationRepository.GetApplicationByIdAsync(id);
+
+        // cudza aplikacja (poza adminem) - 404 zamiast 403, żeby nie ujawniać jej istnienia
+        if (application == null || (application.UserId != userId && !User.IsInRole("Admin")))
+        {
+            return NotFound(new { message = "Application not found" });
+        }
+
+        return Ok(application.ToDto());
     }
 
     [HttpGet("job/{jobId}")]
@@ -66,19 +85,7 @@ public class JobApplicationsController : ControllerBase
 
         var applications = await _applicationRepository.GetApplicationsByJobIdAsync(jobId);
 
-        var applicationsDto = applications.Select(a => new JobApplicationDto
-        {
-            Id = a.Id,
-            JobOfferId = a.JobOfferId,
-            UserId = a.UserId,
-            Note = a.Note,
-            AppliedAt = a.AppliedAt,
-            UserEmail = a.User.Email ?? string.Empty,
-            JobTitle = a.JobOffer.Title,
-            JobOffer = a.JobOffer
-        });
-
-        return Ok(applicationsDto);
+        return Ok(applications.Select(a => a.ToDto()));
     }
 
     [HttpPost]
@@ -90,6 +97,12 @@ public class JobApplicationsController : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        // obronnie: konto mogło zostać usunięte (np. reset danych demo) - inaczej zapis złamałby klucz obcy
+        if (!await _userManager.Users.AnyAsync(u => u.Id == userId))
         {
             return Unauthorized();
         }
@@ -112,22 +125,22 @@ public class JobApplicationsController : ControllerBase
             AppliedAt = DateTime.UtcNow
         };
 
-        var createdApplication = await _applicationRepository.AddApplicationAsync(application);
-
-        var fullApplication = await _applicationRepository.GetApplicationByIdAsync(createdApplication.Id);
-
-        var applicationDto = new JobApplicationDto
+        JobApplication createdApplication;
+        try
         {
-            Id = fullApplication!.Id,
-            JobOfferId = fullApplication.JobOfferId,
-            UserId = fullApplication.UserId,
-            Note = fullApplication.Note,
-            AppliedAt = fullApplication.AppliedAt,
-            UserEmail = fullApplication.User.Email ?? string.Empty,
-            JobTitle = fullApplication.JobOffer.Title
-        };
+            createdApplication = await _applicationRepository.AddApplicationAsync(application);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is MySqlException { ErrorCode: MySqlErrorCode.DuplicateKeyEntry })
+        {
+            // równoległe żądanie zdążyło zapisać aplikację - unikalny indeks (JobOfferId, UserId)
+            return BadRequest(new { message = "You have already applied to this job" });
+        }
 
-        return CreatedAtAction(nameof(GetMyApplications), new { id = applicationDto.Id }, applicationDto);
+        // ponowne pobranie z ofertą i użytkownikiem, żeby zwrócić pełne DTO
+        var fullApplication = await _applicationRepository.GetApplicationByIdAsync(createdApplication.Id);
+        var applicationDto = (fullApplication ?? createdApplication).ToDto();
+
+        return CreatedAtAction(nameof(GetApplication), new { id = applicationDto.Id }, applicationDto);
     }
 
     [HttpDelete("{id}")]
@@ -186,22 +199,12 @@ public class JobApplicationsController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<JobApplicationDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<IEnumerable<JobApplicationDto>>> GetAllApplications()
+    public async Task<ActionResult<IEnumerable<JobApplicationDto>>> GetAllApplications([FromQuery] ApplicationParams applicationParams)
     {
-        var applications = await _applicationRepository.GetAllApplicationsAsync();
+        var applications = await _applicationRepository.GetApplicationsAsync(applicationParams);
 
-        var applicationsDto = applications.Select(a => new JobApplicationDto
-        {
-            Id = a.Id,
-            JobOfferId = a.JobOfferId,
-            UserId = a.UserId,
-            Note = a.Note,
-            AppliedAt = a.AppliedAt,
-            UserEmail = a.User.Email ?? string.Empty,
-            JobTitle = a.JobOffer.Title,
-            JobOffer = a.JobOffer
-        });
+        Response.AddPaginationHeader(applications);
 
-        return Ok(applicationsDto);
+        return Ok(applications.Select(a => a.ToDto()));
     }
 }

@@ -5,8 +5,9 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-jobboard}
       MYSQL_DATABASE: JobBoardDb
+    # porty publikowane tylko na localhost - stack demo ma znane hasła (konta demo, root MySQL)
     ports:
-      - "${DB_PORT:-3306}:3306"
+      - "127.0.0.1:${DB_PORT:-3306}:3306"
     volumes:
       - db-data:/var/lib/mysql
     healthcheck:
@@ -26,8 +27,12 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__DefaultConnection: "Server=db;Port=3306;Database=JobBoardDb;User=root;Password=${DB_PASSWORD:-jobboard};AllowPublicKeyRetrieval=true;"
+      # sekret do podpisywania JWT - generowany przez docker-up.ps1 i zapisywany w .env
+      JwtSettings__Secret: "${JWT_SECRET:?JWT_SECRET is not set - run docker-up.ps1 or set it in .env}"
+      # lokalny stack demo: przycisk w panelu admina resetuje dane demo (usuwa wszystkich użytkowników, oferty i aplikacje)
+      Admin__AllowSeedRefresh: ${ALLOW_SEED_REFRESH:-true}
     ports:
-      - "${BACKEND_PORT:-5285}:8080"
+      - "127.0.0.1:${BACKEND_PORT:-5285}:8080"
 
   frontend:
     build: ./frontend
@@ -35,7 +40,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "${FRONTEND_PORT:-4200}:80"
+      - "127.0.0.1:${FRONTEND_PORT:-4200}:80"
 
 volumes:
   db-data:

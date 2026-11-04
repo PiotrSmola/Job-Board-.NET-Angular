@@ -7,8 +7,10 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { JobApplicationService } from '../../services/job-application.service';
 import { JobApplication } from '../../models/job-application.model';
+import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
 
 @Component({
   selector: 'app-my-applications',
@@ -30,6 +32,7 @@ export class MyApplicationsComponent implements OnInit {
   private applicationService = inject(JobApplicationService);
   private router = inject(Router);
   private cdr = inject(ChangeDetectorRef);
+  private snackBar = inject(MatSnackBar);
 
   applications: JobApplication[] = [];
   displayedColumns: string[] = ['jobTitle', 'company', 'location', 'appliedAt', 'note', 'actions'];
@@ -53,7 +56,9 @@ export class MyApplicationsComponent implements OnInit {
         console.error('Error loading applications:', error);
         this.loading = false;
         this.cdr.detectChanges();
-        alert('Błąd podczas ładowania aplikacji');
+        if (!isHandledByInterceptor(error)) {
+          this.notify(getApiErrorMessage(error, 'Błąd podczas ładowania aplikacji'));
+        }
       }
     });
   }
@@ -71,16 +76,22 @@ export class MyApplicationsComponent implements OnInit {
         this.deleting = false;
         this.deletingId = null;
         this.cdr.detectChanges();
-        alert('Aplikacja została usunięta');
+        this.notify('Aplikacja została usunięta');
       },
       error: (error) => {
         console.error('Error deleting application:', error);
         this.deleting = false;
         this.deletingId = null;
         this.cdr.detectChanges();
-        alert('Błąd podczas usuwania aplikacji');
+        if (!isHandledByInterceptor(error)) {
+          this.notify(getApiErrorMessage(error, 'Błąd podczas usuwania aplikacji'));
+        }
       }
     });
+  }
+
+  private notify(message: string): void {
+    this.snackBar.open(message, 'OK', { duration: 5000 });
   }
 
   viewJobDetails(jobId: number): void {

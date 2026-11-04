@@ -1,0 +1,68 @@
+@use '../admin-table';
+
+.applications-table {
+  width: 100%;
+  background-color: transparent;
+
+  th {
+    background-color: rgba(0, 229, 255, 0.05);
+    color: var(--primary-color);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.875rem;
+    letter-spacing: 0.5px;
+  }
+
+  tr {
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+  }
+
+  .app-id {
+    color: var(--primary-color);
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+  }
+
+  .user-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    .user-name {
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+  }
+
+  .email-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: var(--text-secondary);
+    }
+  }
+
+  .date-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .note {
+    color: var(--text-secondary);
+    font-style: italic;
+    font-size: 0.875rem;
+  }
+
+  .no-note {
+    color: #666;
+    font-style: italic;
+  }
+}

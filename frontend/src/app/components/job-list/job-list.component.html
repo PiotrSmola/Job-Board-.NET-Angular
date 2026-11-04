@@ -70,9 +70,11 @@
     </div>
   </mat-card>
 
-  <div class="results-info">
-    Znaleziono: <span><strong>{{ totalItems }}</strong> ofert</span>
-  </div>
+  @if (!loadError) {
+    <div class="results-info">
+      Znaleziono: <span><strong>{{ totalItems }}</strong> ofert</span>
+    </div>
+  }
 
   @if (loading) {
     <div class="loading-container">
@@ -80,7 +82,19 @@
     </div>
   }
 
-  @if (!loading) {
+  @if (!loading && loadError) {
+    <div class="load-error">
+      <mat-icon>cloud_off</mat-icon>
+      <h3>{{ loadError }}</h3>
+      <p>Sprawdź połączenie i spróbuj ponownie</p>
+      <button mat-raised-button color="primary" (click)="loadJobs()">
+        <mat-icon>refresh</mat-icon>
+        Spróbuj ponownie
+      </button>
+    </div>
+  }
+
+  @if (!loading && !loadError) {
     <div class="jobs-grid">
       @for (job of jobs; track job.id) {
         <mat-card class="job-card" (click)="viewJobDetails(job.id)">
@@ -129,7 +143,7 @@
     </div>
   }
 
-  @if (!loading && jobs.length > 0) {
+  @if (!loading && !loadError && jobs.length > 0) {
     <mat-paginator
       [length]="totalItems"
       [pageSize]="jobParams.pageSize"

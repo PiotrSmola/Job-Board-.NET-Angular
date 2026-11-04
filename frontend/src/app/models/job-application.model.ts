@@ -4,10 +4,12 @@ export interface JobApplication {
   id: number;
   jobOfferId: number;
   userId: string;
+  userEmail: string;
+  userFullName: string;
+  jobTitle: string;
+  company: string;
   note: string | null;
   appliedAt: Date;
-  userEmail: string;
-  jobTitle: string;
   jobOffer?: JobOffer;
 }
 

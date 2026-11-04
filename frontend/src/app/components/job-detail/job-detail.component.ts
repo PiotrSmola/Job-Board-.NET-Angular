@@ -11,10 +11,15 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { HttpErrorResponse } from '@angular/common/http';
 import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
 import { JobOffer, WorkType } from '../../models/job-offer.model';
+import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
+
+const ALREADY_APPLIED_MESSAGE = 'You have already applied to this job';
 
 @Component({
   selector: 'app-apply-dialog',
@@ -75,6 +80,7 @@ export class JobDetailComponent implements OnInit {
   authService = inject(AuthService);
   private dialog = inject(MatDialog);
   private cdr = inject(ChangeDetectorRef);
+  private snackBar = inject(MatSnackBar);
 
   job: JobOffer | null = null;
   loading = false;
@@ -108,6 +114,9 @@ export class JobDetailComponent implements OnInit {
         console.error('Error loading job:', err);
         this.loading = false;
         this.cdr.detectChanges();
+        if (!isHandledByInterceptor(err)) {
+          this.notify(getApiErrorMessage(err, 'Nie udało się wczytać oferty'));
+        }
       }
     });
   }
@@ -153,14 +162,24 @@ export class JobDetailComponent implements OnInit {
         this.hasApplied = true;
         this.applying = false;
         this.cdr.detectChanges();
-        alert('Aplikacja wysłana pomyślnie!');
+        this.notify('Aplikacja wysłana pomyślnie!');
       },
       error: (error) => {
         this.applying = false;
+        // Backend odrzucił duplikat – przycisk powinien pokazać, że aplikacja już istnieje
+        if (error instanceof HttpErrorResponse && error.status === 400 && error.error?.message === ALREADY_APPLIED_MESSAGE) {
+          this.hasApplied = true;
+        }
         this.cdr.detectChanges();
-        alert(error.error?.message || 'Błąd podczas aplikowania');
+        if (!isHandledByInterceptor(error)) {
+          this.notify(getApiErrorMessage(error, 'Błąd podczas aplikowania'));
+        }
       }
     });
+  }
+
+  private notify(message: string): void {
+    this.snackBar.open(message, 'OK', { duration: 5000 });
   }
 
   getWorkTypeLabel(): string {

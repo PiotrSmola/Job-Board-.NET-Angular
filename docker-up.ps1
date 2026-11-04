@@ -34,28 +34,67 @@ function Get-FreePort([int]$Preferred) {
     return $port
 }
 
-# hasło do bazy zachowujemy z poprzedniego .env
-$dbPassword = 'jobboard'
-if (Test-Path .env) {
-    $line = Get-Content .env | Where-Object { $_ -match '^DB_PASSWORD=' } | Select-Object -First 1
-    if ($line) { $dbPassword = $line.Substring('DB_PASSWORD='.Length) }
+function Get-EnvValue([string]$Name, [string]$Default) {
+    if (Test-Path .env) {
+        $line = Get-Content .env | Where-Object { $_ -match "^$Name=" } | Select-Object -First 1
+        if ($line) {
+            # pusta wartość (np. "DB_PASSWORD=") oznacza wartość domyślną
+            $value = $line.Substring($Name.Length + 1).Trim()
+            if ($value) { return $value }
+        }
+    }
+    return $Default
 }
 
-# zatrzymanie wcześniej uruchomionych kontenerów tego projektu, żeby nie blokowały własnych portów
-docker compose down
-if ($LASTEXITCODE -ne 0) { throw 'docker compose down nie powiodło się' }
-
-$ports = [ordered]@{
-    FRONTEND_PORT = Get-FreePort $FrontendPort
-    BACKEND_PORT  = Get-FreePort $BackendPort
-    DB_PORT       = Get-FreePort $DbPort
+# losowy ciąg alfanumeryczny z kryptograficznie bezpiecznego generatora
+function New-RandomSecret([int]$Length) {
+    $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $buffer = New-Object byte[] 1
+    $sb = New-Object System.Text.StringBuilder
+    try {
+        while ($sb.Length -lt $Length) {
+            $rng.GetBytes($buffer)
+            # bajty >= 248 (4 * 62) są odrzucane, żeby każdy znak był równie prawdopodobny
+            if ($buffer[0] -lt 248) { [void]$sb.Append($chars[$buffer[0] % $chars.Length]) }
+        }
+    } finally {
+        $rng.Dispose()
+    }
+    return $sb.ToString()
 }
 
-$envLines = @($ports.Keys | ForEach-Object { "$_=$($ports[$_])" }) + "DB_PASSWORD=$dbPassword"
-[System.IO.File]::WriteAllLines((Join-Path $PSScriptRoot '.env'), $envLines, [System.Text.UTF8Encoding]::new($false))
+# hasło do bazy, sekret JWT i ALLOW_SEED_REFRESH zachowujemy z poprzedniego .env
+$dbPassword = Get-EnvValue 'DB_PASSWORD' 'jobboard'
+$jwtSecret = Get-EnvValue 'JWT_SECRET' ''
+if (-not $jwtSecret) {
+    $jwtSecret = New-RandomSecret 64
+    Write-Host 'Wygenerowano nowy JWT_SECRET (zapisany w .env).'
+}
+$allowSeedRefresh = Get-EnvValue 'ALLOW_SEED_REFRESH' ''
 
-docker compose up -d --build
-if ($LASTEXITCODE -ne 0) { throw 'docker compose up nie powiodło się' }
+# docker compose wymaga JWT_SECRET już przy "down" (interpolacja całego pliku), a .env może go jeszcze nie mieć
+$env:JWT_SECRET = $jwtSecret
+try {
+    # zatrzymanie wcześniej uruchomionych kontenerów tego projektu, żeby nie blokowały własnych portów
+    docker compose down
+    if ($LASTEXITCODE -ne 0) { throw 'docker compose down nie powiodło się' }
+
+    $ports = [ordered]@{
+        FRONTEND_PORT = Get-FreePort $FrontendPort
+        BACKEND_PORT  = Get-FreePort $BackendPort
+        DB_PORT       = Get-FreePort $DbPort
+    }
+
+    $envLines = @($ports.Keys | ForEach-Object { "$_=$($ports[$_])" }) + "DB_PASSWORD=$dbPassword" + "JWT_SECRET=$jwtSecret"
+    if ($allowSeedRefresh) { $envLines += "ALLOW_SEED_REFRESH=$allowSeedRefresh" }
+    [System.IO.File]::WriteAllLines((Join-Path $PSScriptRoot '.env'), $envLines, [System.Text.UTF8Encoding]::new($false))
+
+    docker compose up -d --build
+    if ($LASTEXITCODE -ne 0) { throw 'docker compose up nie powiodło się' }
+} finally {
+    Remove-Item Env:JWT_SECRET -ErrorAction SilentlyContinue
+}
 
 Write-Host ''
 Write-Host "Frontend: http://localhost:$($ports.FRONTEND_PORT)"

@@ -15,7 +15,8 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { JobService } from '../../services/job.service';
 import { JobOffer, WorkType } from '../../models/job-offer.model';
 import { JobParams } from '../../models/job-params.model';
-import { Subject, debounceTime, distinctUntilChanged, takeUntil } from 'rxjs';
+import { getApiErrorMessage } from '../../utils/http-errors';
+import { Subject, debounceTime, filter, takeUntil } from 'rxjs';
 
 @Component({
   selector: 'app-job-list',
@@ -45,6 +46,8 @@ export class JobListComponent implements OnInit, OnDestroy {
   jobs: JobOffer[] = [];
   loading = false;
   totalItems = 0;
+  /** Komunikat błędu ostatniego ładowania (null = brak błędu). */
+  loadError: string | null = null;
 
   jobParams = new JobParams();
   private searchSubject = new Subject<string>();
@@ -71,13 +74,11 @@ export class JobListComponent implements OnInit, OnDestroy {
 
     this.searchSubject.pipe(
       debounceTime(500),
-      distinctUntilChanged(),
+      // Porównanie z aktualnie zastosowaną frazą (a nie z poprzednią emisją) – po wyczyszczeniu
+      // filtrów ta sama fraza wpisana ponownie musi wysłać żądanie
+      filter(searchTerm => searchTerm !== this.jobParams.searchTerm),
       takeUntil(this.destroy$)
-    ).subscribe(searchTerm => {
-      this.jobParams.searchTerm = searchTerm;
-      this.jobParams.pageNumber = 1;
-      this.loadJobs();
-    });
+    ).subscribe(searchTerm => this.applySearchTerm(searchTerm));
 
     this.salaryFilterSubject.pipe(
       debounceTime(800),
@@ -102,19 +103,17 @@ export class JobListComponent implements OnInit, OnDestroy {
 
   loadJobs(): void {
     this.loading = true;
+    this.loadError = null;
     this.jobService.getJobs(this.jobParams).subscribe({
       next: (result) => {
-        console.log('✅ Jobs loaded - Full result:', result);
-        console.log('📊 Pagination object:', result.pagination);
-        console.log('📈 Total items:', result.pagination.TotalItems);
-        console.log('📦 Jobs array length:', result.result.length);
         this.jobs = result.result;
         this.totalItems = result.pagination.TotalItems;
         this.loading = false;
         this.cdr.detectChanges();
       },
       error: (error) => {
-        console.error('❌ Error loading jobs:', error);
+        console.error('Error loading jobs:', error);
+        this.loadError = getApiErrorMessage(error, 'Nie udało się wczytać ofert');
         this.loading = false;
         this.cdr.detectChanges();
       }
@@ -150,12 +149,20 @@ export class JobListComponent implements OnInit, OnDestroy {
   }
 
   clearSearch(): void {
-    this.jobParams.searchTerm = '';
-    this.onSearchTermChange('');
+    // Pusta emisja anuluje frazę czekającą w debounce
+    this.searchSubject.next('');
+    this.applySearchTerm('');
   }
 
   clearFilters(): void {
     this.jobParams = new JobParams();
+    this.searchSubject.next('');
+    this.loadJobs();
+  }
+
+  private applySearchTerm(searchTerm: string): void {
+    this.jobParams.searchTerm = searchTerm;
+    this.jobParams.pageNumber = 1;
     this.loadJobs();
   }
 

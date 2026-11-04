@@ -251,7 +251,8 @@
   }
 }
 
-.no-results {
+.no-results,
+.load-error {
   grid-column: 1 / -1;
   text-align: center;
   padding: 64px 24px;
@@ -272,6 +273,24 @@
   }
 
   p {
+    margin: 0;
+  }
+}
+
+.load-error {
+  mat-icon {
+    color: #f44336;
+  }
+
+  p {
+    margin-bottom: 24px;
+  }
+
+  button mat-icon {
+    font-size: 24px;
+    width: 24px;
+    height: 24px;
+    color: inherit;
     margin: 0;
   }
 }

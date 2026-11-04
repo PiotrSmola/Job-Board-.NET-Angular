@@ -11,5 +11,4 @@ public interface IJobRepository
     Task<JobOffer> UpdateJobAsync(JobOffer jobOffer);
     Task<bool> DeleteJobAsync(int id);
     Task<bool> JobExistsAsync(int id);
-    Task<bool> SaveAllAsync();
 }

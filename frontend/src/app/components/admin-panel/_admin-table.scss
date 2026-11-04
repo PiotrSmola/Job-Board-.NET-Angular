@@ -1,0 +1,125 @@
+// Wspólne style zakładek panelu admina (filtry, tabela, stany puste)
+
+.tab-content {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.filters-card {
+  margin-bottom: 32px;
+  padding: 24px;
+  background-color: var(--surface-color) !important;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.filters-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+
+  button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .results-count {
+    color: var(--text-secondary);
+    font-size: 1rem;
+
+    strong {
+      color: var(--primary-color);
+      font-size: 1.2rem;
+    }
+  }
+}
+
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+.table-card {
+  position: relative;
+  background-color: var(--surface-color) !important;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border-radius: 12px;
+}
+
+.table-container {
+  overflow-x: auto;
+}
+
+// Nakładka podczas przeładowania strony – tabela zostaje na miejscu
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.35);
+}
+
+th.mat-sort-header {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 80px 24px;
+  color: #b0b0b0;
+
+  mat-icon {
+    font-size: 96px;
+    width: 96px;
+    height: 96px;
+    color: #424242;
+    margin-bottom: 24px;
+  }
+
+  h3 {
+    font-size: 1.75rem;
+    color: #e0e0e0;
+    margin: 0 0 12px 0;
+  }
+
+  p {
+    font-size: 1rem;
+    margin: 0 0 24px 0;
+  }
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 24px;
+    height: 48px;
+    font-size: 1rem;
+  }
+}

@@ -21,19 +21,17 @@ public static class DatabaseSeeder
         await SeedJobOffers(context);
     }
 
-    public static async Task RefreshSeedAsync(IServiceProvider serviceProvider)
+    // Usuwa WSZYSTKIE aplikacje, oferty i użytkowników, po czym odtwarza dane demo.
+    // UserManager i RoleManager muszą korzystać z tego samego (scoped) kontekstu - wtedy całość jest w jednej transakcji.
+    public static async Task RefreshSeedAsync(
+        ApplicationDbContext context,
+        UserManager<ApplicationUser> userManager,
+        RoleManager<IdentityRole> roleManager)
     {
-        var context = serviceProvider.GetRequiredService<ApplicationDbContext>();
-        var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        var roleManager = serviceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+        await using var transaction = await context.Database.BeginTransactionAsync();
 
-        var applications = await context.JobApplications.ToListAsync();
-        context.JobApplications.RemoveRange(applications);
-        await context.SaveChangesAsync();
-
-        var jobOffers = await context.JobOffers.ToListAsync();
-        context.JobOffers.RemoveRange(jobOffers);
-        await context.SaveChangesAsync();
+        await context.JobApplications.ExecuteDeleteAsync();
+        await context.JobOffers.ExecuteDeleteAsync();
 
         var users = await userManager.Users.ToListAsync();
         foreach (var user in users)
@@ -46,6 +44,8 @@ public static class DatabaseSeeder
         await SeedUsers(userManager);
 
         await SeedJobOffers(context, forceReseed: true);
+
+        await transaction.CommitAsync();
     }
 
     private static async Task SeedRoles(RoleManager<IdentityRole> roleManager)
