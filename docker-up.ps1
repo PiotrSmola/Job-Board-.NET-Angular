@@ -37,7 +37,11 @@ function Get-FreePort([int]$Preferred) {
 function Get-EnvValue([string]$Name, [string]$Default) {
     if (Test-Path .env) {
         $line = Get-Content .env | Where-Object { $_ -match "^$Name=" } | Select-Object -First 1
-        if ($line) { return $line.Substring($Name.Length + 1) }
+        if ($line) {
+            # pusta wartość (np. "DB_PASSWORD=") oznacza wartość domyślną
+            $value = $line.Substring($Name.Length + 1).Trim()
+            if ($value) { return $value }
+        }
     }
     return $Default
 }

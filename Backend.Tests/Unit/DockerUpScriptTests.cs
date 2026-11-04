@@ -1,0 +1,105 @@
+using System.Diagnostics;
+using System.Text;
+using Backend.Tests.Infrastructure;
+
+namespace Backend.Tests.Unit;
+
+// docker-up.ps1 nie jest uruchamiany - test wyciąga z niego samą funkcję Get-EnvValue (parser PowerShella)
+// i wywołuje ją w katalogu tymczasowym z przygotowanym plikiem .env. Wymaga pwsh (jest w obrazie .NET SDK)
+// albo Windows PowerShell.
+public class DockerUpScriptTests
+{
+    private const string Harness = """
+        param([string]$ScriptPath)
+        $tokens = $null; $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$errors)
+        if ($errors.Count -gt 0) { throw "docker-up.ps1 has parse errors: $($errors -join '; ')" }
+        $function = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-EnvValue' }, $true) | Select-Object -First 1
+        Invoke-Expression $function.Extent.Text
+        "DB_PASSWORD=$(Get-EnvValue 'DB_PASSWORD' 'jobboard')"
+        "JWT_SECRET=$(Get-EnvValue 'JWT_SECRET' '')"
+        "ALLOW_SEED_REFRESH=$(Get-EnvValue 'ALLOW_SEED_REFRESH' 'default')"
+        "MISSING=$(Get-EnvValue 'MISSING' 'fallback')"
+        """;
+
+    private static Dictionary<string, string> RunGetEnvValue(string envFileContent)
+    {
+        var directory = Directory.CreateTempSubdirectory("docker-up-test-");
+        try
+        {
+            File.WriteAllText(Path.Combine(directory.FullName, ".env"), envFileContent);
+            var harnessPath = Path.Combine(directory.FullName, "harness.ps1");
+            File.WriteAllText(harnessPath, Harness, new UTF8Encoding(true));
+
+            var shell = OperatingSystem.IsWindows() && !CanStart("pwsh") ? "powershell" : "pwsh";
+            var startInfo = new ProcessStartInfo(shell)
+            {
+                WorkingDirectory = directory.FullName,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", harnessPath, RepositoryFiles.Find("docker-up.ps1") })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            using var process = Process.Start(startInfo)!;
+            var output = process.StandardOutput.ReadToEnd();
+            var error = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            Assert.True(process.ExitCode == 0, $"PowerShell failed: {error}");
+
+            return output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(line => line.Split('=', 2))
+                .ToDictionary(parts => parts[0], parts => parts[1]);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    private static bool CanStart(string fileName)
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo(fileName, "-NoProfile -Command exit") { RedirectStandardOutput = true });
+            process?.WaitForExit();
+            return process != null;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    }
+
+    [Fact]
+    public void GetEnvValue_WithEmptyValues_FallsBackToDefaults()
+    {
+        var values = RunGetEnvValue("DB_PASSWORD=\nJWT_SECRET=\nALLOW_SEED_REFRESH=  \n");
+
+        Assert.Equal("jobboard", values["DB_PASSWORD"]);
+        Assert.Equal(string.Empty, values["JWT_SECRET"]);
+        Assert.Equal("default", values["ALLOW_SEED_REFRESH"]);
+        Assert.Equal("fallback", values["MISSING"]);
+    }
+
+    [Fact]
+    public void GetEnvValue_WithValues_KeepsThem()
+    {
+        var values = RunGetEnvValue("DB_PASSWORD=s3cret\r\nJWT_SECRET=abc=def\r\nALLOW_SEED_REFRESH=false\r\n");
+
+        Assert.Equal("s3cret", values["DB_PASSWORD"]);
+        Assert.Equal("abc=def", values["JWT_SECRET"]);
+        Assert.Equal("false", values["ALLOW_SEED_REFRESH"]);
+    }
+
+    [Fact]
+    public void Script_IsSavedWithUtf8Bom()
+    {
+        // Windows PowerShell 5.1 bez BOM czyta plik w kodowaniu ANSI i psuje polskie znaki
+        var bytes = File.ReadAllBytes(RepositoryFiles.Find("docker-up.ps1"));
+
+        Assert.True(bytes.Length > 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF);
+    }
+}
