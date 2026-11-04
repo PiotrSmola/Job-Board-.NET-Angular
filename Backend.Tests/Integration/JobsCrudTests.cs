@@ -165,14 +165,67 @@ public class JobsCrudTests
         Assert.Equal(WorkType.Onsite, fetched.WorkType);
     }
 
-    [Fact(Skip = "Bug: SalaryMin greater than SalaryMax is accepted (no cross-field validation in CreateJobOfferDto / JobsController.CreateJob); expected 400.")]
-    public async Task CreateJob_WithSalaryMinGreaterThanSalaryMax_ShouldReturnBadRequest()
+    private static decimal? Salary(string? value) =>
+        value == null ? null : decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+
+    [Fact]
+    public async Task CreateJob_WithSalaryMinGreaterThanSalaryMax_ReturnsBadRequest()
     {
         using var client = await _api.AdminClientAsync();
 
         var response = await client.PostJsonAsync("/api/jobs", ApiFixture.NewJobDto(j => { j.SalaryMin = 20000; j.SalaryMax = 1000; }));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var errors = body.RootElement.GetProperty("errors");
+        Assert.Equal("SalaryMin cannot be greater than SalaryMax", errors.GetProperty("SalaryMin")[0].GetString());
+    }
+
+    [Theory]
+    [InlineData("-1", null)]
+    [InlineData(null, "-0.01")]
+    [InlineData("-5000", "-1000")]
+    [InlineData("10000000000000000", null)]
+    public async Task CreateJob_WithNegativeOrTooLargeSalary_ReturnsBadRequest(string? min, string? max)
+    {
+        using var client = await _api.AdminClientAsync();
+
+        var response = await client.PostJsonAsync("/api/jobs",
+            ApiFixture.NewJobDto(j => { j.SalaryMin = Salary(min); j.SalaryMax = Salary(max); }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("0", "0")]
+    [InlineData("5000", "5000")]
+    [InlineData(null, "8000")]
+    [InlineData("8000", null)]
+    [InlineData("1500.50", "9999999999999999.99")]
+    public async Task CreateJob_WithValidSalaryRange_Succeeds(string? min, string? max)
+    {
+        using var client = await _api.AdminClientAsync();
+
+        var response = await client.PostJsonAsync("/api/jobs",
+            ApiFixture.NewJobDto(j => { j.SalaryMin = Salary(min); j.SalaryMax = Salary(max); }));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var job = await response.ReadJsonAsync<JobOfferDto>();
+        Assert.Equal(Salary(min), job.SalaryMin);
+        Assert.Equal(Salary(max), job.SalaryMax);
+    }
+
+    [Fact]
+    public async Task UpdateJob_WithSalaryMinGreaterThanSalaryMax_ReturnsBadRequestAndKeepsOffer()
+    {
+        var job = await _api.CreateJobAsync(j => { j.SalaryMin = 5000; j.SalaryMax = 8000; });
+        using var client = await _api.AdminClientAsync();
+
+        var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", ApiFixture.NewJobDto(j => { j.SalaryMin = 9000; j.SalaryMax = 8000; }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var fetched = await (await client.GetAsync($"/api/jobs/{job.Id}")).ReadJsonAsync<JobOfferDto>();
+        Assert.Equal(5000, fetched.SalaryMin);
     }
 
     // --- edycja ---
