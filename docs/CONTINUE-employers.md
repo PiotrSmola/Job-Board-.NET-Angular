@@ -101,3 +101,36 @@ Cel: pracodawca rejestruje firmę, po zatwierdzeniu przez admina publikuje włas
 ### Kolejne kroki
 1. Smoke test z backendem (rejestracja pracodawcy, moderacja, publikacja po zatwierdzeniu).
 2. Testy komponentów z listy „Brakuje”.
+
+## Backend – stan
+
+### Zrobione (commity 001a86b, 7beb48b, 453a805, 1022621)
+- Model: `Company` + `CompanyStatus`, `ApplicationUser.CompanyId` (FK Restrict), `JobOffer.CompanyId` (FK Restrict, kolumna tekstowa `Company` usunięta), rola `Employer` (`Models/Roles.cs`), seeder (firmy z nazw ofert, konta `rekruter@techcorp.pl` → TechCorp Solutions Approved, `rekruter@nowafirma.pl` → „Nowa Firma Sp. z o.o.” Pending, hasło `Employer123!`; RefreshSeed usuwa też firmy).
+- Migracja `20261105120246_AddCompanies`: backfill – jedna firma Approved na nazwę po normalizacji (zwinięte białe znaki + trim, grupowanie w kolacji kolumny = bez wielkości liter), pisownia i CreatedAt z najstarszej oferty, pusta nazwa → „Unknown company”; potem NOT NULL + indeks + FK, drop `Company`. Down przywraca kolumnę (nazwa w ujednoliconej pisowni; przypisania pracodawców i firmy bez ofert tracone).
+- Autoryzacja w jednym miejscu: `Services/CurrentUserAccess.cs` (`ICurrentUserAccess`: scope, CanManageCompany/Job/Application, CanViewJob; firma pracodawcy z bazy).
+- Endpointy wg kontraktu: `register-employer` (transakcja), `GET /api/companies[/{id}]`, `GET/PUT /api/employer/company`, `/api/admin/companies` (lista, POST, PUT, approve, reject, DELETE), `/api/jobs` (+`companyId`, widoczność tylko firm Approved), manage/CRUD/status dla Admin+Employer, aplikacje (`/all`, `/job/{id}`, `/{id}`, status) dla Admin+Employer swojej firmy, POST aplikacji – 403 dla Admin/Employer. Walidacja URL http/https (`Helpers/HttpUrlAttribute.cs`).
+- README: sekcja „Role i firmy”, konta demo.
+
+### Stan migracji na JobBoardDb
+Zastosowana (Up → sprawdzony backfill 20 firm → Down → Up). Dodatkowo test na kopii bazy z duplikatami („  techcorp   solutions ”, „TECHCORP SOLUTIONS”, tab w nazwie, pusta nazwa) – OK. Konta demo pracodawców pojawią się przy następnym starcie API (seeder).
+
+### Testy
+- `dotnet build` (Backend + Backend.Tests): 0 ostrzeżeń, 0 błędów.
+- Ostatni pełny przebieg (przed poprawkami testów): 525/532 zielone; czerwone były testy zakładające, że admin aplikuje, oraz `MigrationTests` (insert użytkownika przez bieżący model). Poprawki są w commicie 453a805 (`ApplicationWorkflowTests`: admin → 403, `MigrationTests.InsertUserAsync` surowym SQL, insert oferty po migracji z `CompanyId`), ale pełny przebieg po poprawkach został przerwany (koniec sesji) – częściowy log bez błędów. **Do zrobienia: uruchomić `dotnet test` i potwierdzić 532/532.**
+- Smoke test NIE został wykonany. Gotowy skrypt scenariusza z kontraktu (bash + curl) był w scratchpadzie sesji; do odtworzenia: API w kontenerze sdk na porcie 5099 i kroki z briefu.
+
+### Odstępstwa / interpretacje kontraktu
+- Pracodawca z firmą nie-Approved: 403 dla każdego zapisu, po którym oferta byłaby `Active` (POST/PUT/PATCH); `Draft` i `Closed` dozwolone (zamknięcie oferty nie publikuje). Admin publikuje w każdej firmie.
+- `companyId` dla admina: brak → 400 (ValidationProblem, pole `CompanyId`), nieistniejąca firma → 400 `{message:"Company not found"}`; pracodawca – ignorowane.
+- Pracodawca bez firmy (nie powinno wystąpić) → 403 `Employer account is not linked to a company`.
+- `CompanyDto.membersCount` tylko w `/api/admin/companies`; publicznie `status/rejectionReason/reviewedAt` = null (pola obecne).
+- `activeJobsCount` = oferty Active i niewygasłe (dla firmy Approved = widoczne publicznie).
+- Ponowne zgłoszenie odrzuconej firmy czyści też `reviewedAt` (nie tylko powód).
+- Firmy z migracji: Approved z `reviewedAt = null`.
+- Inny pracodawca: publiczny `GET /api/jobs/{id}` aktywnej oferty zatwierdzonej firmy zwraca 200 (jak dla każdego), 404 dotyczy operacji zarządzania (PUT/PATCH/DELETE ofert, `/job/{id}`, `/{id}` i status aplikacji).
+
+### Kolejne kroki
+1. `dotnet test` (wszystkie) – naprawić ewentualne czerwone.
+2. Smoke test wg briefu (rejestracja pracodawcy → … → firma wraca do Pending).
+3. Nowe testy (osobny agent): rejestracja pracodawcy, moderacja firm, zakres Employer w manage/all, 404 dla cudzych zasobów, migracja AddCompanies (backfill duplikatów, Down/Up).
+4. Ryzyka: zatwierdzona firma może zmienić nazwę bez ponownej weryfikacji; Down migracji traci przypisania pracodawców.
