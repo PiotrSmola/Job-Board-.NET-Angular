@@ -229,6 +229,57 @@ public class RecruitmentModelTests
         Assert.Contains(errors, e => e.MemberNames.Contains(nameof(CreateJobOfferDto.SalaryMin)));
     }
 
+    // --- UpdateJobOfferDto ---
+
+    private static JobOffer StoredJob(JobOfferStatus status, DateTime? expiresAt) =>
+        new() { Id = 1, Title = "T", Company = "C", Description = "D", Location = "L", Status = status, ExpiresAt = expiresAt };
+
+    private static UpdateJobOfferDto UpdateJob(JobOfferStatus? status, DateTime? expiresAt) =>
+        new() { Title = "T", Company = "C", Description = "D", Location = "L", Status = status, ExpiresAt = expiresAt };
+
+    [Fact]
+    public void UpdateJobOfferDto_WithoutStatus_IsValidAndHasNoStatus()
+    {
+        var dto = UpdateJob(null, Now.AddDays(-1));
+
+        // reguła daty zależy od zapisanej oferty, więc sama walidacja DTO jej nie sprawdza
+        Assert.Empty(Validate(dto));
+        Assert.Null(dto.Status);
+    }
+
+    [Theory]
+    [InlineData(JobOfferStatus.Draft)]
+    [InlineData(JobOfferStatus.Closed)]
+    public void UpdateJobOfferDto_WithoutStatusAndPastDate_UsesStoredNonActiveStatus(JobOfferStatus stored)
+    {
+        Assert.Null(UpdateJob(null, Now.AddDays(-1)).ValidateExpiresAtAgainst(StoredJob(stored, null), Now));
+    }
+
+    [Fact]
+    public void UpdateJobOfferDto_WithoutStatusAndPastDate_FailsForStoredActiveOffer()
+    {
+        var error = UpdateJob(null, Now.AddDays(-1)).ValidateExpiresAtAgainst(StoredJob(JobOfferStatus.Active, Now.AddDays(3)), Now);
+
+        Assert.NotNull(error);
+        Assert.Contains(nameof(UpdateJobOfferDto.ExpiresAt), error!.MemberNames);
+    }
+
+    [Theory]
+    [InlineData(JobOfferStatus.Draft)]
+    [InlineData(JobOfferStatus.Closed)]
+    public void UpdateJobOfferDto_PublishingWithPastDate_Fails(JobOfferStatus stored)
+    {
+        Assert.NotNull(UpdateJob(JobOfferStatus.Active, Now.AddDays(-1)).ValidateExpiresAtAgainst(StoredJob(stored, Now.AddDays(-1)), Now));
+    }
+
+    [Fact]
+    public void UpdateJobOfferDto_UndefinedStatus_IsInvalid()
+    {
+        var error = Assert.Single(Validate(UpdateJob((JobOfferStatus)7, null)));
+
+        Assert.Contains(nameof(UpdateJobOfferDto.Status), error.MemberNames);
+    }
+
     // --- DTO zmiany statusu ---
 
     [Fact]

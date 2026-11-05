@@ -657,19 +657,51 @@ public class JobLifecycleTests
         Assert.Empty(await PublicJobsAsync(token));
     }
 
-    // Znane zachowanie (docs/CONTINUE-recruitment-workflow.md): DTO jest pełną reprezentacją oferty,
-    // więc brak pola status w PUT oznacza Active
-    [Fact]
-    public async Task UpdateJob_WithoutStatusField_SetsOfferToActive()
+    // PUT bez pola status zachowuje obecny status - edycja treści nie publikuje szkicu ani nie wznawia zamkniętej oferty
+    [Theory]
+    [InlineData(JobOfferStatus.Draft)]
+    [InlineData(JobOfferStatus.Active)]
+    [InlineData(JobOfferStatus.Closed)]
+    public async Task UpdateJob_WithoutStatusField_KeepsCurrentStatus(JobOfferStatus status)
     {
-        var draft = await _api.CreateJobWithStatusAsync(JobOfferStatus.Draft);
+        var job = await _api.CreateJobWithStatusAsync(status);
         using var admin = await _api.AdminClientAsync();
-        var json = """{"title":"T","company":"C","description":"D","location":"L","workType":0}""";
+        var json = """{"title":"Edited","company":"C","description":"D","location":"L","workType":0}""";
 
-        var response = await admin.PutRawJsonAsync($"/api/jobs/{draft.Id}", json);
+        var response = await admin.PutRawJsonAsync($"/api/jobs/{job.Id}", json);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(JobOfferStatus.Active, (await response.ReadJsonAsync<JobOfferDto>()).Status);
+        var updated = await response.ReadJsonAsync<JobOfferDto>();
+        Assert.Equal(status, updated.Status);
+        Assert.Equal("Edited", updated.Title);
+        var fetched = await (await admin.GetAsync($"/api/jobs/{job.Id}")).ReadJsonAsync<JobOfferDto>();
+        Assert.Equal(status, fetched.Status);
+    }
+
+    [Fact]
+    public async Task UpdateJob_WithoutStatusFieldOnClosedOfferWithPastExpiresAt_Succeeds()
+    {
+        var closed = await _api.CreateJobWithStatusAsync(JobOfferStatus.Closed, DateTime.UtcNow.AddDays(-3));
+        using var admin = await _api.AdminClientAsync();
+        var json = $$"""{"title":"T","company":"C","description":"D","location":"L","workType":0,"expiresAt":"{{DateTime.UtcNow.AddDays(-1):O}}"}""";
+
+        var response = await admin.PutRawJsonAsync($"/api/jobs/{closed.Id}", json);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(JobOfferStatus.Closed, (await response.ReadJsonAsync<JobOfferDto>()).Status);
+    }
+
+    [Fact]
+    public async Task UpdateJob_WithoutStatusFieldOnActiveOfferWithPastExpiresAt_ReturnsBadRequest()
+    {
+        var job = await _api.CreateJobWithStatusAsync(JobOfferStatus.Active, DateTime.UtcNow.AddDays(5));
+        using var admin = await _api.AdminClientAsync();
+        var json = $$"""{"title":"T","company":"C","description":"D","location":"L","workType":0,"expiresAt":"{{DateTime.UtcNow.AddDays(-1):O}}"}""";
+
+        var response = await admin.PutRawJsonAsync($"/api/jobs/{job.Id}", json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("ExpiresAt must be in the future for an active job offer", (await ErrorsAsync(response)).GetProperty("ExpiresAt")[0].GetString());
     }
 
     // --- PATCH /api/jobs/{id}/status ---

@@ -88,13 +88,20 @@ public class JobsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<JobOfferDto>> UpdateJob(int id, CreateJobOfferDto updateJobDto)
+    public async Task<ActionResult<JobOfferDto>> UpdateJob(int id, UpdateJobOfferDto updateJobDto)
     {
         // encja pobierana bez śledzenia - UpdateJobAsync dołącza ją do kontekstu jako zmodyfikowaną
         var job = await _jobRepository.GetJobByIdAsync(id);
         if (job == null)
         {
             return NotFound(new { message = "Job offer not found" });
+        }
+
+        // walidacja daty wymaga zapisanej oferty (status z bazy, gdy żądanie go nie zawiera) - ten sam format błędu co walidacja DTO
+        if (updateJobDto.ValidateExpiresAtAgainst(job, DateTime.UtcNow) is { } error)
+        {
+            ModelState.AddModelError(nameof(UpdateJobOfferDto.ExpiresAt), error.ErrorMessage!);
+            return ValidationProblem(ModelState);
         }
 
         updateJobDto.ApplyTo(job);

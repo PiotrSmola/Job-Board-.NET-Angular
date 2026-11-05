@@ -26,13 +26,20 @@ public static class MappingExtensions
 
     public static JobOffer ToEntity(this CreateJobOfferDto dto)
     {
-        var job = new JobOffer { CreatedAt = DateTime.UtcNow };
-        dto.ApplyTo(job);
+        var job = new JobOffer { CreatedAt = DateTime.UtcNow, Status = dto.Status };
+        dto.ApplyFormTo(job);
         return job;
     }
 
-    // Przepisuje edytowalne pola oferty (bez Id i CreatedAt)
-    public static void ApplyTo(this CreateJobOfferDto dto, JobOffer job)
+    // Edycja oferty (bez Id i CreatedAt); brak statusu w żądaniu = status bez zmian
+    public static void ApplyTo(this UpdateJobOfferDto dto, JobOffer job)
+    {
+        dto.ApplyFormTo(job);
+        job.Status = dto.Status ?? job.Status;
+    }
+
+    // Przepisuje pola wspólne dla tworzenia i edycji
+    private static void ApplyFormTo(this JobOfferFormDto dto, JobOffer job)
     {
         job.Title = dto.Title;
         job.Company = dto.Company;
@@ -41,7 +48,6 @@ public static class MappingExtensions
         job.SalaryMax = dto.SalaryMax;
         job.Location = dto.Location;
         job.WorkType = dto.WorkType;
-        job.Status = dto.Status;
         job.ExpiresAt = dto.GetExpiresAtUtc();
     }
 

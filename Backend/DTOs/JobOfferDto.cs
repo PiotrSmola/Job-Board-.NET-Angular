@@ -2,7 +2,7 @@ using Backend.Models;
 
 namespace Backend.DTOs;
 
-// Typ odpowiedzi - walidacja wejścia jest w CreateJobOfferDto
+// Typ odpowiedzi - walidacja wejścia jest w CreateJobOfferDto i UpdateJobOfferDto
 public class JobOfferDto
 {
     public int Id { get; set; }

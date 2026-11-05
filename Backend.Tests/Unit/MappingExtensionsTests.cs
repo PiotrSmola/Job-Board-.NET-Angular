@@ -74,11 +74,11 @@ public class MappingExtensionsTests
     }
 
     [Fact]
-    public void CreateJobOfferDto_ApplyTo_OverwritesEditableFieldsButNotIdOrCreatedAt()
+    public void UpdateJobOfferDto_ApplyTo_OverwritesEditableFieldsButNotIdOrCreatedAt()
     {
         var job = NewJob();
         var originalCreatedAt = job.CreatedAt;
-        var dto = new CreateJobOfferDto
+        var dto = new UpdateJobOfferDto
         {
             Title = "New", Company = "New C", Description = "New D", SalaryMin = null, SalaryMax = 9, Location = "New L", WorkType = WorkType.Remote
         };
@@ -225,11 +225,11 @@ public class MappingExtensionsTests
     }
 
     [Fact]
-    public void CreateJobOfferDto_ApplyTo_CopiesStatusAndExpiresAt()
+    public void UpdateJobOfferDto_ApplyTo_CopiesStatusAndExpiresAt()
     {
         var job = NewJob();
         var expires = new DateTime(2031, 3, 4, 5, 6, 7, DateTimeKind.Utc);
-        var dto = new CreateJobOfferDto
+        var dto = new UpdateJobOfferDto
         {
             Title = "T", Company = "C", Description = "D", Location = "L", Status = JobOfferStatus.Draft, ExpiresAt = expires
         };
@@ -241,15 +241,39 @@ public class MappingExtensionsTests
     }
 
     [Fact]
-    public void CreateJobOfferDto_ApplyTo_ClearsExpiresAtWhenMissing()
+    public void UpdateJobOfferDto_ApplyTo_ClearsExpiresAtWhenMissing()
     {
         var job = NewJob();
         job.ExpiresAt = DateTime.UtcNow.AddDays(1);
-        var dto = new CreateJobOfferDto { Title = "T", Company = "C", Description = "D", Location = "L" };
+        var dto = new UpdateJobOfferDto { Title = "T", Company = "C", Description = "D", Location = "L" };
 
         dto.ApplyTo(job);
 
         Assert.Null(job.ExpiresAt);
+    }
+
+    [Theory]
+    [InlineData(JobOfferStatus.Draft)]
+    [InlineData(JobOfferStatus.Active)]
+    [InlineData(JobOfferStatus.Closed)]
+    public void UpdateJobOfferDto_ApplyTo_WithoutStatusKeepsCurrentStatus(JobOfferStatus current)
+    {
+        var job = NewJob();
+        job.Status = current;
+        var dto = new UpdateJobOfferDto { Title = "Edited", Company = "C", Description = "D", Location = "L" };
+
+        dto.ApplyTo(job);
+
+        Assert.Equal(current, job.Status);
+        Assert.Equal("Edited", job.Title);
+    }
+
+    [Fact]
+    public void CreateJobOfferDto_ToEntity_UsesGivenStatus()
+    {
+        var dto = new CreateJobOfferDto { Title = "T", Company = "C", Description = "D", Location = "L", Status = JobOfferStatus.Closed };
+
+        Assert.Equal(JobOfferStatus.Closed, dto.ToEntity().Status);
     }
 
     [Theory]
