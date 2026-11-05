@@ -15,6 +15,9 @@ const EXISTING_JOB: JobOffer = {
   status: JobOfferStatus.Active, expiresAt: null, isExpired: false
 };
 
+// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
+vi.setConfig({ testTimeout: 20000 });
+
 describe('JobDialogComponent', () => {
   let fixture: ComponentFixture<JobDialogComponent>;
   let component: JobDialogComponent;
@@ -68,7 +71,10 @@ describe('JobDialogComponent', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
   describe('salary validation', () => {
     function root(): HTMLElement {
@@ -176,6 +182,101 @@ describe('JobDialogComponent', () => {
       component.onSubmit();
 
       expect(createJob).toHaveBeenCalledWith(expect.objectContaining({ expiresAt: null }));
+    });
+
+    it('defaults a new offer to Active without an expiration date', async () => {
+      await create();
+
+      expect(component.jobForm.value.status).toBe(JobOfferStatus.Active);
+      expect(component.jobForm.value.expiresAt).toBeNull();
+    });
+
+    it('lets the admin choose only Szkic, Aktywna and Zamknięta (no "Wygasła")', async () => {
+      await create();
+
+      expect(component.statusOptions.map(o => o.label)).toEqual(['Szkic', 'Aktywna', 'Zamknięta']);
+
+      const root = fixture.nativeElement as HTMLElement;
+      root.querySelector<HTMLElement>('mat-select[formcontrolname="status"] .mat-mdc-select-trigger')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(Array.from(document.querySelectorAll('mat-option')).map(o => o.textContent?.trim())).toEqual(['Szkic', 'Aktywna', 'Zamknięta']);
+    });
+
+    it('computes the end of the local day as 23:59:59.999', () => {
+      const end = endOfLocalDay(new Date(2026, 5, 15, 8, 30, 0));
+
+      expect([end.getFullYear(), end.getMonth(), end.getDate()]).toEqual([2026, 5, 15]);
+      expect([end.getHours(), end.getMinutes(), end.getSeconds(), end.getMilliseconds()]).toEqual([23, 59, 59, 999]);
+    });
+
+    it('sends the end of the newly selected day when the day of an edited offer changes', async () => {
+      const original = inDays(5).toISOString();
+      await create({ ...EXISTING_JOB, expiresAt: original });
+      const newDay = inDays(12);
+      component.jobForm.patchValue({ expiresAt: newDay });
+
+      component.onSubmit();
+
+      const sent = updateJob.mock.calls[0][1].expiresAt as string;
+      expect(sent).not.toBe(original);
+      expect(sent).toBe(endOfLocalDay(newDay).toISOString());
+    });
+
+    it('sends null when the expiration date of an edited offer is cleared', async () => {
+      await create({ ...EXISTING_JOB, expiresAt: inDays(5).toISOString() });
+
+      component.clearExpiresAt();
+      component.onSubmit();
+
+      expect(updateJob).toHaveBeenCalledWith(9, expect.objectContaining({ expiresAt: null }));
+    });
+
+    it('opens an expired active offer as invalid and forces a new date or a different status', async () => {
+      await create({ ...EXISTING_JOB, expiresAt: yesterday().toISOString(), isExpired: true });
+
+      expect(component.jobForm.hasError('expiresAtInPast')).toBe(true);
+      expect(component.jobForm.invalid).toBe(true);
+      component.onSubmit();
+      expect(updateJob).not.toHaveBeenCalled();
+
+      component.jobForm.patchValue({ expiresAt: inDays(3) });
+      expect(component.jobForm.valid).toBe(true);
+    });
+
+    it('drops the "date in the past" error after switching an offer to Closed', async () => {
+      await create();
+      fillValidForm({ expiresAt: yesterday() });
+      expect(component.jobForm.hasError('expiresAtInPast')).toBe(true);
+
+      component.jobForm.patchValue({ status: JobOfferStatus.Closed });
+
+      expect(component.jobForm.hasError('expiresAtInPast')).toBe(false);
+      expect(component.jobForm.valid).toBe(true);
+    });
+
+    it('does not submit an active offer with a past date and keeps the submit button disabled', async () => {
+      await create();
+      fillValidForm({ expiresAt: yesterday() });
+      fixture.detectChanges();
+
+      component.onSubmit();
+
+      expect(createJob).not.toHaveBeenCalled();
+      expect((fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('button[mat-raised-button]')?.disabled).toBe(true);
+    });
+
+    it('moves an already passed expiration hour of an active offer to the end of the same day', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(2026, 5, 15, 15, 0, 0));
+      const earlierToday = new Date(2026, 5, 15, 9, 0, 0).toISOString();
+      await create({ ...EXISTING_JOB, expiresAt: earlierToday, isExpired: true });
+
+      component.onSubmit();
+
+      expect(updateJob).toHaveBeenCalledWith(9, expect.objectContaining({
+        expiresAt: new Date(2026, 5, 15, 23, 59, 59, 999).toISOString()
+      }));
     });
 
     it('keeps the exact expiration date of an edited offer when the day is unchanged', async () => {
