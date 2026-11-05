@@ -242,6 +242,20 @@ describe('authInterceptor', () => {
       expect(navigate).not.toHaveBeenCalled();
     });
 
+    it('shows the translated reason for a known 403 message', () => {
+      storeSession(makeJwtExpiringIn(3600));
+      init();
+
+      http.patch('/api/jobs/1/status', { status: 1 }).subscribe({ error: () => undefined });
+      controller.expectOne('/api/jobs/1/status').flush(
+        { message: 'Company must be approved before publishing offers' },
+        { status: 403, statusText: 'Forbidden' }
+      );
+
+      expect(snackBarOpen).toHaveBeenCalledTimes(1);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Firma musi zostać zatwierdzona, zanim opublikujesz ofertę');
+    });
+
     it('stays silent when SKIP_FORBIDDEN_NOTICE is set on the request context', () => {
       storeSession(makeJwtExpiringIn(3600));
       init();

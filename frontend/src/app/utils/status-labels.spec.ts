@@ -1,9 +1,13 @@
 import { JobOfferStatus } from '../models/job-offer.model';
 import { ApplicationStatus } from '../models/job-application.model';
 import { JobState } from '../models/job-params.model';
+import { CompanyStatus } from '../models/company.model';
 import {
   APPLICATION_STATUS_FILTER_OPTIONS,
   APPLICATION_STATUS_PRESENTATION,
+  COMPANY_STATUS_FILTER_OPTIONS,
+  COMPANY_STATUS_PRESENTATION,
+  getCompanyStatusPresentation,
   JOB_STATE_OPTIONS,
   JOB_STATE_PRESENTATION,
   JOB_STATUS_OPTIONS,
@@ -192,6 +196,29 @@ describe('status-labels', () => {
     it('falls back to active/expired for an unknown status value', () => {
       expect(getJobState({ status: 99 as JobOfferStatus, isExpired: false })).toBe('active');
       expect(getJobState({ status: 99 as JobOfferStatus, isExpired: true })).toBe('expired');
+    });
+  });
+
+  describe('company status', () => {
+    it('maps every status to a Polish label and tone', () => {
+      expect(COMPANY_STATUS_PRESENTATION).toEqual({
+        [CompanyStatus.Pending]: { label: 'Oczekuje', tone: 'warning' },
+        [CompanyStatus.Approved]: { label: 'Zatwierdzona', tone: 'success' },
+        [CompanyStatus.Rejected]: { label: 'Odrzucona', tone: 'danger' }
+      });
+    });
+
+    it('offers "Wszystkie" and every status in the filter', () => {
+      expect(COMPANY_STATUS_FILTER_OPTIONS).toEqual([
+        { value: null, label: 'Wszystkie' },
+        { value: CompanyStatus.Pending, label: 'Oczekuje' },
+        { value: CompanyStatus.Approved, label: 'Zatwierdzona' },
+        { value: CompanyStatus.Rejected, label: 'Odrzucona' }
+      ]);
+    });
+
+    it('falls back to a neutral "Nieznany" for an unknown status', () => {
+      expect(getCompanyStatusPresentation(9 as CompanyStatus)).toEqual({ label: 'Nieznany', tone: 'neutral' });
     });
   });
 });
