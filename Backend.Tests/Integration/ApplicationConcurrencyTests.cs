@@ -54,12 +54,14 @@ public class ApplicationConcurrencyTests
         private readonly IJobApplicationRepository _inner;
         private readonly LoadGate _gate;
         private readonly SemaphoreSlim? _saveLock;
+        private readonly Func<Task>? _beforeSave;
 
-        public GatedApplicationRepository(IJobApplicationRepository inner, LoadGate gate, SemaphoreSlim? saveLock)
+        public GatedApplicationRepository(IJobApplicationRepository inner, LoadGate gate, SemaphoreSlim? saveLock, Func<Task>? beforeSave)
         {
             _inner = inner;
             _gate = gate;
             _saveLock = saveLock;
+            _beforeSave = beforeSave;
         }
 
         public async Task<JobApplication?> GetApplicationForUpdateAsync(int id)
@@ -78,6 +80,11 @@ public class ApplicationConcurrencyTests
 
         public async Task UpdateApplicationAsync(JobApplication application)
         {
+            if (_beforeSave != null)
+            {
+                await _beforeSave();
+            }
+
             if (_saveLock == null)
             {
                 await _inner.UpdateApplicationAsync(application);
@@ -104,7 +111,8 @@ public class ApplicationConcurrencyTests
     }
 
     // Aplikacja na tej samej bazie, ale z repozytorium czekającym na wszystkich uczestników wyścigu
-    private WebApplicationFactory<Program> GatedFactory(int participants, bool serializeSaves)
+    // beforeSave: akcja wykonywana po wczytaniu aplikacji, a przed zapisem (np. zmiana przez inne żądanie)
+    private WebApplicationFactory<Program> GatedFactory(int participants, bool serializeSaves, Func<Task>? beforeSave = null)
     {
         var gate = new LoadGate(participants);
         var saveLock = serializeSaves ? new SemaphoreSlim(1, 1) : null;
@@ -114,7 +122,7 @@ public class ApplicationConcurrencyTests
             services.RemoveAll<IJobApplicationRepository>();
             services.AddScoped<JobApplicationRepository>();
             services.AddScoped<IJobApplicationRepository>(sp =>
-                new GatedApplicationRepository(sp.GetRequiredService<JobApplicationRepository>(), gate, saveLock));
+                new GatedApplicationRepository(sp.GetRequiredService<JobApplicationRepository>(), gate, saveLock, beforeSave));
         }));
     }
 
@@ -223,7 +231,8 @@ public class ApplicationConcurrencyTests
         Assert.Equal(new[] { ApplicationStatus.Submitted, ApplicationStatus.Withdrawn, ApplicationStatus.Submitted }, current.History!.Select(h => h.Status));
     }
 
-    // Notatki (ten sam status) nie zmieniają tokenu współbieżności, więc równoległe notatki obie się zapisują
+    // Notatka (ten sam status) też zapisuje się z kontrolą tokenu i blokadą wiersza aplikacji, ale tokenu nie zmienia,
+    // więc dwie równoległe notatki zapisują się po kolei i obie przechodzą
     [Fact]
     public async Task UpdateStatus_TwoConcurrentNotes_BothSucceedAndBothAreRecorded()
     {
@@ -240,6 +249,52 @@ public class ApplicationConcurrencyTests
         var current = await _api.GetApplicationAsync(adminClient, application.Id);
         Assert.Equal(new[] { "note A", "note B" }, current.History!.Skip(1).Select(h => h.Comment).Order());
         Assert.Equal(application.StatusChangedAt, current.StatusChangedAt);
+    }
+
+    // Notatka wczytała stan "W analizie", ale zanim się zapisała, kandydat wycofał aplikację -
+    // notatka dostaje 409 i nie trafia do historii po wpisie "Wycofana"
+    [Fact]
+    public async Task UpdateStatus_NoteRacingWithWithdrawal_GetsConflictAndIsNotRecorded()
+    {
+        var (_, user, application) = await NewApplicationAsync();
+        await _api.SetApplicationStatusAsync(application.Id, ApplicationStatus.InReview);
+        using var factory = GatedFactory(participants: 1, serializeSaves: false, beforeSave: async () =>
+            Assert.Equal(HttpStatusCode.OK, (await _api.WithdrawAsync(user, application.Id)).StatusCode));
+        using var admin = await GatedAdminAsync(factory);
+
+        var response = await SetStatusAsync(admin, application.Id, ApplicationStatus.InReview, "late note");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("Application status was changed by another request", await MessageAsync(response));
+        var current = await _api.GetApplicationAsync(_api.CreateClient(user), application.Id);
+        Assert.Equal(ApplicationStatus.Withdrawn, current.Status);
+        Assert.Equal(
+            new[] { ApplicationStatus.Submitted, ApplicationStatus.InReview, ApplicationStatus.Withdrawn },
+            current.History!.Select(h => h.Status));
+        Assert.DoesNotContain(current.History!, h => h.Comment == "late note");
+    }
+
+    // Notatka i wycofanie wysłane naprawdę równolegle: jeśli notatka przeszła, to jest w historii przed wycofaniem
+    [Fact]
+    public async Task UpdateStatus_NoteAndWithdrawalSavedAtTheSameTime_NoteIsNeverRecordedAfterWithdrawal()
+    {
+        for (var round = 0; round < 5; round++)
+        {
+            var (_, user, application) = await NewApplicationAsync();
+            using var factory = GatedFactory(participants: 2, serializeSaves: false);
+            using var admin = await GatedAdminAsync(factory);
+            using var candidate = ClientFor(factory, user.Token);
+
+            var responses = await Task.WhenAll(
+                SetStatusAsync(admin, application.Id, ApplicationStatus.Submitted, "note"),
+                candidate.PostAsync($"{Url}/{application.Id}/withdraw", null));
+
+            Assert.Equal(HttpStatusCode.OK, responses[1].StatusCode);
+            Assert.True(responses[0].StatusCode is HttpStatusCode.OK or HttpStatusCode.Conflict, $"Unexpected status {responses[0].StatusCode}");
+            var history = (await _api.GetApplicationAsync(_api.CreateClient(user), application.Id)).History!;
+            Assert.Equal(ApplicationStatus.Withdrawn, history.Last().Status);
+            Assert.Equal(responses[0].StatusCode == HttpStatusCode.OK ? 3 : 2, history.Count);
+        }
     }
 
     // --- bez ingerencji w zapis: obie zmiany wczytują ten sam stan i zapisują równocześnie ---

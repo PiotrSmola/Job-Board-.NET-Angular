@@ -28,7 +28,8 @@ public class JobApplication
 
     public ApplicationStatus Status { get; set; } = ApplicationStatus.Submitted;
 
-    // token współbieżności - równoległe zmiany statusu tej samej aplikacji kończą się DbUpdateConcurrencyException
+    // token współbieżności - zmiana statusu albo notatka zapisywana na nieaktualnym stanie (aplikację zmieniło
+    // w międzyczasie inne żądanie) kończy się DbUpdateConcurrencyException; notatka tokenu nie zmienia
     public DateTime StatusChangedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation properties
