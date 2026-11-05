@@ -4,14 +4,15 @@ import { provideRouter, Router } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
 import { JobListComponent } from './job-list.component';
 import { JobService } from '../../services/job.service';
-import { JobOffer, WorkType } from '../../models/job-offer.model';
+import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
 import { JobParams } from '../../models/job-params.model';
 import { PaginatedResult } from '../../models/pagination.model';
 
 function makeJob(id: number): JobOffer {
   return {
     id, title: `Oferta ${id}`, company: 'Acme', description: 'Opis', salaryMin: 1000, salaryMax: 2000,
-    location: 'Rzeszów', workType: WorkType.Hybrid, createdAt: new Date('2026-01-01')
+    location: 'Rzeszów', workType: WorkType.Hybrid, createdAt: new Date('2026-01-01'),
+    status: JobOfferStatus.Active, expiresAt: null, isExpired: false
   };
 }
 
@@ -21,6 +22,9 @@ function page(items: number, totalItems: number): PaginatedResult<JobOffer> {
     pagination: { CurrentPage: 1, ItemsPerPage: 10, TotalItems: totalItems, TotalPages: Math.max(1, Math.ceil(totalItems / 10)) }
   };
 }
+
+// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
+vi.setConfig({ testTimeout: 20000 });
 
 describe('JobListComponent', () => {
   let fixture: ComponentFixture<JobListComponent>;
@@ -329,6 +333,56 @@ describe('JobListComponent', () => {
     component.viewJobDetails(7);
 
     expect(navigate).toHaveBeenCalledWith(['/jobs', 7]);
+  });
+
+  describe('expiration hint', () => {
+    // Stała "teraz": środa 4 listopada 2026, 12:00 czasu lokalnego (tylko Date jest fałszowane)
+    const NOW = new Date(2026, 10, 4, 12, 0, 0);
+    const at = (days: number, hours = 18) => new Date(2026, 10, 4 + days, hours, 0, 0).toISOString();
+
+    function createWithExpirations(expirations: (string | null)[]): void {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(NOW);
+      const result = page(expirations.length, expirations.length);
+      result.result.forEach((job, i) => (job.expiresAt = expirations[i]));
+      create(of(result));
+    }
+
+    function hints(): (string | undefined)[] {
+      fixture.detectChanges();
+      return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('.job-card')).map(card =>
+        card.querySelector('.expires-soon')?.textContent?.trim());
+    }
+
+    it.each([
+      [at(0), 'Wygasa dziś'],
+      [at(1), 'Wygasa jutro'],
+      [at(2), 'Wygasa za 2 dni'],
+      [at(7), 'Wygasa za 7 dni']
+    ])('shows "%s" -> %s', (expiresAt, expected) => {
+      createWithExpirations([expiresAt]);
+
+      expect(component.expiresSoon(component.jobs[0])).toBe(expected);
+      expect(hints()).toEqual([expected]);
+    });
+
+    it('shows nothing for open-ended offers and offers expiring in more than 7 days', () => {
+      createWithExpirations([null, at(8), at(30)]);
+
+      expect(hints()).toEqual([undefined, undefined, undefined]);
+    });
+
+    it('shows the hint only on the cards that expire soon', () => {
+      createWithExpirations([null, at(3), at(20), at(1)]);
+
+      expect(hints()).toEqual([undefined, 'Wygasa za 3 dni', undefined, 'Wygasa jutro']);
+    });
+
+    it('shows nothing when the expiration moment has already passed today', () => {
+      createWithExpirations([new Date(2026, 10, 4, 9, 0, 0).toISOString()]);
+
+      expect(hints()).toEqual([undefined]);
+    });
   });
 
   it('formats salary and work type labels', () => {

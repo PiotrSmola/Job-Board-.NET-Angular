@@ -1,3 +1,4 @@
+// Klasy są unikalne w szablonie, więc selektory są płaskie (krótszy CSS po enkapsulacji Angulara)
 .job-detail-container {
   max-width: 900px;
   margin: 0 auto;
@@ -50,101 +51,24 @@
   mat-card-header {
     margin-bottom: 32px;
     padding: 0;
+  }
 
-    mat-card-title {
-      font-size: 2.5rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-bottom: 12px;
-      line-height: 1.2;
-    }
+  mat-card-title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    line-height: 1.2;
+  }
 
-    mat-card-subtitle {
-      font-size: 1.5rem;
-      color: var(--primary-color);
-      font-weight: 500;
-    }
+  mat-card-subtitle {
+    font-size: 1.5rem;
+    color: var(--primary-color);
+    font-weight: 500;
   }
 
   mat-card-content {
     padding: 0;
-
-    .job-meta {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 24px;
-      margin-bottom: 32px;
-      padding: 24px;
-      background-color: rgba(255, 255, 255, 0.03);
-      border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-
-      .meta-item {
-        display: flex;
-        align-items: flex-start;
-        gap: 16px;
-
-        mat-icon {
-          color: var(--secondary-color);
-          font-size: 28px;
-          width: 28px;
-          height: 28px;
-        }
-
-        .meta-content {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-
-          .meta-label {
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-          }
-
-          .meta-value {
-            font-size: 1.1rem;
-            color: var(--text-primary);
-            font-weight: 600;
-          }
-        }
-      }
-    }
-
-    .divider {
-      margin: 32px 0;
-      background-color: var(--border-color);
-    }
-
-    .description-section {
-      h3 {
-        font-size: 1.8rem;
-        color: var(--text-primary);
-        margin: 0 0 24px 0;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-
-        &::before {
-          content: '';
-          display: block;
-          width: 4px;
-          height: 24px;
-          background-color: var(--primary-color);
-          border-radius: 2px;
-        }
-      }
-
-      .description {
-        font-size: 1.1rem;
-        line-height: 1.8;
-        color: var(--text-secondary);
-        white-space: pre-wrap;
-        margin: 0;
-      }
-    }
   }
 
   mat-card-actions {
@@ -166,17 +90,103 @@
   }
 }
 
-.application-status {
+.job-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 24px;
+  margin-bottom: 32px;
+  padding: 24px;
+  background-color: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.meta-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+
+  mat-icon {
+    color: var(--secondary-color);
+    font-size: 28px;
+    width: 28px;
+    height: 28px;
+  }
+}
+
+.meta-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.meta-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.meta-value {
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.divider {
+  margin: 32px 0;
+  background-color: var(--border-color);
+}
+
+.description-section h3 {
+  font-size: 1.8rem;
+  color: var(--text-primary);
+  margin: 0 0 24px 0;
+  font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: var(--success-color);
-  font-weight: 600;
+  gap: 12px;
+
+  &::before {
+    content: '';
+    display: block;
+    width: 4px;
+    height: 24px;
+    background-color: var(--primary-color);
+    border-radius: 2px;
+  }
+}
+
+.description {
   font-size: 1.1rem;
-  padding: 8px 16px;
-  background-color: rgba(0, 230, 118, 0.1);
-  border-radius: 4px;
-  border: 1px solid rgba(0, 230, 118, 0.2);
+  line-height: 1.8;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+// status aplikacji użytkownika (po lewej stronie przycisków akcji) i baner oferty zamkniętej / wygasłej / szkicu
+.application-status,
+.offer-banner {
+  display: flex;
+  align-items: center;
+}
+
+.application-status {
+  gap: 8px;
+  margin-right: auto;
+  color: var(--text-secondary);
+}
+
+.offer-banner {
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 183, 77, 0.4);
+  background-color: rgba(255, 183, 77, 0.1);
+  color: #ffb74d;
+  font-weight: 500;
 }
 
 @media (max-width: 600px) {
@@ -187,19 +197,20 @@
   .job-detail-card {
     padding: 20px;
 
-    mat-card-header mat-card-title {
+    mat-card-title {
       font-size: 1.8rem;
     }
-    
-    mat-card-content .job-meta {
-      grid-template-columns: 1fr;
-    }
-    
+
     mat-card-actions {
       flex-direction: column;
+
       button {
         width: 100%;
       }
     }
+  }
+
+  .job-meta {
+    grid-template-columns: 1fr;
   }
 }

@@ -320,8 +320,9 @@ public class JobApplicationsTests
     }
 
     [Fact]
-    public async Task Delete_OwnApplication_ReturnsNoContentAndApplicationDisappears()
+    public async Task Delete_OwnApplicationAsCandidate_ReturnsForbiddenAndKeepsApplication()
     {
+        // kandydat nie usuwa aplikacji - wycofuje ją (POST withdraw); usuwanie jest tylko dla admina
         var job = await _api.CreateJobAsync();
         var user = await _api.RegisterUserAsync("deleteown");
         var application = await _api.ApplyAsync(user, job.Id);
@@ -329,19 +330,20 @@ public class JobApplicationsTests
 
         var response = await client.DeleteAsync($"{Url}/{application.Id}");
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.Empty(await (await client.GetAsync($"{Url}/my-applications")).ReadJsonAsync<JobApplicationDto[]>());
-        Assert.False(await HasAppliedAsync(client, job.Id));
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Single(await (await client.GetAsync($"{Url}/my-applications")).ReadJsonAsync<JobApplicationDto[]>());
+        Assert.True(await HasAppliedAsync(client, job.Id));
     }
 
     [Fact]
-    public async Task Delete_OwnApplication_AllowsApplyingAgain()
+    public async Task Delete_ByAdmin_AllowsCandidateToApplyAgain()
     {
         var job = await _api.CreateJobAsync();
         var user = await _api.RegisterUserAsync("reapply");
         var application = await _api.ApplyAsync(user, job.Id);
+        using var admin = await _api.AdminClientAsync();
+        Assert.Equal(HttpStatusCode.NoContent, (await admin.DeleteAsync($"{Url}/{application.Id}")).StatusCode);
         using var client = _api.CreateClient(user);
-        await client.DeleteAsync($"{Url}/{application.Id}");
 
         var again = await client.PostJsonAsync(Url, Apply(job.Id));
 
@@ -380,10 +382,9 @@ public class JobApplicationsTests
     }
 
     [Fact]
-    public async Task Delete_NonexistentApplication_ReturnsNotFound()
+    public async Task Delete_NonexistentApplicationAsAdmin_ReturnsNotFound()
     {
-        var user = await _api.RegisterUserAsync("deletemissing");
-        using var client = _api.CreateClient(user);
+        using var client = await _api.AdminClientAsync();
 
         var response = await client.DeleteAsync($"{Url}/999999999");
 

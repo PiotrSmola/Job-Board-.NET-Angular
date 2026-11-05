@@ -22,3 +22,11 @@ export class JobParams {
   location = '';
   orderBy: JobOrderBy = 'newest';
 }
+
+/** Stan oferty w panelu admina: active = aktywna i niewygasła. */
+export type JobState = 'draft' | 'active' | 'expired' | 'closed';
+
+/** Parametry GET /api/jobs/manage – jak lista publiczna + filtr stanu (null = wszystkie). */
+export class ManageJobParams extends JobParams {
+  state: JobState | null = null;
+}

@@ -2,7 +2,7 @@ using Backend.Models;
 
 namespace Backend.DTOs;
 
-// Typ odpowiedzi - walidacja wejścia jest w CreateJobOfferDto
+// Typ odpowiedzi - walidacja wejścia jest w CreateJobOfferDto i UpdateJobOfferDto
 public class JobOfferDto
 {
     public int Id { get; set; }
@@ -22,4 +22,11 @@ public class JobOfferDto
     public WorkType WorkType { get; set; }
 
     public DateTime CreatedAt { get; set; }
+
+    public JobOfferStatus Status { get; set; }
+
+    public DateTime? ExpiresAt { get; set; }
+
+    // Active z ExpiresAt w przeszłości (wyliczane w chwili odpowiedzi)
+    public bool IsExpired { get; set; }
 }

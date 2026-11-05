@@ -8,10 +8,13 @@ using MySqlConnector;
 
 namespace Backend.Tests.Integration;
 
-// Migracje na istniejącej bazie z danymi (własna baza testowa, usuwana na końcu)
+// Migracje na istniejącej bazie z danymi (własna baza testowa, usuwana na końcu).
+// Dane sprzed migracji wstawiane są surowym SQL-em - bieżący model EF ma już kolumny,
+// których starszy schemat jeszcze nie zawiera.
 public class MigrationTests
 {
     private const string InitialMigration = "20251221163425_InitialCreateMySQL";
+    private const string UniqueIndexMigration = "20261104132507_AddUniqueApplicationIndex";
 
     private static ApplicationDbContext CreateContext(string connectionString) =>
         new(new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -37,6 +40,53 @@ public class MigrationTests
         return names;
     }
 
+    // Wykonuje INSERT i zwraca wygenerowane Id
+    private static async Task<int> InsertAsync(string connectionString, string sql, params (string Name, object? Value)[] parameters)
+    {
+        await using var connection = new MySqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        foreach (var (name, value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        }
+
+        await command.ExecuteNonQueryAsync();
+        return (int)command.LastInsertedId;
+    }
+
+    private static Task<int> InsertJobAsync(string connectionString, string title = "T") =>
+        InsertAsync(connectionString,
+            "INSERT INTO JobOffers (Title, Company, Description, Location, WorkType, CreatedAt) " +
+            "VALUES (@title, 'C', 'D', 'L', 0, UTC_TIMESTAMP(6))",
+            ("@title", title));
+
+    private static Task<int> InsertApplicationAsync(string connectionString, int jobId, string userId, DateTime appliedAt) =>
+        InsertAsync(connectionString,
+            "INSERT INTO JobApplications (JobOfferId, UserId, Note, AppliedAt) VALUES (@job, @user, NULL, @appliedAt)",
+            ("@job", jobId), ("@user", userId), ("@appliedAt", appliedAt));
+
+    private static async Task<string> InsertUserAsync(ApplicationDbContext context, string email)
+    {
+        // tabela AspNetUsers nie zmienia się w migracjach - można użyć bieżącego modelu
+        var user = new ApplicationUser { UserName = email, Email = email };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+        return user.Id;
+    }
+
+    private static async Task<bool> TableExistsAsync(string connectionString, string table)
+    {
+        await using var connection = new MySqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = @table";
+        command.Parameters.AddWithValue("@table", table);
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+    }
+
     [Fact]
     public async Task AddUniqueApplicationIndex_OnDatabaseWithDuplicates_KeepsOldestApplicationAndIsReversible()
     {
@@ -51,20 +101,13 @@ public class MigrationTests
             {
                 await context.GetService<IMigrator>().MigrateAsync(InitialMigration);
 
-                var user = new ApplicationUser { UserName = "dup@test.local", Email = "dup@test.local" };
-                var otherUser = new ApplicationUser { UserName = "other@test.local", Email = "other@test.local" };
-                var job = new JobOffer { Title = "T", Company = "C", Description = "D", Location = "L" };
-                context.AddRange(user, otherUser, job);
-                await context.SaveChangesAsync();
-                jobId = job.Id;
-                userId = user.Id;
+                userId = await InsertUserAsync(context, "dup@test.local");
+                var otherUserId = await InsertUserAsync(context, "other@test.local");
+                jobId = await InsertJobAsync(connectionString);
 
-                foreach (var owner in new[] { user, user, otherUser, user, otherUser, user })
+                foreach (var owner in new[] { userId, userId, otherUserId, userId, otherUserId, userId })
                 {
-                    var application = new JobApplication { JobOfferId = job.Id, UserId = owner.Id };
-                    context.JobApplications.Add(application);
-                    await context.SaveChangesAsync();
-                    ids.Add(application.Id);
+                    ids.Add(await InsertApplicationAsync(connectionString, jobId, owner, DateTime.UtcNow));
                 }
             }
 
@@ -95,6 +138,220 @@ public class MigrationTests
             indexes = await IndexNamesAsync(connectionString);
             Assert.Contains("IX_JobApplications_JobOfferId", indexes);
             Assert.DoesNotContain("IX_JobApplications_JobOfferId_UserId", indexes);
+        }
+        finally
+        {
+            await MySqlConnection.ClearAllPoolsAsync();
+            await TestDatabase.DropAsync(connectionString);
+        }
+    }
+
+    [Fact]
+    public async Task AddRecruitmentWorkflow_OnExistingData_KeepsOffersActiveBackfillsHistoryAndIsReversible()
+    {
+        var connectionString = TestDatabase.NewConnectionString(out _);
+        try
+        {
+            var appliedAt = new DateTime(2026, 3, 15, 9, 30, 0, DateTimeKind.Utc);
+            string userId;
+            int jobId, applicationId;
+            await using (var context = CreateContext(connectionString))
+            {
+                await context.GetService<IMigrator>().MigrateAsync(UniqueIndexMigration);
+
+                userId = await InsertUserAsync(context, "existing@test.local");
+                jobId = await InsertJobAsync(connectionString, "Existing offer");
+                applicationId = await InsertApplicationAsync(connectionString, jobId, userId, appliedAt);
+            }
+
+            await using (var context = CreateContext(connectionString))
+            {
+                await context.Database.MigrateAsync();
+
+                // istniejąca oferta pozostaje opublikowana i bezterminowa
+                var job = await context.JobOffers.AsNoTracking().SingleAsync(j => j.Id == jobId);
+                Assert.Equal(JobOfferStatus.Active, job.Status);
+                Assert.Null(job.ExpiresAt);
+
+                // istniejąca aplikacja: Submitted od chwili złożenia + jeden wpis w historii autorstwa kandydata
+                var application = await context.JobApplications.AsNoTracking()
+                    .Include(a => a.StatusHistory)
+                    .SingleAsync(a => a.Id == applicationId);
+                Assert.Equal(ApplicationStatus.Submitted, application.Status);
+                Assert.Equal(appliedAt, application.StatusChangedAt);
+                var entry = Assert.Single(application.StatusHistory);
+                Assert.Equal(ApplicationStatus.Submitted, entry.Status);
+                Assert.Equal(appliedAt, entry.ChangedAt);
+                Assert.Equal(userId, entry.ChangedByUserId);
+                Assert.Null(entry.Comment);
+            }
+
+            // nowa oferta wstawiona bez kolumny Status dostaje domyślnie Active
+            var defaultedJobId = await InsertJobAsync(connectionString, "Inserted after migration");
+            await using (var context = CreateContext(connectionString))
+            {
+                Assert.Equal(JobOfferStatus.Active, (await context.JobOffers.AsNoTracking().SingleAsync(j => j.Id == defaultedJobId)).Status);
+            }
+
+            // migracja w dół usuwa tabelę historii i nowe kolumny
+            await using (var context = CreateContext(connectionString))
+            {
+                await context.GetService<IMigrator>().MigrateAsync(UniqueIndexMigration);
+            }
+
+            Assert.False(await TableExistsAsync(connectionString, "ApplicationStatusHistories"));
+        }
+        finally
+        {
+            await MySqlConnection.ClearAllPoolsAsync();
+            await TestDatabase.DropAsync(connectionString);
+        }
+    }
+    private static async Task<bool> ColumnExistsAsync(string connectionString, string table, string column)
+    {
+        await using var connection = new MySqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COUNT(*) FROM information_schema.COLUMNS " +
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = @table AND COLUMN_NAME = @column";
+        command.Parameters.AddWithValue("@table", table);
+        command.Parameters.AddWithValue("@column", column);
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+    }
+
+    [Fact]
+    public async Task AddRecruitmentWorkflow_BackfillsOneHistoryEntryPerApplicationAndRespectsForeignKeys()
+    {
+        var connectionString = TestDatabase.NewConnectionString(out _);
+        try
+        {
+            var firstApplied = new DateTime(2026, 1, 10, 8, 0, 0, DateTimeKind.Utc);
+            var users = new List<string>();
+            var jobs = new List<int>();
+            var applications = new List<(int Id, string UserId, int JobId, DateTime AppliedAt)>();
+            string recruiterId;
+            await using (var context = CreateContext(connectionString))
+            {
+                await context.GetService<IMigrator>().MigrateAsync(UniqueIndexMigration);
+
+                for (var i = 0; i < 3; i++)
+                {
+                    users.Add(await InsertUserAsync(context, $"candidate{i}@test.local"));
+                    jobs.Add(await InsertJobAsync(connectionString, $"Offer {i}"));
+                }
+
+                recruiterId = await InsertUserAsync(context, "recruiter@test.local");
+
+                // każdy kandydat aplikuje na dwie oferty w różnych momentach
+                var offset = 0;
+                foreach (var user in users)
+                {
+                    foreach (var job in jobs.Take(2))
+                    {
+                        var appliedAt = firstApplied.AddHours(offset++);
+                        applications.Add((await InsertApplicationAsync(connectionString, job, user, appliedAt), user, job, appliedAt));
+                    }
+                }
+            }
+
+            await using (var context = CreateContext(connectionString))
+            {
+                await context.Database.MigrateAsync();
+
+                // wszystkie oferty (także bez aplikacji) pozostają opublikowane i bezterminowe
+                var allJobs = await context.JobOffers.AsNoTracking().ToListAsync();
+                Assert.Equal(3, allJobs.Count);
+                Assert.All(allJobs, j =>
+                {
+                    Assert.Equal(JobOfferStatus.Active, j.Status);
+                    Assert.Null(j.ExpiresAt);
+                });
+
+                // każda aplikacja ma dokładnie jeden wpis historii zgodny z jej danymi
+                var loaded = await context.JobApplications.AsNoTracking().Include(a => a.StatusHistory).OrderBy(a => a.Id).ToListAsync();
+                Assert.Equal(applications.Count, loaded.Count);
+                Assert.Equal(applications.Count, await context.Set<ApplicationStatusHistory>().CountAsync());
+                foreach (var expected in applications)
+                {
+                    var application = loaded.Single(a => a.Id == expected.Id);
+                    Assert.Equal(ApplicationStatus.Submitted, application.Status);
+                    Assert.Equal(expected.AppliedAt, application.StatusChangedAt);
+                    var entry = Assert.Single(application.StatusHistory);
+                    Assert.Equal(ApplicationStatus.Submitted, entry.Status);
+                    Assert.Equal(expected.AppliedAt, entry.ChangedAt);
+                    Assert.Equal(expected.UserId, entry.ChangedByUserId);
+                    Assert.Null(entry.Comment);
+                }
+
+                // usunięcie autora zmiany zachowuje wpis (ChangedByUserId = NULL)
+                var target = applications[0];
+                await InsertAsync(connectionString,
+                    "INSERT INTO ApplicationStatusHistories (JobApplicationId, Status, ChangedAt, ChangedByUserId, Comment) " +
+                    "VALUES (@app, 1, UTC_TIMESTAMP(6), @author, 'checked')",
+                    ("@app", target.Id), ("@author", recruiterId));
+                context.Users.Remove(await context.Users.SingleAsync(u => u.Id == recruiterId));
+                await context.SaveChangesAsync();
+
+                var history = await context.Set<ApplicationStatusHistory>().AsNoTracking()
+                    .Where(h => h.JobApplicationId == target.Id).OrderBy(h => h.Id).ToListAsync();
+                Assert.Equal(2, history.Count);
+                Assert.Equal("checked", history[1].Comment);
+                Assert.Null(history[1].ChangedByUserId);
+                Assert.Equal(target.UserId, history[0].ChangedByUserId);
+
+                // usunięcie aplikacji usuwa jej historię kaskadowo, pozostałe wpisy zostają
+                context.JobApplications.Remove(await context.JobApplications.SingleAsync(a => a.Id == target.Id));
+                await context.SaveChangesAsync();
+                Assert.Equal(applications.Count - 1, await context.Set<ApplicationStatusHistory>().CountAsync());
+            }
+        }
+        finally
+        {
+            await MySqlConnection.ClearAllPoolsAsync();
+            await TestDatabase.DropAsync(connectionString);
+        }
+    }
+
+    [Fact]
+    public async Task AddRecruitmentWorkflow_DownRemovesNewColumnsAndUpAgainBackfillsAgain()
+    {
+        var connectionString = TestDatabase.NewConnectionString(out _);
+        try
+        {
+            var appliedAt = new DateTime(2026, 2, 20, 14, 45, 0, DateTimeKind.Utc);
+            int applicationId;
+            await using (var context = CreateContext(connectionString))
+            {
+                await context.GetService<IMigrator>().MigrateAsync(UniqueIndexMigration);
+                var userId = await InsertUserAsync(context, "roundtrip@test.local");
+                var jobId = await InsertJobAsync(connectionString);
+                applicationId = await InsertApplicationAsync(connectionString, jobId, userId, appliedAt);
+            }
+
+            await using (var context = CreateContext(connectionString))
+            {
+                await context.Database.MigrateAsync();
+                await context.GetService<IMigrator>().MigrateAsync(UniqueIndexMigration);
+            }
+
+            // po cofnięciu zniknęły wszystkie kolumny i tabela dodane przez migrację
+            Assert.False(await ColumnExistsAsync(connectionString, "JobOffers", "Status"));
+            Assert.False(await ColumnExistsAsync(connectionString, "JobOffers", "ExpiresAt"));
+            Assert.False(await ColumnExistsAsync(connectionString, "JobApplications", "Status"));
+            Assert.False(await ColumnExistsAsync(connectionString, "JobApplications", "StatusChangedAt"));
+            Assert.False(await TableExistsAsync(connectionString, "ApplicationStatusHistories"));
+
+            // ponowne zastosowanie odtwarza stan i historię dla aplikacji, która przetrwała cofnięcie
+            await using (var context = CreateContext(connectionString))
+            {
+                await context.Database.MigrateAsync();
+
+                var application = await context.JobApplications.AsNoTracking().Include(a => a.StatusHistory).SingleAsync(a => a.Id == applicationId);
+                Assert.Equal(ApplicationStatus.Submitted, application.Status);
+                Assert.Equal(appliedAt, application.StatusChangedAt);
+                Assert.Equal(appliedAt, Assert.Single(application.StatusHistory).ChangedAt);
+            }
         }
         finally
         {

@@ -8,6 +8,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog } from '@angular/material/dialog';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
@@ -16,10 +17,12 @@ import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { Subject, catchError, debounceTime, filter, map, of, switchMap, tap } from 'rxjs';
 import { JobService } from '../../../services/job.service';
-import { JobOffer, WorkType } from '../../../models/job-offer.model';
-import { JobOrderBy, JobParams } from '../../../models/job-params.model';
+import { JobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
+import { JobOrderBy, JobState, ManageJobParams } from '../../../models/job-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
-import { isHandledByInterceptor } from '../../../utils/http-errors';
+import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
+import { JOB_STATE_OPTIONS, getJobState, getJobStatePresentation } from '../../../utils/status-labels';
+import { StatusChipComponent } from '../../shared/status-chip.component';
 import { JobDialogComponent } from '../job-dialog/job-dialog.component';
 
 // Kolumny sortowane po stronie serwera -> wartości orderBy z API
@@ -49,7 +52,8 @@ const DEFAULT_SORT: Sort = { active: 'createdAt', direction: 'desc' };
     MatInputModule,
     MatSelectModule,
     MatPaginatorModule,
-    MatSortModule
+    MatSortModule,
+    StatusChipComponent
   ],
   templateUrl: './admin-jobs-tab.component.html',
   styleUrl: './admin-jobs-tab.component.scss'
@@ -57,8 +61,9 @@ const DEFAULT_SORT: Sort = { active: 'createdAt', direction: 'desc' };
 export class AdminJobsTabComponent {
   private jobService = inject(JobService);
   private dialog = inject(MatDialog);
+  private snackBar = inject(MatSnackBar);
 
-  readonly displayedColumns = ['id', 'title', 'company', 'location', 'workType', 'salary', 'createdAt', 'actions'];
+  readonly displayedColumns = ['id', 'title', 'status', 'company', 'location', 'workType', 'salary', 'createdAt', 'actions'];
   readonly pageSizeOptions = [5, 10, 25, 50];
   readonly workTypeOptions = [
     { value: null, label: 'Wszystkie' },
@@ -66,21 +71,25 @@ export class AdminJobsTabComponent {
     { value: WorkType.Hybrid, label: 'Hybrydowa' },
     { value: WorkType.Onsite, label: 'Stacjonarna' }
   ];
+  readonly stateOptions = JOB_STATE_OPTIONS;
+  readonly JobOfferStatus = JobOfferStatus;
 
   readonly jobs = signal<JobOffer[]>([]);
   readonly totalItems = signal(0);
   readonly loading = signal(false);
   readonly deletingId = signal<number | null>(null);
+  readonly statusChangingId = signal<number | null>(null);
 
   readonly pageIndex = signal(0);
   readonly pageSize = signal(10);
   readonly searchInput = signal('');
   readonly workType = signal<WorkType | null>(null);
+  readonly state = signal<JobState | null>(null);
   readonly sort = signal<Sort>(DEFAULT_SORT);
 
   // Fraza faktycznie wysłana do API (po debounce)
   private readonly searchTerm = signal('');
-  readonly hasActiveFilters = computed(() => this.searchTerm() !== '' || this.workType() !== null);
+  readonly hasActiveFilters = computed(() => this.searchTerm() !== '' || this.workType() !== null || this.state() !== null);
 
   private readonly search$ = new Subject<string>();
   private readonly load$ = new Subject<void>();
@@ -96,7 +105,7 @@ export class AdminJobsTabComponent {
     // switchMap anuluje poprzednie żądanie – odpowiedzi nie nadpiszą się w złej kolejności
     this.load$.pipe(
       tap(() => this.loading.set(true)),
-      switchMap(() => this.jobService.getJobs(this.buildParams()).pipe(
+      switchMap(() => this.jobService.getManagedJobs(this.buildParams()).pipe(
         catchError(error => {
           console.error('Error loading jobs:', error);
           if (!isHandledByInterceptor(error)) {
@@ -135,6 +144,11 @@ export class AdminJobsTabComponent {
     this.reload(true);
   }
 
+  onStateChange(state: JobState | null): void {
+    this.state.set(state);
+    this.reload(true);
+  }
+
   onSortChange(sort: Sort): void {
     this.sort.set(sort);
     this.reload(true);
@@ -151,8 +165,43 @@ export class AdminJobsTabComponent {
     this.search$.next('');
     this.searchTerm.set('');
     this.workType.set(null);
+    this.state.set(null);
     this.sort.set(DEFAULT_SORT);
     this.reload(true);
+  }
+
+  /** Etykieta i kolor stanu oferty (szkic / aktywna / wygasła / zamknięta). */
+  statePresentation(job: JobOffer) {
+    return getJobStatePresentation(job);
+  }
+
+  /** Szybkie akcje zależne od stanu: szkic → publikacja, aktywna/wygasła → zamknięcie, zamknięta → wznowienie. */
+  quickActions(job: JobOffer): { status: JobOfferStatus; icon: string; label: string }[] {
+    switch (getJobState(job)) {
+      case 'draft': return [{ status: JobOfferStatus.Active, icon: 'publish', label: 'Opublikuj' }];
+      case 'active':
+      case 'expired': return [{ status: JobOfferStatus.Closed, icon: 'lock', label: 'Zamknij' }];
+      case 'closed': return [{ status: JobOfferStatus.Active, icon: 'lock_open', label: 'Wznów' }];
+    }
+  }
+
+  changeStatus(job: JobOffer, status: JobOfferStatus): void {
+    this.statusChangingId.set(job.id);
+    this.jobService.updateJobStatus(job.id, status).subscribe({
+      next: (updated) => {
+        this.statusChangingId.set(null);
+        this.notify(`Status oferty „${updated.title}”: ${getJobStatePresentation(updated).label}`);
+        // przy aktywnym filtrze stanu oferta może zniknąć z bieżącej listy
+        this.reload();
+      },
+      error: (error) => {
+        console.error('Error changing job status:', error);
+        this.statusChangingId.set(null);
+        if (!isHandledByInterceptor(error)) {
+          this.notify(getApiErrorMessage(error, 'Błąd podczas zmiany statusu oferty'));
+        }
+      }
+    });
   }
 
   openAddDialog(): void {
@@ -225,12 +274,17 @@ export class AdminJobsTabComponent {
     });
   }
 
-  private buildParams(): JobParams {
-    const params = new JobParams();
+  private notify(message: string): void {
+    this.snackBar.open(message, 'OK', { duration: 5000 });
+  }
+
+  private buildParams(): ManageJobParams {
+    const params = new ManageJobParams();
     params.pageNumber = this.pageIndex() + 1;
     params.pageSize = this.pageSize();
     params.searchTerm = this.searchTerm();
     params.workType = this.workType();
+    params.state = this.state();
     params.orderBy = this.toOrderBy(this.sort());
     return params;
   }

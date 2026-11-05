@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { JobApplicationService } from './job-application.service';
-import { JobApplication } from '../models/job-application.model';
+import { ApplicationStatus, JobApplication } from '../models/job-application.model';
 import { ApplicationParams } from '../models/application-params.model';
 import { PaginatedResult } from '../models/pagination.model';
 
@@ -132,6 +132,53 @@ describe('JobApplicationService', () => {
       const req = http.expectOne('/api/jobapplications/8');
       expect(req.request.method).toBe('DELETE');
       req.flush(null);
+    });
+
+    it('getApplication requests /:id', () => {
+      service.getApplication(6).subscribe();
+      const req = http.expectOne('/api/jobapplications/6');
+      expect(req.request.method).toBe('GET');
+      req.flush(APPLICATION);
+    });
+
+    it('updateStatus puts status and comment to /:id/status', () => {
+      const body = { status: ApplicationStatus.Interview, comment: 'Zapraszamy' };
+      service.updateStatus(6, body).subscribe();
+      const req = http.expectOne('/api/jobapplications/6/status');
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.body).toEqual(body);
+      req.flush(APPLICATION);
+    });
+
+    it('withdraw posts to /:id/withdraw', () => {
+      service.withdraw(6).subscribe();
+      const req = http.expectOne('/api/jobapplications/6/withdraw');
+      expect(req.request.method).toBe('POST');
+      req.flush(APPLICATION);
+    });
+  });
+
+  describe('getAllApplications status filter', () => {
+    it.each([
+      [ApplicationStatus.Submitted, '0'],
+      [ApplicationStatus.Rejected, '5']
+    ])('sends status %s as a number', (status, expected) => {
+      const params = new ApplicationParams();
+      params.status = status;
+
+      service.getAllApplications(params).subscribe();
+
+      const req = http.expectOne(r => r.url === '/api/jobapplications/all');
+      expect(req.request.params.get('status')).toBe(expected);
+      req.flush([]);
+    });
+
+    it('omits a null status', () => {
+      service.getAllApplications(new ApplicationParams()).subscribe();
+
+      const req = http.expectOne(r => r.url === '/api/jobapplications/all');
+      expect(req.request.params.has('status')).toBe(false);
+      req.flush([]);
     });
   });
 });

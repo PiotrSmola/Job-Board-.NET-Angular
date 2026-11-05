@@ -13,6 +13,17 @@
           </button>
         }
       </mat-form-field>
+
+      <!-- Status Filter -->
+      <mat-form-field appearance="outline">
+        <mat-label>Status</mat-label>
+        <mat-select [ngModel]="status()" (ngModelChange)="onStatusChange($event)">
+          @for (option of statusOptions; track option.value) {
+            <mat-option [value]="option.value">{{ option.label }}</mat-option>
+          }
+        </mat-select>
+        <mat-icon matPrefix>flag</mat-icon>
+      </mat-form-field>
     </div>
 
     <div class="filter-actions">
@@ -84,6 +95,15 @@
             </td>
           </ng-container>
 
+          <!-- Status Column -->
+          <ng-container matColumnDef="status">
+            <th mat-header-cell *matHeaderCellDef>Status</th>
+            <td mat-cell *matCellDef="let app">
+              @let presentation = statusPresentation(app.status);
+              <app-status-chip [label]="presentation.label" [tone]="presentation.tone" />
+            </td>
+          </ng-container>
+
           <!-- Applied At Column (Sortable) -->
           <ng-container matColumnDef="appliedAt">
             <th mat-header-cell *matHeaderCellDef mat-sort-header>Data aplikacji</th>
@@ -112,6 +132,17 @@
             <th mat-header-cell *matHeaderCellDef>Akcje</th>
             <td mat-cell *matCellDef="let app">
               <div class="actions-cell">
+                <button
+                  mat-icon-button
+                  color="primary"
+                  (click)="openStatusDialog(app)"
+                  [disabled]="app.status === ApplicationStatus.Withdrawn"
+                  [matTooltip]="app.status === ApplicationStatus.Withdrawn ? 'Kandydat wycofał aplikację' : 'Zmień status'">
+                  <mat-icon>swap_horiz</mat-icon>
+                </button>
+                <button mat-icon-button (click)="openHistoryDialog(app)" matTooltip="Historia">
+                  <mat-icon>history</mat-icon>
+                </button>
                 <button
                   mat-icon-button
                   color="warn"
@@ -151,7 +182,7 @@
     <div class="empty-state">
       <mat-icon>search_off</mat-icon>
       <h3>Brak wyników</h3>
-      <p>Żadna aplikacja nie pasuje do wyszukiwanej frazy</p>
+      <p>Żadna aplikacja nie pasuje do wybranych filtrów</p>
       <button mat-raised-button (click)="clearFilters()">
         <mat-icon>clear</mat-icon>
         Wyczyść filtry

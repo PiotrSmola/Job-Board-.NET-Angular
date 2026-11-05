@@ -9,7 +9,7 @@
 
   <!-- Filters Section -->
   <mat-card class="filters-card">
-    <div class="filters-grid">
+    <div class="filters-grid three-columns">
       <!-- Search -->
       <mat-form-field appearance="outline" class="search-field">
         <mat-label>Szukaj</mat-label>
@@ -31,6 +31,17 @@
           }
         </mat-select>
         <mat-icon matPrefix>work_outline</mat-icon>
+      </mat-form-field>
+
+      <!-- State Filter -->
+      <mat-form-field appearance="outline">
+        <mat-label>Stan</mat-label>
+        <mat-select [ngModel]="state()" (ngModelChange)="onStateChange($event)">
+          @for (option of stateOptions; track option.value) {
+            <mat-option [value]="option.value">{{ option.label }}</mat-option>
+          }
+        </mat-select>
+        <mat-icon matPrefix>flag</mat-icon>
       </mat-form-field>
     </div>
 
@@ -76,6 +87,20 @@
             <th mat-header-cell *matHeaderCellDef mat-sort-header>Stanowisko</th>
             <td mat-cell *matCellDef="let job">
               <span class="job-title">{{ job.title }}</span>
+            </td>
+          </ng-container>
+
+          <!-- Status Column -->
+          <ng-container matColumnDef="status">
+            <th mat-header-cell *matHeaderCellDef>Stan</th>
+            <td mat-cell *matCellDef="let job">
+              <div class="status-cell">
+                @let presentation = statePresentation(job);
+                <app-status-chip [label]="presentation.label" [tone]="presentation.tone" />
+                @if (job.expiresAt) {
+                  <span class="expires">do {{ job.expiresAt | date: 'dd.MM.yyyy' }}</span>
+                }
+              </div>
             </td>
           </ng-container>
 
@@ -136,6 +161,20 @@
             <th mat-header-cell *matHeaderCellDef>Akcje</th>
             <td mat-cell *matCellDef="let job">
               <div class="actions-cell">
+                @for (action of quickActions(job); track action.status) {
+                  <button
+                    mat-icon-button
+                    (click)="changeStatus(job, action.status)"
+                    [disabled]="statusChangingId() === job.id"
+                    [matTooltip]="action.label"
+                    [attr.aria-label]="action.label">
+                    @if (statusChangingId() === job.id) {
+                      <mat-spinner diameter="24"></mat-spinner>
+                    } @else {
+                      <mat-icon>{{ action.icon }}</mat-icon>
+                    }
+                  </button>
+                }
                 <button mat-icon-button color="primary" (click)="openEditDialog(job)" matTooltip="Edytuj">
                   <mat-icon>edit</mat-icon>
                 </button>

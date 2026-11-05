@@ -16,6 +16,7 @@ import { JobService } from '../../services/job.service';
 import { JobOffer, WorkType } from '../../models/job-offer.model';
 import { JobParams } from '../../models/job-params.model';
 import { getApiErrorMessage } from '../../utils/http-errors';
+import { formatExpiresSoon } from '../../utils/status-labels';
 import { Subject, debounceTime, filter, takeUntil } from 'rxjs';
 
 @Component({
@@ -173,6 +174,11 @@ export class JobListComponent implements OnInit, OnDestroy {
   getWorkTypeLabel(workType: WorkType): string {
     const option = this.workTypeOptions.find(o => o.value === workType);
     return option?.label || 'Nieznany';
+  }
+
+  /** „Wygasa za X dni” dla ofert wygasających w ciągu tygodnia, inaczej null. */
+  expiresSoon(job: JobOffer): string | null {
+    return formatExpiresSoon(job.expiresAt);
   }
 
   formatSalary(min: number | null, max: number | null): string {

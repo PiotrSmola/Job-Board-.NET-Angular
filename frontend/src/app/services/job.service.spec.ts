@@ -2,8 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { JobService } from './job.service';
-import { CreateJobOffer, JobOffer, WorkType } from '../models/job-offer.model';
-import { JobParams } from '../models/job-params.model';
+import { CreateJobOffer, JobOffer, JobOfferStatus, WorkType } from '../models/job-offer.model';
+import { JobParams, ManageJobParams } from '../models/job-params.model';
 import { PaginatedResult } from '../models/pagination.model';
 
 const JOB: JobOffer = {
@@ -15,7 +15,10 @@ const JOB: JobOffer = {
   salaryMax: 12000,
   location: 'Rzeszów',
   workType: WorkType.Remote,
-  createdAt: new Date('2026-01-01')
+  createdAt: new Date('2026-01-01'),
+  status: JobOfferStatus.Active,
+  expiresAt: null,
+  isExpired: false
 };
 
 describe('JobService', () => {
@@ -134,7 +137,8 @@ describe('JobService', () => {
 
   describe('CRUD', () => {
     const create: CreateJobOffer = {
-      title: 'T', company: 'C', description: 'D', salaryMin: null, salaryMax: null, location: 'L', workType: WorkType.Onsite
+      title: 'T', company: 'C', description: 'D', salaryMin: null, salaryMax: null, location: 'L', workType: WorkType.Onsite,
+      status: JobOfferStatus.Draft, expiresAt: '2026-12-31T22:59:59.999Z'
     };
 
     it('getJob requests /api/jobs/:id', () => {
@@ -165,6 +169,37 @@ describe('JobService', () => {
       const req = http.expectOne('/api/jobs/9');
       expect(req.request.method).toBe('DELETE');
       req.flush(null);
+    });
+
+    it('updateJobStatus patches /:id/status with the new status', () => {
+      service.updateJobStatus(4, JobOfferStatus.Closed).subscribe();
+      const req = http.expectOne('/api/jobs/4/status');
+      expect(req.request.method).toBe('PATCH');
+      expect(req.request.body).toEqual({ status: JobOfferStatus.Closed });
+      req.flush(JOB);
+    });
+  });
+
+  describe('getManagedJobs', () => {
+    it('requests /api/jobs/manage without state for "all"', () => {
+      service.getManagedJobs(new ManageJobParams()).subscribe();
+
+      const req = http.expectOne(r => r.url === '/api/jobs/manage');
+      expect(req.request.params.keys().sort()).toEqual(['orderBy', 'pageNumber', 'pageSize']);
+      req.flush([]);
+    });
+
+    it('sends the state filter together with the regular filters', () => {
+      const params = new ManageJobParams();
+      params.state = 'expired';
+      params.searchTerm = 'dev';
+
+      service.getManagedJobs(params).subscribe();
+
+      const req = http.expectOne(r => r.url === '/api/jobs/manage');
+      expect(req.request.params.get('state')).toBe('expired');
+      expect(req.request.params.get('searchTerm')).toBe('dev');
+      req.flush([]);
     });
   });
 });

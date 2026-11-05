@@ -20,6 +20,13 @@
       </mat-card-header>
 
       <mat-card-content>
+        @if (banner; as info) {
+          <div class="offer-banner" role="status">
+            <mat-icon>{{ info.icon }}</mat-icon>
+            <span>{{ info.text }}</span>
+          </div>
+        }
+
         <div class="job-meta">
           <div class="meta-item">
             <mat-icon>location_on</mat-icon>
@@ -52,6 +59,16 @@
               <span class="meta-value">{{ job.createdAt | date: 'dd.MM.yyyy' }}</span>
             </div>
           </div>
+
+          @if (job.expiresAt) {
+            <div class="meta-item">
+              <mat-icon>event</mat-icon>
+              <div class="meta-content">
+                <span class="meta-label">Aktualna do</span>
+                <span class="meta-value">{{ job.expiresAt | date: 'dd.MM.yyyy' }}</span>
+              </div>
+            </div>
+          }
         </div>
 
         <mat-divider class="divider"></mat-divider>
@@ -64,10 +81,23 @@
 
       <mat-card-actions>
         @if (authService.isAuthenticated() && !authService.isAdmin()) {
+          @if (applicationStatusPresentation; as status) {
+            <div class="application-status">
+              <span>Twoja aplikacja:</span>
+              <app-status-chip [label]="status.label" [tone]="status.tone" />
+              <a mat-button routerLink="/my-applications">Szczegóły</a>
+            </div>
+          }
+
           @if (hasApplied) {
             <button mat-raised-button color="accent" disabled>
               <mat-icon>check_circle</mat-icon>
               Już aplikowałeś
+            </button>
+          } @else if (!acceptsApplications) {
+            <button mat-raised-button disabled>
+              <mat-icon>block</mat-icon>
+              Aplikowanie zamknięte
             </button>
           } @else {
             <button mat-raised-button color="primary" (click)="openApplyDialog()" [disabled]="applying || checkingApplication">
@@ -75,13 +105,13 @@
                 <mat-spinner diameter="20"></mat-spinner>
               } @else {
                 <ng-container>
-                  <mat-icon>send</mat-icon>
-                  Aplikuj na to stanowisko
+                  <mat-icon>{{ hasWithdrawn ? 'replay' : 'send' }}</mat-icon>
+                  {{ hasWithdrawn ? 'Aplikuj ponownie' : 'Aplikuj na to stanowisko' }}
                 </ng-container>
               }
             </button>
           }
-        } @else if (!authService.isAuthenticated()) {
+        } @else if (!authService.isAuthenticated() && acceptsApplications) {
           <button mat-raised-button color="primary" [routerLink]="['/login']" [queryParams]="{ returnUrl: '/jobs/' + job.id }">
             <mat-icon>login</mat-icon>
             Zaloguj się, aby aplikować

@@ -9,7 +9,15 @@ export function isHandledByInterceptor(error: unknown): boolean {
 const KNOWN_API_MESSAGES: Record<string, string> = {
   'You have already applied to this job': 'Już aplikowałeś na tę ofertę',
   'Job offer not found': 'Oferta nie została znaleziona',
-  'Application not found': 'Aplikacja nie została znaleziona'
+  'Application not found': 'Aplikacja nie została znaleziona',
+  'This job offer is not accepting applications': 'Ta oferta nie przyjmuje już aplikacji',
+  'Expiration date must be in the future to publish': 'Aby opublikować ofertę, ustaw datę wygaśnięcia w przyszłości',
+  'Application has been withdrawn by the candidate': 'Kandydat wycofał tę aplikację',
+  'Only the candidate can withdraw an application': 'Tylko kandydat może wycofać aplikację',
+  'Application already has this status - add a comment to record a note':
+    'Aplikacja ma już ten status – dodaj komentarz, aby zapisać notatkę',
+  'Application cannot be withdrawn in its current status': 'Tej aplikacji nie można już wycofać',
+  'Application status was changed by another request': 'Status aplikacji został w międzyczasie zmieniony – odśwież dane'
 };
 
 /**

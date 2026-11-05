@@ -4,6 +4,13 @@ export enum WorkType {
   Onsite = 2
 }
 
+/** Stan zapisany w bazie; „wygasła” to stan wyliczany (Active + expiresAt w przeszłości → isExpired). */
+export enum JobOfferStatus {
+  Draft = 0,
+  Active = 1,
+  Closed = 2
+}
+
 export interface JobOffer {
   id: number;
   title: string;
@@ -14,6 +21,10 @@ export interface JobOffer {
   location: string;
   workType: WorkType;
   createdAt: Date;
+  status: JobOfferStatus;
+  /** Data ważności (UTC, ISO) albo null dla oferty bezterminowej. */
+  expiresAt: string | null;
+  isExpired: boolean;
 }
 
 export interface CreateJobOffer {
@@ -24,4 +35,7 @@ export interface CreateJobOffer {
   salaryMax: number | null;
   location: string;
   workType: WorkType;
+  status: JobOfferStatus;
+  /** ISO 8601 w UTC albo null. */
+  expiresAt: string | null;
 }

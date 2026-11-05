@@ -16,10 +16,14 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
-import { JobOffer, WorkType } from '../../models/job-offer.model';
+import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
+import { ApplicationStatus, JobApplication } from '../../models/job-application.model';
+import { getApplicationStatusPresentation, getJobState, StatusPresentation } from '../../utils/status-labels';
+import { StatusChipComponent } from '../shared/status-chip.component';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
 
 const ALREADY_APPLIED_MESSAGE = 'You have already applied to this job';
+const NOT_ACCEPTING_MESSAGE = 'This job offer is not accepting applications';
 
 @Component({
   selector: 'app-apply-dialog',
@@ -67,7 +71,8 @@ export class ApplyDialogComponent {
     MatProgressSpinnerModule,
     MatDividerModule,
     MatDialogModule,
-    RouterModule
+    RouterModule,
+    StatusChipComponent
   ],
   templateUrl: './job-detail.component.html',
   styleUrl: './job-detail.component.scss'
@@ -85,10 +90,38 @@ export class JobDetailComponent implements OnInit {
   job: JobOffer | null = null;
   loading = false;
   hasApplied = false;
+  /** Status aplikacji bieżącego użytkownika (także wycofanej); null = nie aplikował. */
+  applicationStatus: ApplicationStatus | null = null;
   checkingApplication = false;
   applying = false;
 
   WorkType = WorkType;
+
+  /** Oferta przyjmuje aplikacje: aktywna i niewygasła. */
+  get acceptsApplications(): boolean {
+    return !!this.job && this.job.status === JobOfferStatus.Active && !this.job.isExpired;
+  }
+
+  /** Użytkownik wycofał wcześniej aplikację – może aplikować ponownie. */
+  get hasWithdrawn(): boolean {
+    return !this.hasApplied && this.applicationStatus === ApplicationStatus.Withdrawn;
+  }
+
+  /** Baner dla oferty, która nie przyjmuje aplikacji (null = brak banera). */
+  get banner(): { icon: string; text: string } | null {
+    if (!this.job) return null;
+
+    switch (getJobState(this.job)) {
+      case 'closed': return { icon: 'lock', text: 'Rekrutacja na to stanowisko została zakończona – oferta nie przyjmuje już aplikacji.' };
+      case 'expired': return { icon: 'event_busy', text: 'Ta oferta wygasła i nie przyjmuje już aplikacji.' };
+      case 'draft': return { icon: 'edit_note', text: 'Szkic – oferta nie jest widoczna publicznie.' };
+      default: return null;
+    }
+  }
+
+  get applicationStatusPresentation(): StatusPresentation | null {
+    return this.applicationStatus === null ? null : getApplicationStatusPresentation(this.applicationStatus);
+  }
 
   ngOnInit(): void {
     this.route.paramMap.subscribe(params => {
@@ -126,6 +159,7 @@ export class JobDetailComponent implements OnInit {
     this.applicationService.checkIfApplied(jobId).subscribe({
       next: (result) => {
         this.hasApplied = result.hasApplied;
+        this.applicationStatus = result.status ?? null;
         this.checkingApplication = false;
         this.cdr.detectChanges();
       },
@@ -158,17 +192,27 @@ export class JobDetailComponent implements OnInit {
       jobOfferId: this.job.id,
       note: note || null
     }).subscribe({
-      next: () => {
+      next: (application: JobApplication | null) => {
+        const reapplied = this.hasWithdrawn;
         this.hasApplied = true;
+        this.applicationStatus = application?.status ?? ApplicationStatus.Submitted;
         this.applying = false;
         this.cdr.detectChanges();
-        this.notify('Aplikacja wysłana pomyślnie!');
+        this.notify(reapplied ? 'Aplikacja została złożona ponownie!' : 'Aplikacja wysłana pomyślnie!');
       },
       error: (error) => {
         this.applying = false;
+        const message = error instanceof HttpErrorResponse && error.status === 400 ? error.error?.message : null;
         // Backend odrzucił duplikat – przycisk powinien pokazać, że aplikacja już istnieje
-        if (error instanceof HttpErrorResponse && error.status === 400 && error.error?.message === ALREADY_APPLIED_MESSAGE) {
+        if (message === ALREADY_APPLIED_MESSAGE) {
           this.hasApplied = true;
+          if (this.applicationStatus === null || this.applicationStatus === ApplicationStatus.Withdrawn) {
+            this.applicationStatus = ApplicationStatus.Submitted;
+          }
+        }
+        // Oferta została w międzyczasie zamknięta lub wygasła – odświeżamy ją, żeby pokazać baner
+        if (message === NOT_ACCEPTING_MESSAGE && this.job) {
+          this.loadJob(this.job.id);
         }
         this.cdr.detectChanges();
         if (!isHandledByInterceptor(error)) {

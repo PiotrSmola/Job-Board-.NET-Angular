@@ -1,11 +1,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MatDialog } from '@angular/material/dialog';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { AdminJobsTabComponent } from './admin-jobs-tab.component';
 import { JobService } from '../../../services/job.service';
-import { JobOffer, WorkType } from '../../../models/job-offer.model';
-import { JobParams } from '../../../models/job-params.model';
+import { JobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
+import { ManageJobParams } from '../../../models/job-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
 
 function makeJob(id: number): JobOffer {
@@ -18,7 +19,10 @@ function makeJob(id: number): JobOffer {
     salaryMax: 2000,
     location: 'Rzeszów',
     workType: WorkType.Remote,
-    createdAt: new Date('2026-01-01')
+    createdAt: new Date('2026-01-01'),
+    status: JobOfferStatus.Active,
+    expiresAt: null,
+    isExpired: false
   };
 }
 
@@ -34,28 +38,35 @@ function page(items: number, totalItems: number, currentPage = 1, pageSize = 10)
   };
 }
 
+// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
+vi.setConfig({ testTimeout: 20000 });
+
 describe('AdminJobsTabComponent', () => {
   let fixture: ComponentFixture<AdminJobsTabComponent>;
   let component: AdminJobsTabComponent;
-  let getJobs: ReturnType<typeof vi.fn>;
+  let getManagedJobs: ReturnType<typeof vi.fn>;
   let deleteJob: ReturnType<typeof vi.fn>;
+  let updateJobStatus: ReturnType<typeof vi.fn>;
+  let snackBarOpen: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
   let confirmSpy: ReturnType<typeof vi.spyOn>;
 
-  function lastParams(): JobParams {
-    return getJobs.mock.calls[getJobs.mock.calls.length - 1][0] as JobParams;
+  function lastParams(): ManageJobParams {
+    return getManagedJobs.mock.calls[getManagedJobs.mock.calls.length - 1][0] as ManageJobParams;
   }
 
   function create(initial: Observable<PaginatedResult<JobOffer>> = of(page(10, 35))): void {
-    getJobs.mockReturnValue(initial);
+    getManagedJobs.mockReturnValue(initial);
     fixture = TestBed.createComponent(AdminJobsTabComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   }
 
   beforeEach(async () => {
-    getJobs = vi.fn();
+    getManagedJobs = vi.fn();
     deleteJob = vi.fn().mockReturnValue(of(undefined));
+    updateJobStatus = vi.fn().mockImplementation((id: number, status: JobOfferStatus) => of({ ...makeJob(id), status }));
+    snackBarOpen = vi.fn();
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -63,8 +74,9 @@ describe('AdminJobsTabComponent', () => {
     await TestBed.configureTestingModule({
       imports: [AdminJobsTabComponent],
       providers: [
-        { provide: JobService, useValue: { getJobs, deleteJob } },
-        { provide: MatDialog, useValue: { open: vi.fn() } }
+        { provide: JobService, useValue: { getManagedJobs, deleteJob, updateJobStatus } },
+        { provide: MatDialog, useValue: { open: vi.fn() } },
+        { provide: MatSnackBar, useValue: { open: snackBarOpen } }
       ]
     }).compileComponents();
   });
@@ -78,7 +90,7 @@ describe('AdminJobsTabComponent', () => {
     it('requests the first page with default params and stores the result', () => {
       create(of(page(10, 35)));
 
-      expect(getJobs).toHaveBeenCalledTimes(1);
+      expect(getManagedJobs).toHaveBeenCalledTimes(1);
       const params = lastParams();
       expect(params.pageNumber).toBe(1);
       expect(params.pageSize).toBe(10);
@@ -108,7 +120,7 @@ describe('AdminJobsTabComponent', () => {
 
       component.onPageChange({ pageIndex: 2, pageSize: 25, length: 35, previousPageIndex: 0 });
 
-      expect(getJobs).toHaveBeenCalledTimes(2);
+      expect(getManagedJobs).toHaveBeenCalledTimes(2);
       expect(lastParams().pageNumber).toBe(3);
       expect(lastParams().pageSize).toBe(25);
     });
@@ -199,16 +211,16 @@ describe('AdminJobsTabComponent', () => {
       vi.useFakeTimers();
       create();
       component.onPageChange({ pageIndex: 2, pageSize: 10, length: 35, previousPageIndex: 0 });
-      const callsBefore = getJobs.mock.calls.length;
+      const callsBefore = getManagedJobs.mock.calls.length;
 
       component.onSearchInput('ang');
       component.onSearchInput('angular  ');
       vi.advanceTimersByTime(399);
-      expect(getJobs.mock.calls.length).toBe(callsBefore);
+      expect(getManagedJobs.mock.calls.length).toBe(callsBefore);
 
       vi.advanceTimersByTime(1);
 
-      expect(getJobs.mock.calls.length).toBe(callsBefore + 1);
+      expect(getManagedJobs.mock.calls.length).toBe(callsBefore + 1);
       expect(lastParams().searchTerm).toBe('angular');
       expect(lastParams().pageNumber).toBe(1);
       expect(component.hasActiveFilters()).toBe(true);
@@ -217,12 +229,12 @@ describe('AdminJobsTabComponent', () => {
     it('does not reload when the trimmed search term did not change', () => {
       vi.useFakeTimers();
       create();
-      const callsBefore = getJobs.mock.calls.length;
+      const callsBefore = getManagedJobs.mock.calls.length;
 
       component.onSearchInput('   ');
       vi.advanceTimersByTime(500);
 
-      expect(getJobs.mock.calls.length).toBe(callsBefore);
+      expect(getManagedJobs.mock.calls.length).toBe(callsBefore);
     });
 
     it('clearSearch immediately reloads without a search term and cancels a pending debounce', () => {
@@ -234,12 +246,12 @@ describe('AdminJobsTabComponent', () => {
 
       component.onSearchInput('abcd'); // czeka w debounce
       component.clearSearch();
-      const callsAfterClear = getJobs.mock.calls.length;
+      const callsAfterClear = getManagedJobs.mock.calls.length;
       expect(lastParams().searchTerm).toBe('');
 
       vi.advanceTimersByTime(500);
 
-      expect(getJobs.mock.calls.length).toBe(callsAfterClear);
+      expect(getManagedJobs.mock.calls.length).toBe(callsAfterClear);
       expect(component.searchInput()).toBe('');
     });
 
@@ -268,7 +280,7 @@ describe('AdminJobsTabComponent', () => {
       component.deleteJob(1);
 
       expect(deleteJob).not.toHaveBeenCalled();
-      expect(getJobs).toHaveBeenCalledTimes(1);
+      expect(getManagedJobs).toHaveBeenCalledTimes(1);
     });
 
     it('reloads the current page after deleting one of many items', () => {
@@ -286,10 +298,10 @@ describe('AdminJobsTabComponent', () => {
 
     it('steps back one page after deleting the last item on a page', () => {
       create(of(page(10, 11)));
-      getJobs.mockReturnValue(of(page(1, 11, 2)));
+      getManagedJobs.mockReturnValue(of(page(1, 11, 2)));
       component.onPageChange({ pageIndex: 1, pageSize: 10, length: 11, previousPageIndex: 0 });
       expect(component.jobs().length).toBe(1);
-      getJobs.mockReturnValue(of(page(10, 10)));
+      getManagedJobs.mockReturnValue(of(page(10, 10)));
 
       component.deleteJob(1);
 
@@ -300,7 +312,7 @@ describe('AdminJobsTabComponent', () => {
 
     it('stays on the first page when its only item is deleted', () => {
       create(of(page(1, 1)));
-      getJobs.mockReturnValue(of(page(0, 0)));
+      getManagedJobs.mockReturnValue(of(page(0, 0)));
 
       component.deleteJob(1);
 
@@ -317,7 +329,7 @@ describe('AdminJobsTabComponent', () => {
 
       expect(alertSpy).toHaveBeenCalledWith('Błąd podczas usuwania oferty');
       expect(component.deletingId()).toBeNull();
-      expect(getJobs).toHaveBeenCalledTimes(1);
+      expect(getManagedJobs).toHaveBeenCalledTimes(1);
     });
 
     it.each([401, 403])('does not show its own alert when the interceptor handles %i', status => {
@@ -349,7 +361,7 @@ describe('AdminJobsTabComponent', () => {
 
     it('keeps the loop alive after a failed request', () => {
       create(throwError(() => new HttpErrorResponse({ status: 500 })));
-      getJobs.mockReturnValue(of(page(2, 2)));
+      getManagedJobs.mockReturnValue(of(page(2, 2)));
 
       component.reload();
 
@@ -358,14 +370,14 @@ describe('AdminJobsTabComponent', () => {
 
     it('jumps to the last existing page when the requested page is out of range', () => {
       create(of(page(10, 35)));
-      getJobs.mockReset();
-      getJobs
+      getManagedJobs.mockReset();
+      getManagedJobs
         .mockReturnValueOnce(of(page(0, 11, 3)))   // strona 3 nie istnieje (są 2 strony)
         .mockReturnValueOnce(of(page(1, 11, 2)));
       component.onPageChange({ pageIndex: 2, pageSize: 10, length: 35, previousPageIndex: 0 });
 
-      expect(getJobs).toHaveBeenCalledTimes(2);
-      expect((getJobs.mock.calls[0][0] as JobParams).pageNumber).toBe(3);
+      expect(getManagedJobs).toHaveBeenCalledTimes(2);
+      expect((getManagedJobs.mock.calls[0][0] as ManageJobParams).pageNumber).toBe(3);
       expect(lastParams().pageNumber).toBe(2);
       expect(component.pageIndex()).toBe(1);
       expect(component.jobs().length).toBe(1);
@@ -375,7 +387,7 @@ describe('AdminJobsTabComponent', () => {
     it('shows the empty state for zero results without looping', () => {
       create(of(page(0, 0)));
 
-      expect(getJobs).toHaveBeenCalledTimes(1);
+      expect(getManagedJobs).toHaveBeenCalledTimes(1);
       expect(component.jobs()).toEqual([]);
       expect(component.totalItems()).toBe(0);
     });
@@ -384,7 +396,7 @@ describe('AdminJobsTabComponent', () => {
       const first = new Subject<PaginatedResult<JobOffer>>();
       const second = new Subject<PaginatedResult<JobOffer>>();
       create(first);
-      getJobs.mockReturnValue(second);
+      getManagedJobs.mockReturnValue(second);
 
       component.reload();
       first.next(page(5, 5)); // spóźniona odpowiedź na pierwsze żądanie
@@ -392,6 +404,179 @@ describe('AdminJobsTabComponent', () => {
 
       second.next(page(2, 2));
       expect(component.jobs().length).toBe(2);
+    });
+  });
+
+  describe('offer lifecycle', () => {
+    it('sends the selected state filter and resets to the first page', () => {
+      create();
+      component.onPageChange({ pageIndex: 2, pageSize: 10, length: 35, previousPageIndex: 0 });
+
+      component.onStateChange('expired');
+
+      expect(lastParams().state).toBe('expired');
+      expect(lastParams().pageNumber).toBe(1);
+      expect(component.hasActiveFilters()).toBe(true);
+    });
+
+    it('clearFilters resets the state filter', () => {
+      create();
+      component.onStateChange('draft');
+
+      component.clearFilters();
+
+      expect(lastParams().state).toBeNull();
+    });
+
+    it.each([
+      [{ status: JobOfferStatus.Draft, isExpired: false }, JobOfferStatus.Active, 'Opublikuj', 'Szkic'],
+      [{ status: JobOfferStatus.Active, isExpired: false }, JobOfferStatus.Closed, 'Zamknij', 'Aktywna'],
+      [{ status: JobOfferStatus.Active, isExpired: true }, JobOfferStatus.Closed, 'Zamknij', 'Wygasła'],
+      [{ status: JobOfferStatus.Closed, isExpired: false }, JobOfferStatus.Active, 'Wznów', 'Zamknięta']
+    ])('offers the right quick action for %o', (state, targetStatus, label, stateLabel) => {
+      create();
+      const job = { ...makeJob(1), ...state };
+
+      expect(component.quickActions(job)).toEqual([expect.objectContaining({ status: targetStatus, label })]);
+      expect(component.statePresentation(job).label).toBe(stateLabel);
+    });
+
+    it('changes the status, notifies and reloads the list', () => {
+      create();
+      const callsBefore = getManagedJobs.mock.calls.length;
+
+      component.changeStatus(makeJob(4), JobOfferStatus.Closed);
+
+      expect(updateJobStatus).toHaveBeenCalledWith(4, JobOfferStatus.Closed);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Status oferty „Oferta 4”: Zamknięta');
+      expect(getManagedJobs.mock.calls.length).toBe(callsBefore + 1);
+      expect(component.statusChangingId()).toBeNull();
+    });
+
+    it('shows the translated API message when publishing an offer with a past expiration date', () => {
+      create();
+      updateJobStatus.mockReturnValue(throwError(() => new HttpErrorResponse({
+        status: 400, error: { message: 'Expiration date must be in the future to publish' }
+      })));
+
+      component.changeStatus(makeJob(4), JobOfferStatus.Active);
+
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Aby opublikować ofertę, ustaw datę wygaśnięcia w przyszłości');
+      expect(component.statusChangingId()).toBeNull();
+    });
+
+    describe('rendered table', () => {
+      const STATES: Partial<JobOffer>[] = [
+        { status: JobOfferStatus.Draft },
+        { status: JobOfferStatus.Active, expiresAt: '2026-12-31T22:59:59Z' },
+        { status: JobOfferStatus.Active, isExpired: true },
+        { status: JobOfferStatus.Closed }
+      ];
+
+      async function render(overrides: Partial<JobOffer>[] = STATES): Promise<HTMLElement> {
+        create(of({
+          result: overrides.map((o, i) => ({ ...makeJob(i + 1), ...o })),
+          pagination: { CurrentPage: 1, ItemsPerPage: 10, TotalItems: overrides.length, TotalPages: 1 }
+        }));
+        await fixture.whenStable();
+        fixture.detectChanges();
+        return fixture.nativeElement as HTMLElement;
+      }
+
+      it('shows a state chip per row and the expiration date when present', async () => {
+        const root = await render();
+
+        const chips = Array.from(root.querySelectorAll('td app-status-chip')).map(c => c.textContent?.trim());
+        expect(chips).toEqual(['Szkic', 'Aktywna', 'Wygasła', 'Zamknięta']);
+        expect(root.querySelectorAll('.expires').length).toBe(1);
+        expect(root.querySelector('.expires')?.textContent).toContain('do ');
+      });
+
+      it('renders Opublikuj / Zamknij / Zamknij / Wznów as the first action of each row', async () => {
+        const root = await render();
+
+        const labels = Array.from(root.querySelectorAll('tr.table-row')).map(row =>
+          row.querySelector('.actions-cell button')?.getAttribute('aria-label'));
+        expect(labels).toEqual(['Opublikuj', 'Zamknij', 'Zamknij', 'Wznów']);
+      });
+
+      it('clicking "Opublikuj" sends the Active status for that offer and refreshes the list', async () => {
+        const root = await render();
+        const callsBefore = getManagedJobs.mock.calls.length;
+
+        root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label="Opublikuj"]')!.click();
+
+        expect(updateJobStatus).toHaveBeenCalledWith(1, JobOfferStatus.Active);
+        expect(getManagedJobs.mock.calls.length).toBe(callsBefore + 1);
+      });
+
+      it('clicking "Zamknij" sends the Closed status', async () => {
+        const root = await render();
+
+        root.querySelectorAll('tr.table-row')[1].querySelector<HTMLButtonElement>('button[aria-label="Zamknij"]')!.click();
+
+        expect(updateJobStatus).toHaveBeenCalledWith(2, JobOfferStatus.Closed);
+      });
+
+      it('clicking "Wznów" sends the Active status', async () => {
+        const root = await render();
+
+        root.querySelectorAll('tr.table-row')[3].querySelector<HTMLButtonElement>('button[aria-label="Wznów"]')!.click();
+
+        expect(updateJobStatus).toHaveBeenCalledWith(4, JobOfferStatus.Active);
+      });
+
+      it('disables the quick action of the row being changed', async () => {
+        const pending = new Subject<JobOffer>();
+        updateJobStatus.mockReturnValue(pending);
+        const root = await render();
+
+        root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label="Opublikuj"]')!.click();
+        fixture.detectChanges();
+
+        expect(component.statusChangingId()).toBe(1);
+        expect(root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label="Opublikuj"]')!.disabled).toBe(true);
+        expect(root.querySelectorAll('tr.table-row')[1].querySelector<HTMLButtonElement>('button[aria-label="Zamknij"]')!.disabled).toBe(false);
+      });
+
+      it('keeps the list unchanged and shows the API message when publishing with a past date fails', async () => {
+        updateJobStatus.mockReturnValue(throwError(() => new HttpErrorResponse({
+          status: 400, error: { message: 'Expiration date must be in the future to publish' }
+        })));
+        const root = await render();
+        const callsBefore = getManagedJobs.mock.calls.length;
+
+        root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label="Opublikuj"]')!.click();
+
+        expect(snackBarOpen.mock.calls[0][0]).toBe('Aby opublikować ofertę, ustaw datę wygaśnięcia w przyszłości');
+        expect(getManagedJobs.mock.calls.length).toBe(callsBefore);
+      });
+
+      it('selecting a state in the dropdown requests /manage with that state', async () => {
+        const root = await render();
+
+        // trzecie pole filtrów: szukaj, typ pracy, stan
+        const triggers = root.querySelectorAll<HTMLElement>('.filters-card .mat-mdc-select-trigger');
+        triggers[1].click();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        const option = Array.from(document.querySelectorAll<HTMLElement>('mat-option')).find(o => o.textContent?.trim() === 'Zamknięte');
+        expect(option).toBeDefined();
+        option!.click();
+        fixture.detectChanges();
+
+        expect(lastParams().state).toBe('closed');
+      });
+    });
+
+    it.each([401, 403])('does not duplicate the interceptor notice when changing status fails with %i', status => {
+      create();
+      updateJobStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+
+      component.changeStatus(makeJob(4), JobOfferStatus.Closed);
+
+      expect(snackBarOpen).not.toHaveBeenCalled();
+      expect(alertSpy).not.toHaveBeenCalled();
     });
   });
 

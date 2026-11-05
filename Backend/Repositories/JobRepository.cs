@@ -15,10 +15,36 @@ public class JobRepository : IJobRepository
         _context = context;
     }
 
-    public async Task<PagedList<JobOffer>> GetJobsAsync(JobParams jobParams)
+    public Task<PagedList<JobOffer>> GetPublicJobsAsync(JobParams jobParams)
     {
+        var now = DateTime.UtcNow;
+        var query = _context.JobOffers
+            .AsNoTracking()
+            .Where(j => j.Status == JobOfferStatus.Active && (j.ExpiresAt == null || j.ExpiresAt > now));
+
+        return QueryJobsAsync(query, jobParams);
+    }
+
+    public Task<PagedList<JobOffer>> GetManagedJobsAsync(ManageJobParams jobParams)
+    {
+        var now = DateTime.UtcNow;
         var query = _context.JobOffers.AsNoTracking();
 
+        query = jobParams.State?.ToLowerInvariant() switch
+        {
+            ManageJobParams.Draft => query.Where(j => j.Status == JobOfferStatus.Draft),
+            ManageJobParams.Active => query.Where(j => j.Status == JobOfferStatus.Active && (j.ExpiresAt == null || j.ExpiresAt > now)),
+            ManageJobParams.Expired => query.Where(j => j.Status == JobOfferStatus.Active && j.ExpiresAt != null && j.ExpiresAt <= now),
+            ManageJobParams.Closed => query.Where(j => j.Status == JobOfferStatus.Closed),
+            _ => query
+        };
+
+        return QueryJobsAsync(query, jobParams);
+    }
+
+    // Wspólne filtry, sortowanie i stronicowanie listy ofert
+    private static async Task<PagedList<JobOffer>> QueryJobsAsync(IQueryable<JobOffer> query, JobParams jobParams)
+    {
         if (!string.IsNullOrWhiteSpace(jobParams.SearchTerm))
         {
             query = query.Where(j =>

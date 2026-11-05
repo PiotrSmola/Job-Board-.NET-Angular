@@ -8,10 +8,27 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MAT_DATE_LOCALE, provideNativeDateAdapter } from '@angular/material/core';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { JobService } from '../../../services/job.service';
-import { JobOffer, CreateJobOffer, WorkType } from '../../../models/job-offer.model';
+import { JobOffer, CreateJobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
+import { JOB_STATUS_OPTIONS } from '../../../utils/status-labels';
+
+/** Koniec dnia (czas lokalny admina) – oferta jest ważna do końca wybranego dnia. */
+export function endOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+}
+
+/** Puste pole wynagrodzenia = null; 0 jest poprawną wartością i zostaje wysłane. */
+export function toSalary(value: number | string | null | undefined): number | null {
+  return value === null || value === undefined || value === '' ? null : Number(value);
+}
+
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
 
 @Component({
   selector: 'app-job-dialog',
@@ -25,8 +42,10 @@ import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-
     MatSelectModule,
     MatButtonModule,
     MatIconModule,
-    MatProgressSpinnerModule
+    MatProgressSpinnerModule,
+    MatDatepickerModule
   ],
+  providers: [provideNativeDateAdapter(), { provide: MAT_DATE_LOCALE, useValue: 'pl-PL' }],
   template: `
     <h2 mat-dialog-title>
       <mat-icon>{{ data ? 'edit' : 'add' }}</mat-icon>
@@ -111,6 +130,37 @@ import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-
             <mat-error>Opis musi mieć minimum 50 znaków</mat-error>
           }
         </mat-form-field>
+
+        <div class="salary-row">
+          <mat-form-field appearance="outline">
+            <mat-label>Status</mat-label>
+            <mat-select formControlName="status">
+              @for (option of statusOptions; track option.value) {
+                <mat-option [value]="option.value">{{ option.label }}</mat-option>
+              }
+            </mat-select>
+            <mat-icon matPrefix>flag</mat-icon>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Aktualna do</mat-label>
+            <input matInput [matDatepicker]="expiresPicker" formControlName="expiresAt" readonly
+              placeholder="bezterminowo" (click)="expiresPicker.open()">
+            @if (jobForm.get('expiresAt')?.value) {
+              <button mat-icon-button matSuffix type="button" (click)="clearExpiresAt()" aria-label="Usuń datę">
+                <mat-icon>close</mat-icon>
+              </button>
+            }
+            <mat-datepicker-toggle matSuffix [for]="expiresPicker"></mat-datepicker-toggle>
+            <mat-datepicker #expiresPicker></mat-datepicker>
+            <mat-hint>Do końca wybranego dnia; puste = bezterminowo</mat-hint>
+          </mat-form-field>
+        </div>
+        @if (jobForm.hasError('expiresAtInPast')) {
+          <div class="salary-error expiry-error">
+            <mat-error>Aktywna oferta musi mieć datę wygaśnięcia w przyszłości</mat-error>
+          </div>
+        }
       </form>
     </mat-dialog-content>
     <mat-dialog-actions align="end">
@@ -213,6 +263,7 @@ export class JobDialogComponent {
   data: JobOffer | null = inject<JobOffer | null>(MAT_DIALOG_DATA, { optional: true }) ?? null;
   submitting = false;
   WorkType = WorkType;
+  readonly statusOptions = JOB_STATUS_OPTIONS;
 
   jobForm: FormGroup = this.fb.group({
     title: ['', [Validators.required]],
@@ -222,8 +273,11 @@ export class JobDialogComponent {
     // Te same reguły co walidacja API (wynagrodzenia >= 0, "Od" <= "Do") – bez nich backend zwraca 400
     salaryMin: [null, [Validators.min(0)]],
     salaryMax: [null, [Validators.min(0)]],
-    description: ['', [Validators.required, Validators.minLength(50)]]
-  }, { validators: this.salaryRangeValidator });
+    description: ['', [Validators.required, Validators.minLength(50)]],
+    // domyślnie Active – jak w API (oferta od razu opublikowana)
+    status: [JobOfferStatus.Active, [Validators.required]],
+    expiresAt: [null as Date | null]
+  }, { validators: [this.salaryRangeValidator, group => this.expiresAtValidator(group as FormGroup)] });
 
   constructor() {
     if (this.data) {
@@ -234,9 +288,36 @@ export class JobDialogComponent {
         workType: this.data.workType,
         salaryMin: this.data.salaryMin,
         salaryMax: this.data.salaryMax,
-        description: this.data.description
+        description: this.data.description,
+        status: this.data.status ?? JobOfferStatus.Active,
+        expiresAt: this.data.expiresAt ? new Date(this.data.expiresAt) : null
       });
     }
+  }
+
+  /**
+   * Aktywna oferta z datą wygaśnięcia musi być ważna jeszcze dziś (API odrzuca datę z przeszłości).
+   * Wyjątek jak w API: wygasłą aktywną ofertę można edytować bez zmiany daty (zostaje wygasła).
+   */
+  expiresAtValidator(group: FormGroup): { [key: string]: boolean } | null {
+    const status = group.get('status')?.value;
+    const expiresAt: Date | null = group.get('expiresAt')?.value ?? null;
+
+    if (status !== JobOfferStatus.Active || !expiresAt || endOfLocalDay(expiresAt).getTime() > Date.now()) {
+      return null;
+    }
+
+    return this.keepsOriginalExpiresAt(expiresAt) ? null : { expiresAtInPast: true };
+  }
+
+  /** Edycja oferty, która już jest aktywna, z niezmienionym dniem wygaśnięcia. */
+  private keepsOriginalExpiresAt(value: Date): boolean {
+    const original = this.data?.expiresAt;
+    return this.data?.status === JobOfferStatus.Active && !!original && isSameLocalDay(new Date(original), value);
+  }
+
+  clearExpiresAt(): void {
+    this.jobForm.patchValue({ expiresAt: null });
   }
 
   salaryRangeValidator(group: FormGroup): { [key: string]: boolean } | null {
@@ -263,8 +344,9 @@ export class JobDialogComponent {
 
     const jobData: CreateJobOffer = {
       ...formValue,
-      salaryMin: formValue.salaryMin || null,
-      salaryMax: formValue.salaryMax || null
+      salaryMin: toSalary(formValue.salaryMin),
+      salaryMax: toSalary(formValue.salaryMax),
+      expiresAt: this.toExpiresAtIso(formValue.expiresAt)
     };
 
     const request = this.data
@@ -287,6 +369,28 @@ export class JobDialogComponent {
         }
       }
     });
+  }
+
+  /**
+   * Wybrany dzień → koniec tego dnia w strefie admina, wysłany jako ISO UTC.
+   * Niezmieniony dzień przy edycji zachowuje dokładną datę z API (bez przesuwania godziny) –
+   * także dla wygasłej aktywnej oferty, którą API pozwala wtedy zapisać.
+   */
+  private toExpiresAtIso(value: Date | null): string | null {
+    if (!value) return null;
+
+    const original = this.data?.expiresAt ?? null;
+    if (original && isSameLocalDay(new Date(original), value)) {
+      // wyjątek: aktywna oferta, której godzina wygaśnięcia minęła dziś – przesuwamy na koniec dnia (znów aktualna)
+      const now = Date.now();
+      const expiredEarlierToday = this.jobForm.value.status === JobOfferStatus.Active
+        && new Date(original).getTime() <= now && endOfLocalDay(value).getTime() > now;
+      if (!expiredEarlierToday) {
+        return original;
+      }
+    }
+
+    return endOfLocalDay(value).toISOString();
   }
 
   private notify(message: string): void {

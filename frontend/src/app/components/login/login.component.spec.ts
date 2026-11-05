@@ -10,6 +10,9 @@ const LOCKED_MESSAGE =
   'Konto zostało tymczasowo zablokowane po zbyt wielu nieudanych próbach. Spróbuj ponownie za kilka minut.';
 const USER: UserDto = { email: 'jan@example.com', firstName: 'Jan', lastName: 'Kowalski', token: 't' };
 
+// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
+vi.setConfig({ testTimeout: 20000 });
+
 describe('LoginComponent', () => {
   let fixture: ComponentFixture<LoginComponent>;
   let component: LoginComponent;
