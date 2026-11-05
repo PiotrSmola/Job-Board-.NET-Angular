@@ -18,7 +18,7 @@ public class JobApplicationRepository : IJobApplicationRepository
     public async Task<JobApplication?> GetApplicationByIdAsync(int id, bool includeHistory = false)
     {
         var query = _context.JobApplications
-            .Include(a => a.JobOffer)
+            .Include(a => a.JobOffer).ThenInclude(j => j.Company)
             .Include(a => a.User)
             .AsNoTracking();
 
@@ -44,7 +44,7 @@ public class JobApplicationRepository : IJobApplicationRepository
     public async Task<IEnumerable<JobApplication>> GetApplicationsByUserIdAsync(string userId)
     {
         return await _context.JobApplications
-            .Include(a => a.JobOffer)
+            .Include(a => a.JobOffer).ThenInclude(j => j.Company)
             .Include(a => a.User)
             .AsNoTracking()
             .Where(a => a.UserId == userId)
@@ -55,7 +55,7 @@ public class JobApplicationRepository : IJobApplicationRepository
     public async Task<IEnumerable<JobApplication>> GetApplicationsByJobIdAsync(int jobId)
     {
         return await _context.JobApplications
-            .Include(a => a.JobOffer)
+            .Include(a => a.JobOffer).ThenInclude(j => j.Company)
             .Include(a => a.User)
             .AsNoTracking()
             .Where(a => a.JobOfferId == jobId)
@@ -63,12 +63,18 @@ public class JobApplicationRepository : IJobApplicationRepository
             .ToListAsync();
     }
 
-    public async Task<PagedList<JobApplication>> GetApplicationsAsync(ApplicationParams applicationParams)
+    public async Task<PagedList<JobApplication>> GetApplicationsAsync(ApplicationParams applicationParams, ManagementScope scope)
     {
         var query = _context.JobApplications
-            .Include(a => a.JobOffer)
+            .Include(a => a.JobOffer).ThenInclude(j => j.Company)
             .Include(a => a.User)
             .AsNoTracking();
+
+        // pracodawca widzi wyłącznie aplikacje do ofert swojej firmy
+        if (scope.CompanyId.HasValue)
+        {
+            query = query.Where(a => a.JobOffer.CompanyId == scope.CompanyId.Value);
+        }
 
         if (applicationParams.JobOfferId.HasValue)
         {
@@ -89,7 +95,7 @@ public class JobApplicationRepository : IJobApplicationRepository
                 (a.User.LastName != null && a.User.LastName.ToLower().Contains(term)) ||
                 (a.User.FirstName + " " + a.User.LastName).ToLower().Contains(term) ||
                 a.JobOffer.Title.ToLower().Contains(term) ||
-                a.JobOffer.Company.ToLower().Contains(term)
+                a.JobOffer.Company.Name.ToLower().Contains(term)
             );
         }
 

@@ -1,4 +1,6 @@
+using Backend.Data;
 using Backend.DTOs;
+using Backend.Helpers;
 using Backend.Interfaces;
 using Backend.Models;
 using Microsoft.AspNetCore.Identity;
@@ -13,15 +15,21 @@ public class AuthController : ControllerBase
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly ITokenService _tokenService;
+    private readonly ICompanyRepository _companyRepository;
+    private readonly ApplicationDbContext _context;
 
     public AuthController(
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
-        ITokenService tokenService)
+        ITokenService tokenService,
+        ICompanyRepository companyRepository,
+        ApplicationDbContext context)
     {
         _userManager = userManager;
         _signInManager = signInManager;
         _tokenService = tokenService;
+        _companyRepository = companyRepository;
+        _context = context;
     }
 
     [HttpPost("register")]
@@ -50,17 +58,76 @@ public class AuthController : ControllerBase
         }
 
         // default role "User"
-        await _userManager.AddToRoleAsync(user, "User");
+        await _userManager.AddToRoleAsync(user, Roles.User);
 
-        var roles = await _userManager.GetRolesAsync(user);
+        return await ToUserDtoAsync(user);
+    }
 
-        return new UserDto
+    // Rejestracja pracodawcy: konto z rolą Employer i firma oczekująca na weryfikację - w jednej transakcji
+    [HttpPost("register-employer")]
+    [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<UserDto>> RegisterEmployer(RegisterEmployerDto registerDto)
+    {
+        if (await _userManager.FindByEmailAsync(registerDto.Email) != null)
         {
-            Email = user.Email ?? string.Empty,
-            FirstName = user.FirstName ?? string.Empty,
-            LastName = user.LastName ?? string.Empty,
-            Token = _tokenService.CreateToken(user, roles)
+            return BadRequest(new { message = "Email is already taken" });
+        }
+
+        var companyName = CompanyNames.Normalize(registerDto.CompanyName);
+        if (await _companyRepository.IsNameTakenAsync(companyName))
+        {
+            return BadRequest(new { message = CompanyMessages.NameTaken });
+        }
+
+        // UserManager korzysta z tego samego (scoped) kontekstu - firma i konto zapisują się w tej transakcji
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+
+        var company = new Company
+        {
+            Name = companyName,
+            Description = CompanyNames.NormalizeOptional(registerDto.CompanyDescription),
+            Website = CompanyNames.NormalizeOptional(registerDto.Website),
+            Location = CompanyNames.NormalizeOptional(registerDto.Location),
+            Status = CompanyStatus.Pending,
+            CreatedAt = DateTime.UtcNow
         };
+
+        try
+        {
+            await _companyRepository.AddCompanyAsync(company);
+        }
+        catch (Exception ex) when (ex.IsDuplicateKey())
+        {
+            // równoległa rejestracja zajęła nazwę (unikalny indeks)
+            return BadRequest(new { message = CompanyMessages.NameTaken });
+        }
+
+        var user = new ApplicationUser
+        {
+            UserName = registerDto.Email,
+            Email = registerDto.Email,
+            FirstName = registerDto.FirstName,
+            LastName = registerDto.LastName,
+            CompanyId = company.Id
+        };
+
+        // wycofanie transakcji (dispose bez commit) usuwa też utworzoną firmę
+        var result = await _userManager.CreateAsync(user, registerDto.Password);
+        if (!result.Succeeded)
+        {
+            return BadRequest(result.Errors);
+        }
+
+        var roleResult = await _userManager.AddToRoleAsync(user, Roles.Employer);
+        if (!roleResult.Succeeded)
+        {
+            return BadRequest(roleResult.Errors);
+        }
+
+        await transaction.CommitAsync();
+
+        return await ToUserDtoAsync(user);
     }
 
     [HttpPost("login")]
@@ -89,6 +156,11 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Invalid email or password" });
         }
 
+        return await ToUserDtoAsync(user);
+    }
+
+    private async Task<UserDto> ToUserDtoAsync(ApplicationUser user)
+    {
         var roles = await _userManager.GetRolesAsync(user);
 
         return new UserDto

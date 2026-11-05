@@ -22,4 +22,11 @@ public static class DbExceptionExtensions
 
     public static bool IsDuplicateKey(this Exception exception) =>
         (exception as DbUpdateException)?.InnerException is MySqlException { ErrorCode: MySqlErrorCode.DuplicateKeyEntry };
+
+    // usunięcie wiersza, do którego odwołuje się klucz obcy z ON DELETE RESTRICT
+    public static bool IsForeignKeyViolation(this Exception exception) =>
+        (exception as DbUpdateException)?.InnerException is MySqlException
+        {
+            ErrorCode: MySqlErrorCode.RowIsReferenced2 or MySqlErrorCode.RowIsReferenced
+        };
 }

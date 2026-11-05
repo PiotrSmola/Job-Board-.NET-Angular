@@ -15,9 +15,9 @@ public abstract class JobOfferFormDto : IValidatableObject
     [MaxLength(200)]
     public string Title { get; set; } = string.Empty;
 
-    [Required]
-    [MaxLength(200)]
-    public string Company { get; set; } = string.Empty;
+    // firma oferty: wymagana dla admina (brak - błąd walidacji, nieistniejąca firma - 400), ignorowana dla
+    // pracodawcy - jego oferty zawsze należą do jego firmy
+    public int? CompanyId { get; set; }
 
     [Required]
     [MaxLength(5000)]

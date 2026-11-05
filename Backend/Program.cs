@@ -89,7 +89,12 @@ builder.Services.AddCors(options =>
 // Repository Services
 builder.Services.AddScoped<IJobRepository, JobRepository>();
 builder.Services.AddScoped<IJobApplicationRepository, JobApplicationRepository>();
+builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
+
+// Uprawnienia do zasobów (admin - wszystko, pracodawca - zasoby swojej firmy) sprawdzane w jednym miejscu
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserAccess, CurrentUserAccess>();
 
 // Kontrolery - odpowiedzi to wyłącznie DTO (bez cykli nawigacji encji EF)
 builder.Services.AddControllers();

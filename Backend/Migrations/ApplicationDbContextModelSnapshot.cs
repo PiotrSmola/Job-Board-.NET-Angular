@@ -63,6 +63,9 @@ namespace Backend.Migrations
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("int");
 
+                    b.Property<int?>("CompanyId")
+                        .HasColumnType("int");
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("longtext");
@@ -120,6 +123,8 @@ namespace Backend.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CompanyId");
+
                     b.HasIndex("NormalizedEmail")
                         .HasDatabaseName("EmailIndex");
 
@@ -128,6 +133,59 @@ namespace Backend.Migrations
                         .HasDatabaseName("UserNameIndex");
 
                     b.ToTable("AspNetUsers", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Models.Company", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(5000)
+                        .HasColumnType("varchar(5000)");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("ReviewedByUserId")
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Website")
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.HasIndex("ReviewedByUserId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("Companies");
                 });
 
             modelBuilder.Entity("Backend.Models.JobApplication", b =>
@@ -177,10 +235,8 @@ namespace Backend.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("Company")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)");
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
@@ -218,6 +274,8 @@ namespace Backend.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
 
                     b.ToTable("JobOffers");
                 });
@@ -372,6 +430,26 @@ namespace Backend.Migrations
                     b.Navigation("JobApplication");
                 });
 
+            modelBuilder.Entity("Backend.Models.ApplicationUser", b =>
+                {
+                    b.HasOne("Backend.Models.Company", "Company")
+                        .WithMany("Members")
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("Backend.Models.Company", b =>
+                {
+                    b.HasOne("Backend.Models.ApplicationUser", "ReviewedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReviewedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ReviewedByUser");
+                });
+
             modelBuilder.Entity("Backend.Models.JobApplication", b =>
                 {
                     b.HasOne("Backend.Models.JobOffer", "JobOffer")
@@ -389,6 +467,17 @@ namespace Backend.Migrations
                     b.Navigation("JobOffer");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Backend.Models.JobOffer", b =>
+                {
+                    b.HasOne("Backend.Models.Company", "Company")
+                        .WithMany("JobOffers")
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Company");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -445,6 +534,13 @@ namespace Backend.Migrations
             modelBuilder.Entity("Backend.Models.ApplicationUser", b =>
                 {
                     b.Navigation("JobApplications");
+                });
+
+            modelBuilder.Entity("Backend.Models.Company", b =>
+                {
+                    b.Navigation("JobOffers");
+
+                    b.Navigation("Members");
                 });
 
             modelBuilder.Entity("Backend.Models.JobApplication", b =>

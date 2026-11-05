@@ -13,7 +13,8 @@ public interface IJobApplicationRepository
     Task<JobApplication?> GetUserApplicationForJobAsync(int jobId, string userId);
     Task<IEnumerable<JobApplication>> GetApplicationsByUserIdAsync(string userId);
     Task<IEnumerable<JobApplication>> GetApplicationsByJobIdAsync(int jobId);
-    Task<PagedList<JobApplication>> GetApplicationsAsync(ApplicationParams applicationParams);
+    // panel zarządzania: aplikacje do ofert z zakresu (admin - wszystkie, pracodawca - jego firmy)
+    Task<PagedList<JobApplication>> GetApplicationsAsync(ApplicationParams applicationParams, ManagementScope scope);
     Task<JobApplication> AddApplicationAsync(JobApplication application);
     // w jednej transakcji blokuje wiersz śledzonej aplikacji, wykonuje change(czas zapisu) i zapisuje aplikację
     // z nowymi wpisami historii; jeśli aplikację od wczytania zmieniło inne żądanie (inny token StatusChangedAt),
