@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, input, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -20,10 +20,15 @@ import { JobService } from '../../../services/job.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
 import { JobOrderBy, JobState, ManageJobParams } from '../../../models/job-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
+import { Company, CompanyStatus } from '../../../models/company.model';
+import { PanelMode } from '../../../models/panel-mode.model';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
 import { JOB_STATE_OPTIONS, getJobState, getJobStatePresentation } from '../../../utils/status-labels';
 import { StatusChipComponent } from '../../shared/status-chip.component';
-import { JobDialogComponent } from '../job-dialog/job-dialog.component';
+import { CompanyAutocompleteComponent, CompanyOption } from '../../shared/company-autocomplete.component';
+import { JobDialogComponent, JobDialogData } from '../job-dialog/job-dialog.component';
+
+const ALL_COLUMNS = ['id', 'title', 'status', 'company', 'location', 'workType', 'salary', 'createdAt', 'actions'];
 
 // Kolumny sortowane po stronie serwera -> wartości orderBy z API
 const SORT_ORDER: Record<string, { asc: JobOrderBy; desc: JobOrderBy }> = {
@@ -53,7 +58,8 @@ const DEFAULT_SORT: Sort = { active: 'createdAt', direction: 'desc' };
     MatSelectModule,
     MatPaginatorModule,
     MatSortModule,
-    StatusChipComponent
+    StatusChipComponent,
+    CompanyAutocompleteComponent
   ],
   templateUrl: './admin-jobs-tab.component.html',
   styleUrl: './admin-jobs-tab.component.scss'
@@ -63,7 +69,14 @@ export class AdminJobsTabComponent {
   private dialog = inject(MatDialog);
   private snackBar = inject(MatSnackBar);
 
-  readonly displayedColumns = ['id', 'title', 'status', 'company', 'location', 'workType', 'salary', 'createdAt', 'actions'];
+  /** admin – wszystkie oferty z kolumną i filtrem firmy; employer – oferty własnej firmy. */
+  readonly mode = input<PanelMode>('admin');
+  /** Firma pracodawcy (tryb employer) – bez zatwierdzenia nie wolno publikować. */
+  readonly company = input<Company | null>(null);
+
+  readonly isAdmin = computed(() => this.mode() === 'admin');
+  readonly canPublish = computed(() => this.isAdmin() || this.company()?.status === CompanyStatus.Approved);
+  readonly displayedColumns = computed(() => this.isAdmin() ? ALL_COLUMNS : ALL_COLUMNS.filter(c => c !== 'company'));
   readonly pageSizeOptions = [5, 10, 25, 50];
   readonly workTypeOptions = [
     { value: null, label: 'Wszystkie' },
@@ -85,11 +98,15 @@ export class AdminJobsTabComponent {
   readonly searchInput = signal('');
   readonly workType = signal<WorkType | null>(null);
   readonly state = signal<JobState | null>(null);
+  readonly companyFilter = signal<CompanyOption | null>(null);
   readonly sort = signal<Sort>(DEFAULT_SORT);
+
+  private readonly companyAutocomplete = viewChild(CompanyAutocompleteComponent);
 
   // Fraza faktycznie wysłana do API (po debounce)
   private readonly searchTerm = signal('');
-  readonly hasActiveFilters = computed(() => this.searchTerm() !== '' || this.workType() !== null || this.state() !== null);
+  readonly hasActiveFilters = computed(() =>
+    this.searchTerm() !== '' || this.workType() !== null || this.state() !== null || this.companyFilter() !== null);
 
   private readonly search$ = new Subject<string>();
   private readonly load$ = new Subject<void>();
@@ -149,6 +166,12 @@ export class AdminJobsTabComponent {
     this.reload(true);
   }
 
+  onCompanyFilterChange(company: CompanyOption | null): void {
+    if (company?.id === this.companyFilter()?.id) return;
+    this.companyFilter.set(company);
+    this.reload(true);
+  }
+
   onSortChange(sort: Sort): void {
     this.sort.set(sort);
     this.reload(true);
@@ -166,6 +189,8 @@ export class AdminJobsTabComponent {
     this.searchTerm.set('');
     this.workType.set(null);
     this.state.set(null);
+    this.companyFilter.set(null);
+    this.companyAutocomplete()?.reset();
     this.sort.set(DEFAULT_SORT);
     this.reload(true);
   }
@@ -177,6 +202,12 @@ export class AdminJobsTabComponent {
 
   /** Szybkie akcje zależne od stanu: szkic → publikacja, aktywna/wygasła → zamknięcie, zamknięta → wznowienie. */
   quickActions(job: JobOffer): { status: JobOfferStatus; icon: string; label: string }[] {
+    const actions = this.stateActions(job);
+    // Firma niezatwierdzona – publikacja/wznowienie zablokowane przez API (403)
+    return this.canPublish() ? actions : actions.filter(action => action.status !== JobOfferStatus.Active);
+  }
+
+  private stateActions(job: JobOffer): { status: JobOfferStatus; icon: string; label: string }[] {
     switch (getJobState(job)) {
       case 'draft': return [{ status: JobOfferStatus.Active, icon: 'publish', label: 'Opublikuj' }];
       case 'active':
@@ -261,10 +292,11 @@ export class AdminJobsTabComponent {
   }
 
   private openJobDialog(job: JobOffer | null): void {
+    const data: JobDialogData = { job, mode: this.mode(), company: this.company() };
     const dialogRef = this.dialog.open(JobDialogComponent, {
       width: '600px',
       disableClose: true,
-      data: job
+      data
     });
 
     dialogRef.afterClosed().subscribe(saved => {
@@ -285,6 +317,7 @@ export class AdminJobsTabComponent {
     params.searchTerm = this.searchTerm();
     params.workType = this.workType();
     params.state = this.state();
+    params.companyId = this.companyFilter()?.id ?? null;
     params.orderBy = this.toOrderBy(this.sort());
     return params;
   }

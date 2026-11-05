@@ -14,7 +14,9 @@ export enum JobOfferStatus {
 export interface JobOffer {
   id: number;
   title: string;
+  /** Nazwa firmy (zgodność wsteczna) – identyfikator w companyId. */
   company: string;
+  companyId: number;
   description: string;
   salaryMin: number | null;
   salaryMax: number | null;
@@ -29,7 +31,8 @@ export interface JobOffer {
 
 export interface CreateJobOffer {
   title: string;
-  company: string;
+  /** Wymagane dla admina; dla pracodawcy API je ignoruje (zawsze jego firma). */
+  companyId: number | null;
   description: string;
   salaryMin: number | null;
   salaryMax: number | null;

@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -19,6 +19,7 @@ import { JobApplicationService } from '../../../services/job-application.service
 import { ApplicationStatus, JobApplication } from '../../../models/job-application.model';
 import { ApplicationOrderBy, ApplicationParams } from '../../../models/application-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
+import { PanelMode } from '../../../models/panel-mode.model';
 import { isHandledByInterceptor } from '../../../utils/http-errors';
 import { APPLICATION_STATUS_FILTER_OPTIONS, getApplicationStatusPresentation } from '../../../utils/status-labels';
 import { StatusChipComponent } from '../../shared/status-chip.component';
@@ -27,6 +28,8 @@ import { ApplicationHistoryDialogComponent } from '../application-history-dialog
 
 // API sortuje aplikacje tylko po dacie złożenia
 const DEFAULT_SORT: Sort = { active: 'appliedAt', direction: 'desc' };
+
+const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt', 'note', 'actions'];
 
 @Component({
   selector: 'app-admin-applications-tab',
@@ -54,7 +57,10 @@ export class AdminApplicationsTabComponent {
   private applicationService = inject(JobApplicationService);
   private dialog = inject(MatDialog);
 
-  readonly displayedColumns = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt', 'note', 'actions'];
+  /** admin – wszystkie aplikacje (z usuwaniem); employer – aplikacje do ofert własnej firmy, bez usuwania. */
+  readonly mode = input<PanelMode>('admin');
+  readonly isAdmin = computed(() => this.mode() === 'admin');
+  readonly displayedColumns = computed(() => this.isAdmin() ? ALL_COLUMNS : ALL_COLUMNS.filter(c => c !== 'company'));
   readonly pageSizeOptions = [5, 10, 25, 50];
   readonly statusOptions = APPLICATION_STATUS_FILTER_OPTIONS;
   readonly ApplicationStatus = ApplicationStatus;
@@ -167,7 +173,8 @@ export class AdminApplicationsTabComponent {
   }
 
   deleteApplication(id: number): void {
-    if (!confirm('Czy na pewno chcesz usunąć tę aplikację?')) {
+    // Usuwanie aplikacji – tylko admin
+    if (!this.isAdmin() || !confirm('Czy na pewno chcesz usunąć tę aplikację?')) {
       return;
     }
 

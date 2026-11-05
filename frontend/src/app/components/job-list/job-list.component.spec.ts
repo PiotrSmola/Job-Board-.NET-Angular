@@ -10,7 +10,7 @@ import { PaginatedResult } from '../../models/pagination.model';
 
 function makeJob(id: number): JobOffer {
   return {
-    id, title: `Oferta ${id}`, company: 'Acme', description: 'Opis', salaryMin: 1000, salaryMax: 2000,
+    id, title: `Oferta ${id}`, company: 'Acme', companyId: 1, description: 'Opis', salaryMin: 1000, salaryMax: 2000,
     location: 'Rzeszów', workType: WorkType.Hybrid, createdAt: new Date('2026-01-01'),
     status: JobOfferStatus.Active, expiresAt: null, isExpired: false
   };

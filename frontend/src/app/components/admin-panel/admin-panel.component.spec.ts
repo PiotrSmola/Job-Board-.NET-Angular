@@ -7,6 +7,7 @@ import { AdminService } from '../../services/admin.service';
 import { AuthService } from '../../services/auth.service';
 import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
+import { CompanyService } from '../../services/company.service';
 
 const EMPTY_PAGE = { result: [], pagination: { CurrentPage: 1, ItemsPerPage: 10, TotalItems: 0, TotalPages: 1 } };
 
@@ -64,6 +65,7 @@ describe('AdminPanelComponent', () => {
         { provide: AuthService, useValue: { logout } },
         { provide: JobService, useValue: { getManagedJobs, deleteJob: vi.fn() } },
         { provide: JobApplicationService, useValue: { getAllApplications, deleteApplication: vi.fn() } },
+        { provide: CompanyService, useValue: { getCompanies: vi.fn() } },
         { provide: MatDialog, useValue: { open: vi.fn() } }
       ]
     }).compileComponents();

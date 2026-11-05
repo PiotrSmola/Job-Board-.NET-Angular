@@ -5,6 +5,8 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { AdminJobsTabComponent } from './admin-jobs-tab.component';
 import { JobService } from '../../../services/job.service';
+import { CompanyService } from '../../../services/company.service';
+import { AdminService } from '../../../services/admin.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
 import { ManageJobParams } from '../../../models/job-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
@@ -14,6 +16,7 @@ function makeJob(id: number): JobOffer {
     id,
     title: `Oferta ${id}`,
     company: 'Acme',
+    companyId: 1,
     description: 'Opis',
     salaryMin: 1000,
     salaryMax: 2000,
@@ -75,6 +78,8 @@ describe('AdminJobsTabComponent', () => {
       imports: [AdminJobsTabComponent],
       providers: [
         { provide: JobService, useValue: { getManagedJobs, deleteJob, updateJobStatus } },
+        { provide: CompanyService, useValue: { getCompanies: vi.fn() } },
+        { provide: AdminService, useValue: { getCompanies: vi.fn() } },
         { provide: MatDialog, useValue: { open: vi.fn() } },
         { provide: MatSnackBar, useValue: { open: snackBarOpen } }
       ]

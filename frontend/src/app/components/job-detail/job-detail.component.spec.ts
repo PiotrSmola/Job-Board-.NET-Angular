@@ -11,7 +11,7 @@ import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model
 import { ApplicationStatus } from '../../models/job-application.model';
 
 const JOB: JobOffer = {
-  id: 5, title: 'Angular Developer', company: 'Acme', description: 'Opis', salaryMin: 1000, salaryMax: 2000,
+  id: 5, title: 'Angular Developer', company: 'Acme', companyId: 1, description: 'Opis', salaryMin: 1000, salaryMax: 2000,
   location: 'Rzeszów', workType: WorkType.Remote, createdAt: new Date('2026-01-01'),
   status: JobOfferStatus.Active, expiresAt: null, isExpired: false
 };
