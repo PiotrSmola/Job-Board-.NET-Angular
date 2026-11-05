@@ -91,17 +91,31 @@ export class MyApplicationsComponent implements OnInit {
     this.expandedId = application.id;
     if (this.histories[application.id]) return;
 
-    this.historyLoadingId = application.id;
-    this.applicationService.getApplication(application.id).subscribe({
+    this.loadHistory(application.id);
+  }
+
+  /**
+   * Pobiera historię aplikacji do cache. Odpowiedź może przyjść, gdy użytkownik rozwinął już inny wiersz –
+   * spinner i zwijanie dotyczą wtedy tylko wiersza, którego odpowiedź dotyczy.
+   */
+  private loadHistory(id: number): void {
+    this.historyLoadingId = id;
+    this.applicationService.getApplication(id).subscribe({
       next: (details) => {
-        this.histories = { ...this.histories, [application.id]: details.history ?? [] };
-        this.historyLoadingId = null;
+        this.histories = { ...this.histories, [id]: details.history ?? [] };
+        if (this.historyLoadingId === id) {
+          this.historyLoadingId = null;
+        }
         this.cdr.detectChanges();
       },
       error: (error) => {
         console.error('Error loading application history:', error);
-        this.historyLoadingId = null;
-        this.expandedId = null;
+        if (this.historyLoadingId === id) {
+          this.historyLoadingId = null;
+        }
+        if (this.expandedId === id) {
+          this.expandedId = null;
+        }
         this.cdr.detectChanges();
         if (!isHandledByInterceptor(error)) {
           this.notify(getApiErrorMessage(error, 'Nie udało się wczytać historii aplikacji'));
@@ -120,8 +134,15 @@ export class MyApplicationsComponent implements OnInit {
     this.applicationService.withdraw(application.id).subscribe({
       next: (updated) => {
         this.applications = this.applications.map(app => app.id === updated.id ? { ...app, ...updated } : app);
+        // historia w cache jest już nieaktualna – bierzemy ją z odpowiedzi albo pobieramy od nowa
         if (updated.history) {
           this.histories = { ...this.histories, [updated.id]: updated.history };
+        } else {
+          const { [updated.id]: _stale, ...rest } = this.histories;
+          this.histories = rest;
+          if (this.expandedId === updated.id) {
+            this.loadHistory(updated.id);
+          }
         }
         this.withdrawingId = null;
         this.cdr.detectChanges();

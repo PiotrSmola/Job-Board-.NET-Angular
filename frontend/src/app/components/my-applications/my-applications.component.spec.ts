@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router, provideRouter } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 import { MyApplicationsComponent } from './my-applications.component';
 import { JobApplicationService } from '../../services/job-application.service';
 import { ApplicationStatus, JobApplication } from '../../models/job-application.model';
@@ -190,6 +190,68 @@ describe('MyApplicationsComponent', () => {
 
       expect(component.expandedId).toBeNull();
       expect(snackBarOpen.mock.calls[0][0]).toBe('Nie udało się wczytać historii aplikacji');
+    });
+
+    it('keeps the spinner of a row expanded later when the history of an earlier row arrives', () => {
+      create();
+      const first = new Subject<JobApplication>();
+      const second = new Subject<JobApplication>();
+      getApplication.mockImplementation((id: number) => id === 1 ? first : second);
+
+      component.toggleHistory(component.applications[0]);
+      component.toggleHistory(component.applications[1]);
+      first.next({ ...makeApplication(1), history: HISTORY });
+
+      expect(component.expandedId).toBe(2);
+      expect(component.historyLoadingId).toBe(2);
+      expect(component.histories[1].length).toBe(2);
+
+      second.next({ ...makeApplication(2), history: HISTORY.slice(0, 1) });
+      expect(component.historyLoadingId).toBeNull();
+      expect(root().querySelectorAll('app-status-timeline li').length).toBe(1);
+    });
+
+    it('does not collapse a row expanded later when the history of an earlier row fails', () => {
+      create();
+      const first = new Subject<JobApplication>();
+      const second = new Subject<JobApplication>();
+      getApplication.mockImplementation((id: number) => id === 1 ? first : second);
+
+      component.toggleHistory(component.applications[0]);
+      component.toggleHistory(component.applications[1]);
+      first.error(new HttpErrorResponse({ status: 500 }));
+
+      expect(component.expandedId).toBe(2);
+      expect(component.historyLoadingId).toBe(2);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Nie udało się wczytać historii aplikacji');
+    });
+
+    it('reloads the cached history of an expanded row after withdrawal without history in the response', () => {
+      create();
+      component.toggleHistory(component.applications[0]);
+      expect(component.histories[1].length).toBe(2);
+      withdraw.mockReturnValue(of(makeApplication(1, ApplicationStatus.Withdrawn)));
+      const withWithdrawal = [...HISTORY, { status: ApplicationStatus.Withdrawn, changedAt: '2026-01-03T10:00:00Z', comment: null, changedBy: null }];
+      getApplication.mockReturnValue(of({ ...makeApplication(1, ApplicationStatus.Withdrawn), history: withWithdrawal }));
+
+      component.withdrawApplication(component.applications[0]);
+
+      expect(getApplication).toHaveBeenCalledTimes(2);
+      expect(component.histories[1].length).toBe(3);
+    });
+
+    it('drops the cached history of a collapsed row after withdrawal without history in the response', () => {
+      create();
+      component.toggleHistory(component.applications[0]);
+      component.toggleHistory(component.applications[0]);
+      withdraw.mockReturnValue(of(makeApplication(1, ApplicationStatus.Withdrawn)));
+
+      component.withdrawApplication(component.applications[0]);
+
+      expect(component.histories[1]).toBeUndefined();
+      expect(getApplication).toHaveBeenCalledTimes(1);
+      component.toggleHistory(component.applications[0]);
+      expect(getApplication).toHaveBeenCalledTimes(2);
     });
 
     it('uses the history returned by withdraw without another request', () => {
