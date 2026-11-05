@@ -16,3 +16,11 @@ export interface RegisterDto {
   firstName: string;
   lastName: string;
 }
+
+/** Rejestracja pracodawcy – konto i firma (status „oczekuje”) tworzone razem. */
+export interface RegisterEmployerDto extends RegisterDto {
+  companyName: string;
+  companyDescription: string | null;
+  website: string | null;
+  location: string | null;
+}

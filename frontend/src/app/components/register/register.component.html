@@ -12,6 +12,21 @@
           </div>
         }
 
+        <mat-button-toggle-group
+          class="account-type"
+          [value]="accountType"
+          (change)="setAccountType($event.value)"
+          aria-label="Rodzaj konta">
+          <mat-button-toggle value="candidate">
+            <mat-icon>person_search</mat-icon>
+            Szukam pracy
+          </mat-button-toggle>
+          <mat-button-toggle value="employer">
+            <mat-icon>business_center</mat-icon>
+            Rekrutuję
+          </mat-button-toggle>
+        </mat-button-toggle-group>
+
         <div class="name-fields">
           <mat-form-field appearance="outline" class="half-width">
             <mat-label>Imię</mat-label>
@@ -59,11 +74,47 @@
           }
         </mat-form-field>
 
+        @if (isEmployer) {
+          <div class="company-section">
+            <h3>Twoja firma</h3>
+            <p class="company-hint">Firma zostanie zweryfikowana przez administratora – do tego czasu możesz przygotowywać oferty jako szkice.</p>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Nazwa firmy</mat-label>
+              <input matInput formControlName="companyName" maxlength="200">
+              <mat-icon matPrefix>business</mat-icon>
+              @if (registerForm.get('companyName')?.invalid && registerForm.get('companyName')?.touched) {
+                <mat-error>Nazwa firmy jest wymagana</mat-error>
+              }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Lokalizacja (opcjonalnie)</mat-label>
+              <input matInput formControlName="location" maxlength="200" placeholder="np. Rzeszów">
+              <mat-icon matPrefix>location_on</mat-icon>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Strona www (opcjonalnie)</mat-label>
+              <input matInput formControlName="website" maxlength="300" placeholder="https://...">
+              <mat-icon matPrefix>language</mat-icon>
+              @if (registerForm.get('website')?.invalid) {
+                <mat-error>Podaj adres zaczynający się od http:// lub https://</mat-error>
+              }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Opis firmy (opcjonalnie)</mat-label>
+              <textarea matInput formControlName="companyDescription" rows="4" [maxlength]="descriptionMax"></textarea>
+            </mat-form-field>
+          </div>
+        }
+
         <button mat-raised-button color="primary" type="submit" class="full-width" [disabled]="loading || registerForm.invalid">
           @if (loading) {
             <mat-spinner diameter="20"></mat-spinner>
           } @else {
-            Zarejestruj się
+            {{ isEmployer ? 'Zarejestruj firmę' : 'Zarejestruj się' }}
           }
         </button>
 

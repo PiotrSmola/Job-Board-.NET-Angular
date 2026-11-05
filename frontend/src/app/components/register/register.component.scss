@@ -35,6 +35,32 @@ form {
   gap: 16px;
 }
 
+.account-type {
+  width: 100%;
+
+  mat-button-toggle {
+    flex: 1;
+  }
+}
+
+.company-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+
+  h3 {
+    margin-top: 8px;
+  }
+
+  .company-hint {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+}
+
 .name-fields {
   display: flex;
   gap: 16px;

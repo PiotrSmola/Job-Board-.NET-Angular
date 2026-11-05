@@ -101,6 +101,25 @@ describe('AuthService', () => {
       expect(localStorage.getItem(TOKEN_KEY)).toBe(user.token);
     });
 
+    it('registers an employer with the company data and stores the session', () => {
+      const { service, http } = setup();
+      const user = makeUser(makeJwtExpiringIn(3600, { role: 'Employer' }));
+      const body = {
+        email: user.email, password: 'secret1', firstName: 'Jan', lastName: 'Kowalski',
+        companyName: 'Nowa Firma', companyDescription: null, website: 'https://nowa.pl', location: null
+      };
+
+      service.registerEmployer(body).subscribe();
+      const req = http.expectOne('/api/auth/register-employer');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(body);
+      req.flush(user);
+
+      expect(service.currentUser()).toEqual(user);
+      expect(service.isEmployer()).toBe(true);
+      expect(service.isAdmin()).toBe(false);
+    });
+
     it('logout clears the session, storage and navigates to /login', () => {
       storeSession(makeUser(makeJwtExpiringIn(3600)));
       const { service, navigate } = setup();
@@ -198,6 +217,22 @@ describe('AuthService', () => {
     it('returns null when there is no session', () => {
       const { service } = setup();
       expect(service.getToken()).toBeNull();
+    });
+  });
+
+  describe('isEmployer', () => {
+    it('is true for a token with the Employer role', () => {
+      storeSession(makeUser(makeJwtExpiringIn(3600, { role: 'Employer' })));
+      expect(setup().service.isEmployer()).toBe(true);
+    });
+
+    it.each(['User', 'Admin'])('is false for the %s role', role => {
+      storeSession(makeUser(makeJwtExpiringIn(3600, { role })));
+      expect(setup().service.isEmployer()).toBe(false);
+    });
+
+    it('is false when not logged in', () => {
+      expect(setup().service.isEmployer()).toBe(false);
     });
   });
 
