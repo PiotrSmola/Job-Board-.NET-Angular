@@ -225,6 +225,8 @@ public class JobLifecycleTests
     [InlineData("published")]
     [InlineData("0")]
     [InlineData("draft,closed")]
+    [InlineData("draft\n")]
+    [InlineData("closed\r\n")]
     public async Task Manage_WithUnknownState_ReturnsBadRequest(string state)
     {
         using var admin = await _api.AdminClientAsync();

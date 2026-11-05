@@ -368,6 +368,9 @@ public class RecruitmentModelTests
     [InlineData("all", false)]
     [InlineData("", true)]
     [InlineData("draft ", false)]
+    [InlineData("draft\n", false)]
+    [InlineData("expired\r\n", false)]
+    [InlineData("\nclosed", false)]
     [InlineData("draftx", false)]
     [InlineData("0", false)]
     public void ManageJobParams_State_AcceptsOnlyKnownValuesIgnoringCase(string? state, bool valid)
@@ -375,6 +378,19 @@ public class RecruitmentModelTests
         var parameters = new ManageJobParams { State = state };
 
         Assert.Equal(valid, Validate(parameters).Count == 0);
+    }
+
+    // sam wzorzec też nie dopuszcza końcowej nowej linii ($ by ją dopuszczał) - nie polegamy tylko na tym,
+    // że RegularExpressionAttribute wymaga dopasowania całego tekstu
+    [Fact]
+    public void ManageJobParams_StatePattern_RejectsTrailingNewline()
+    {
+        var pattern = typeof(ManageJobParams).GetProperty(nameof(ManageJobParams.State))!
+            .GetCustomAttributes(typeof(RegularExpressionAttribute), false)
+            .Cast<RegularExpressionAttribute>().Single().Pattern;
+
+        Assert.Matches(pattern, "Draft");
+        Assert.DoesNotMatch(pattern, "draft\n");
     }
 
     [Fact]
