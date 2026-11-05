@@ -159,4 +159,253 @@ public class MappingExtensionsTests
 
         Assert.Equal(expected, application.ToDto().UserFullName);
     }
+
+    // --- cykl życia oferty i proces rekrutacji ---
+
+    [Fact]
+    public void JobOffer_ToDto_CopiesStatusAndExpiresAt()
+    {
+        var job = NewJob();
+        job.Status = JobOfferStatus.Closed;
+        job.ExpiresAt = new DateTime(2030, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+
+        var dto = job.ToDto();
+
+        Assert.Equal(JobOfferStatus.Closed, dto.Status);
+        Assert.Equal(job.ExpiresAt, dto.ExpiresAt);
+    }
+
+    [Fact]
+    public void JobOffer_ToDto_DefaultsToActiveAndOpenEnded()
+    {
+        var dto = NewJob().ToDto();
+
+        Assert.Equal(JobOfferStatus.Active, dto.Status);
+        Assert.Null(dto.ExpiresAt);
+        Assert.False(dto.IsExpired);
+    }
+
+    [Theory]
+    [InlineData(JobOfferStatus.Active, -1, true)]
+    [InlineData(JobOfferStatus.Active, 0, true)]
+    [InlineData(JobOfferStatus.Active, 1, false)]
+    [InlineData(JobOfferStatus.Draft, -1, false)]
+    [InlineData(JobOfferStatus.Closed, -1, false)]
+    public void JobOffer_ToDto_ComputesIsExpiredAtTheGivenMoment(JobOfferStatus status, int expiresOffsetSeconds, bool expected)
+    {
+        var now = new DateTime(2026, 5, 1, 12, 0, 0, DateTimeKind.Utc);
+        var job = NewJob();
+        job.Status = status;
+        job.ExpiresAt = now.AddSeconds(expiresOffsetSeconds);
+
+        Assert.Equal(expected, job.ToDto(now).IsExpired);
+    }
+
+    [Fact]
+    public void JobOffer_ToDto_WithoutMoment_UsesCurrentTime()
+    {
+        var expired = NewJob();
+        expired.ExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+        var valid = NewJob();
+        valid.ExpiresAt = DateTime.UtcNow.AddMinutes(10);
+
+        Assert.True(expired.ToDto().IsExpired);
+        Assert.False(valid.ToDto().IsExpired);
+    }
+
+    [Fact]
+    public void CreateJobOfferDto_ToEntity_DefaultsToActiveWithoutExpiration()
+    {
+        var dto = new CreateJobOfferDto { Title = "T", Company = "C", Description = "D", Location = "L" };
+
+        var job = dto.ToEntity();
+
+        Assert.Equal(JobOfferStatus.Active, job.Status);
+        Assert.Null(job.ExpiresAt);
+    }
+
+    [Fact]
+    public void CreateJobOfferDto_ApplyTo_CopiesStatusAndExpiresAt()
+    {
+        var job = NewJob();
+        var expires = new DateTime(2031, 3, 4, 5, 6, 7, DateTimeKind.Utc);
+        var dto = new CreateJobOfferDto
+        {
+            Title = "T", Company = "C", Description = "D", Location = "L", Status = JobOfferStatus.Draft, ExpiresAt = expires
+        };
+
+        dto.ApplyTo(job);
+
+        Assert.Equal(JobOfferStatus.Draft, job.Status);
+        Assert.Equal(expires, job.ExpiresAt);
+    }
+
+    [Fact]
+    public void CreateJobOfferDto_ApplyTo_ClearsExpiresAtWhenMissing()
+    {
+        var job = NewJob();
+        job.ExpiresAt = DateTime.UtcNow.AddDays(1);
+        var dto = new CreateJobOfferDto { Title = "T", Company = "C", Description = "D", Location = "L" };
+
+        dto.ApplyTo(job);
+
+        Assert.Null(job.ExpiresAt);
+    }
+
+    [Theory]
+    [InlineData(DateTimeKind.Utc)]
+    [InlineData(DateTimeKind.Unspecified)]
+    public void CreateJobOfferDto_ExpiresAt_IsStoredAsUtcWithoutShiftingUnspecifiedTime(DateTimeKind kind)
+    {
+        var dto = new CreateJobOfferDto { ExpiresAt = new DateTime(2031, 3, 4, 10, 0, 0, kind) };
+
+        var utc = dto.GetExpiresAtUtc();
+
+        Assert.Equal(DateTimeKind.Utc, utc!.Value.Kind);
+        Assert.Equal(new DateTime(2031, 3, 4, 10, 0, 0, DateTimeKind.Utc), utc);
+    }
+
+    [Fact]
+    public void CreateJobOfferDto_ExpiresAt_LocalTimeIsConvertedToUtc()
+    {
+        var local = new DateTime(2031, 3, 4, 10, 0, 0, DateTimeKind.Local);
+        var dto = new CreateJobOfferDto { ExpiresAt = local };
+
+        var utc = dto.GetExpiresAtUtc();
+
+        Assert.Equal(DateTimeKind.Utc, utc!.Value.Kind);
+        Assert.Equal(local.ToUniversalTime(), utc);
+    }
+
+    [Fact]
+    public void CreateJobOfferDto_GetExpiresAtUtc_IsNullWhenNotSet()
+    {
+        Assert.Null(new CreateJobOfferDto().GetExpiresAtUtc());
+    }
+
+    [Fact]
+    public void JobApplication_ToDto_CopiesStatusAndStatusChangedAt()
+    {
+        var changedAt = new DateTime(2025, 7, 2, 9, 15, 0, DateTimeKind.Utc);
+        var application = new JobApplication
+        {
+            Status = ApplicationStatus.Interview,
+            StatusChangedAt = changedAt,
+            JobOffer = NewJob(),
+            User = new ApplicationUser()
+        };
+
+        var dto = application.ToDto();
+
+        Assert.Equal(ApplicationStatus.Interview, dto.Status);
+        Assert.Equal(changedAt, dto.StatusChangedAt);
+    }
+
+    [Fact]
+    public void JobApplication_ToDto_OmitsHistoryByDefault()
+    {
+        var application = new JobApplication { JobOffer = NewJob(), User = new ApplicationUser() };
+        application.ChangeStatus(ApplicationStatus.InReview, "recruiter", "ok", DateTime.UtcNow);
+
+        Assert.Null(application.ToDto().History);
+        Assert.Null(application.ToDto(includeChangedBy: true).History);
+    }
+
+    [Fact]
+    public void JobApplication_ToDto_WithHistory_OrdersEntriesByChangedAtThenId()
+    {
+        var t0 = new DateTime(2025, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        var application = new JobApplication { JobOffer = NewJob(), User = new ApplicationUser() };
+        // celowo w odwrotnej kolejności względem czasu; dwa wpisy z tym samym czasem rozstrzyga Id
+        application.StatusHistory.Add(new ApplicationStatusHistory { Id = 3, Status = ApplicationStatus.Hired, ChangedAt = t0.AddHours(2) });
+        application.StatusHistory.Add(new ApplicationStatusHistory { Id = 5, Status = ApplicationStatus.Interview, ChangedAt = t0.AddHours(1), Comment = "second" });
+        application.StatusHistory.Add(new ApplicationStatusHistory { Id = 4, Status = ApplicationStatus.InReview, ChangedAt = t0.AddHours(1), Comment = "first" });
+        application.StatusHistory.Add(new ApplicationStatusHistory { Id = 1, Status = ApplicationStatus.Submitted, ChangedAt = t0 });
+
+        var history = application.ToDto(includeHistory: true).History!;
+
+        Assert.Equal(
+            new[] { ApplicationStatus.Submitted, ApplicationStatus.InReview, ApplicationStatus.Interview, ApplicationStatus.Hired },
+            history.Select(h => h.Status));
+        Assert.Equal(new string?[] { null, "first", "second", null }, history.Select(h => h.Comment));
+        Assert.Equal(t0, history[0].ChangedAt);
+    }
+
+    [Fact]
+    public void JobApplication_ToDto_WithHistoryButNoEntries_ReturnsEmptyList()
+    {
+        var application = new JobApplication { JobOffer = NewJob(), User = new ApplicationUser() };
+
+        var history = application.ToDto(includeHistory: true).History;
+
+        Assert.NotNull(history);
+        Assert.Empty(history!);
+    }
+
+    [Fact]
+    public void JobApplication_ToDto_WithHistoryAndNullCollection_ReturnsEmptyList()
+    {
+        var application = new JobApplication { JobOffer = NewJob(), User = new ApplicationUser() };
+        application.StatusHistory = null!;
+
+        Assert.Empty(application.ToDto(includeHistory: true).History!);
+    }
+
+    [Fact]
+    public void ApplicationStatusHistory_ToDto_HidesAuthorUnlessRequested()
+    {
+        var entry = new ApplicationStatusHistory
+        {
+            Status = ApplicationStatus.Offered,
+            ChangedAt = new DateTime(2025, 2, 3, 4, 5, 6, DateTimeKind.Utc),
+            Comment = "Congratulations",
+            ChangedByUser = new ApplicationUser { Email = "hr@example.com", FirstName = "Anna", LastName = "Nowak" }
+        };
+
+        var hidden = entry.ToDto();
+        var shown = entry.ToDto(includeChangedBy: true);
+
+        Assert.Equal(ApplicationStatus.Offered, hidden.Status);
+        Assert.Equal(entry.ChangedAt, hidden.ChangedAt);
+        Assert.Equal("Congratulations", hidden.Comment);
+        Assert.Null(hidden.ChangedBy);
+        Assert.Equal("Anna Nowak (hr@example.com)", shown.ChangedBy);
+    }
+
+    [Theory]
+    [InlineData("Anna", "Nowak", "hr@example.com", "Anna Nowak (hr@example.com)")]
+    [InlineData("Anna", null, "hr@example.com", "Anna (hr@example.com)")]
+    [InlineData(null, null, "hr@example.com", "hr@example.com")]
+    [InlineData("Anna", "Nowak", null, "Anna Nowak")]
+    public void ApplicationStatusHistory_ToDto_DescribesAuthorByNameAndEmail(string? first, string? last, string? email, string expected)
+    {
+        var entry = new ApplicationStatusHistory
+        {
+            ChangedByUser = new ApplicationUser { FirstName = first, LastName = last, Email = email }
+        };
+
+        Assert.Equal(expected, entry.ToDto(includeChangedBy: true).ChangedBy);
+    }
+
+    [Fact]
+    public void ApplicationStatusHistory_ToDto_ForDeletedAuthor_HasNullChangedBy()
+    {
+        var entry = new ApplicationStatusHistory { ChangedByUserId = null, ChangedByUser = null };
+
+        Assert.Null(entry.ToDto(includeChangedBy: true).ChangedBy);
+    }
+
+    [Fact]
+    public void JobApplication_ToDto_PassesChangedByFlagToHistoryEntries()
+    {
+        var application = new JobApplication { JobOffer = NewJob(), User = new ApplicationUser() };
+        application.StatusHistory.Add(new ApplicationStatusHistory
+        {
+            Status = ApplicationStatus.Submitted,
+            ChangedByUser = new ApplicationUser { Email = "jan@example.com" }
+        });
+
+        Assert.Null(application.ToDto(includeHistory: true).History![0].ChangedBy);
+        Assert.Equal("jan@example.com", application.ToDto(includeHistory: true, includeChangedBy: true).History![0].ChangedBy);
+    }
 }
