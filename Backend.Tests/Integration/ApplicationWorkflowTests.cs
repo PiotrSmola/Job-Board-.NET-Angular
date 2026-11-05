@@ -811,6 +811,21 @@ public class ApplicationWorkflowTests
         Assert.Equal(ApplicationStatus.Withdrawn, (await _api.GetApplicationAsync(client, application.Id)).Status);
     }
 
+    [Fact]
+    public async Task DeleteJob_WithApplicationsAndHistory_RemovesThemTogether()
+    {
+        var (job, user, application) = await NewApplicationAsync();
+        await _api.SetApplicationStatusAsync(application.Id, ApplicationStatus.InReview, "comment");
+        using var admin = await _api.AdminClientAsync();
+
+        var response = await admin.DeleteAsync($"/api/jobs/{job.Id}");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync($"{Url}/{application.Id}")).StatusCode);
+        using var client = _api.CreateClient(user);
+        Assert.Empty(await (await client.GetAsync($"{Url}/my-applications")).ReadJsonAsync<JobApplicationDto[]>());
+    }
+
     // --- GET check/{jobId} ---
 
     [Fact]
