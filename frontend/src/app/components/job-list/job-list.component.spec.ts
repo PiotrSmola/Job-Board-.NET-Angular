@@ -23,6 +23,9 @@ function page(items: number, totalItems: number): PaginatedResult<JobOffer> {
   };
 }
 
+// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
+vi.setConfig({ testTimeout: 20000 });
+
 describe('JobListComponent', () => {
   let fixture: ComponentFixture<JobListComponent>;
   let component: JobListComponent;

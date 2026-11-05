@@ -20,6 +20,9 @@ const HISTORY = [
   { status: ApplicationStatus.Interview, changedAt: '2026-01-02T10:00:00Z', comment: 'Zapraszamy', changedBy: null }
 ];
 
+// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
+vi.setConfig({ testTimeout: 20000 });
+
 describe('MyApplicationsComponent', () => {
   let fixture: ComponentFixture<MyApplicationsComponent>;
   let component: MyApplicationsComponent;

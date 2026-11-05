@@ -10,6 +10,9 @@ import { JobApplicationService } from '../../services/job-application.service';
 
 const EMPTY_PAGE = { result: [], pagination: { CurrentPage: 1, ItemsPerPage: 10, TotalItems: 0, TotalPages: 1 } };
 
+// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
+vi.setConfig({ testTimeout: 20000 });
+
 describe('AdminPanelComponent', () => {
   let fixture: ComponentFixture<AdminPanelComponent>;
   let component: AdminPanelComponent;

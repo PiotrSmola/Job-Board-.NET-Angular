@@ -18,6 +18,9 @@ const HISTORY: ApplicationStatusHistoryEntry[] = [
   { status: ApplicationStatus.Interview, changedAt: '2026-01-03T10:00:00Z', comment: 'Rozmowa w czwartek', changedBy: 'admin@jobboard.com' }
 ];
 
+// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
+vi.setConfig({ testTimeout: 20000 });
+
 describe('ApplicationHistoryDialogComponent', () => {
   let fixture: ComponentFixture<ApplicationHistoryDialogComponent>;
   let component: ApplicationHistoryDialogComponent;

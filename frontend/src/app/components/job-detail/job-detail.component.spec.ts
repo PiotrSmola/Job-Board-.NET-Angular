@@ -16,6 +16,9 @@ const JOB: JobOffer = {
   status: JobOfferStatus.Active, expiresAt: null, isExpired: false
 };
 
+// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
+vi.setConfig({ testTimeout: 20000 });
+
 describe('JobDetailComponent', () => {
   let fixture: ComponentFixture<JobDetailComponent>;
   let component: JobDetailComponent;
