@@ -70,3 +70,34 @@ Cel: pracodawca rejestruje firmę, po zatwierdzeniu przez admina publikuje włas
 - Szczegóły oferty: Employer/Admin nie widzą przycisku aplikowania.
 - Budżety stylów komponentów: ≤ 4 kB ostrzeżenie (nie dokładaj nowych ostrzeżeń), nie podnoś limitów.
 
+
+## Frontend – stan
+
+### Zrobione (commity eb67352, 4da6600, 1e748b1, f31f7d3, 2a52a01)
+- Modele i serwisy: `models/company.model.ts`, `models/company-params.model.ts`, `models/panel-mode.model.ts`; `services/company.service.ts` (`/api/companies`, `/api/employer/company`), metody firm w `services/admin.service.ts` (`/api/admin/companies` + approve/reject/delete); `JobOffer`/`JobApplication` += `companyId`, `CreateJobOffer.companyId` (zamiast `company`), `JobParams.companyId`.
+- Auth: `AuthService.isEmployer()` / `registerEmployer()`, `guards/employer.guard.ts`; rejestracja z przełącznikiem „Szukam pracy” / „Rekrutuję” (`?type=employer`), pracodawca po rejestracji → `/employer`.
+- Zakładki ofert i aplikacji z wejściem `mode: 'admin' | 'employer'` (bez duplikacji): admin – kolumna i filtr firmy (autocomplete), employer – tylko własna firma, bez usuwania aplikacji, bez publikacji przy firmie niezatwierdzonej.
+- `job-dialog`: `JobDialogData { job, mode, company }`, wybór firmy autocomplete (`components/shared/company-autocomplete.component.ts`, tylko zatwierdzone), dla niezatwierdzonej firmy pracodawcy status ograniczony do „Szkic” + informacja.
+- Panel admina: zakładka „Firmy” (`admin-companies-tab`, `company-dialog`, `reject-company-dialog`).
+- Trasy (leniwe): `/employer` (panel + `employer-company-tab` z banerem statusu i „Wyślij ponownie”), `/companies`, `/companies/:id`.
+- Navbar: „Firmy”, „Panel pracodawcy”; employer nie widzi „Moje Aplikacje”. Nazwa firmy linkuje do profilu (lista ofert, szczegóły). Employer/Admin nie widzą aplikowania.
+- `getApiErrorMessage`: tłumaczenia „Company name is already taken”, „Company must be approved before publishing offers”, „Company has job offers or members”, „Email is already taken”, „Company not found”; interceptor pokazuje przetłumaczony powód 403 (`utils/forbidden-messages.ts`).
+
+### Wyniki
+- `npx ng test --watch=false`: 25 plików, 573 testy zielone.
+- `npx ng build`: bez błędów; tylko istniejące ostrzeżenia budżetu (initial 623,05 kB – wzrost o ~2,4 kB z tras/guarda/navbara; job-list.scss 5,13 kB).
+
+### Brakuje
+- Specy komponentów: `admin-companies-tab`, `company-dialog`, `reject-company-dialog`, `employer-panel`, `employer-company-tab`, `company-list`, `company-detail`, `company-autocomplete`, `register` (tryb pracodawcy).
+- Weryfikacja na działającym API (format błędów `register-employer`, 404 dla niepublicznej firmy, `status` w `/api/employer/company`).
+- Opcjonalnie: po logowaniu pracodawcy bez returnUrl → `/employer` (dziś `/jobs`, wymaga zmiany speca logowania); `/my-applications` dostępne dla pracodawcy z ręcznego URL (chroni tylko `authGuard`).
+
+### Niejasności kontraktu – rozstrzygnięcia
+- `CompanyId` w formularzu oferty ma w API `[Range(1,…)] int?` – pracodawca wysyła id swojej firmy albo `null` (nigdy 0).
+- Niezatwierdzona firma: opcje statusu = „Szkic” + bieżący status edytowanej oferty; nowa oferta domyślnie szkic; w tabeli ukryte „Opublikuj”/„Wznów”.
+- Filtr firm w zakładce ofert admina – `/api/admin/companies` (wszystkie statusy); dialog oferty – `/api/companies` (tylko zatwierdzone).
+- Edycja zatwierdzonej firmy przez pracodawcę nie zmienia statusu (kontrakt mówi tylko o odrzuconej); odrzuconą można wysłać ponownie bez zmian.
+
+### Kolejne kroki
+1. Smoke test z backendem (rejestracja pracodawcy, moderacja, publikacja po zatwierdzeniu).
+2. Testy komponentów z listy „Brakuje”.
