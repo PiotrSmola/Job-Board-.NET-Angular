@@ -110,31 +110,27 @@ public class JobApplicationRepository : IJobApplicationRepository
         return application;
     }
 
-    public async Task UpdateApplicationAsync(JobApplication application)
+    public async Task UpdateApplicationAsync(JobApplication application, Action<DateTime> change)
     {
-        if (_context.Entry(application).State == EntityState.Detached)
+        var entry = _context.Entry(application);
+        if (entry.State == EntityState.Detached)
         {
             throw new InvalidOperationException("Application must be loaded with GetApplicationForUpdateAsync or GetUserApplicationForJobAsync");
         }
 
-        var entry = _context.Entry(application);
-        _context.ChangeTracker.DetectChanges();
-        var originalToken = entry.Property(a => a.StatusChangedAt).OriginalValue;
+        var loadedToken = entry.Property(a => a.StatusChangedAt).OriginalValue;
 
-        // Kolejność w transakcji ma znaczenie: najpierw UPDATE wiersza aplikacji (blokada X z kontrolą tokenu),
-        // dopiero potem INSERT wpisów historii. Odwrotnie (jak w zwykłym SaveChanges) INSERT zakłada przez klucz obcy
-        // blokadę S na aplikacji, a dwie równoległe transakcje podnoszące S -> X kończą się deadlockiem MySQL.
-        // UPDATE wykonuje się zawsze, także dla notatki (ten sam status) - notatka też musi trafić na aktualny stan.
+        // Kolejność w transakcji ma znaczenie. Najpierw blokada X wiersza aplikacji z kontrolą tokenu, dopiero potem
+        // zapis aplikacji i INSERT wpisów historii. W zwykłym SaveChanges INSERT historii zakłada przez klucz obcy
+        // blokadę S na aplikacji przed jej UPDATE, a dwie równoległe transakcje podnoszące S -> X kończą się
+        // deadlockiem MySQL. Blokada obejmuje też notatki (ten sam status) - notatka musi trafić na aktualny stan.
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
-        // Pomelo wyłącza UseAffectedRows, więc wynik to liczba dopasowanych wierszy (1 także bez zmiany wartości)
+        // UPDATE bez zmiany wartości tylko blokuje wiersz; Pomelo wyłącza UseAffectedRows, więc wynik to liczba
+        // dopasowanych wierszy (1 także wtedy, gdy nic się nie zmieniło)
         var matched = await _context.JobApplications
-            .Where(a => a.Id == application.Id && a.StatusChangedAt == originalToken)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(a => a.Status, application.Status)
-                .SetProperty(a => a.StatusChangedAt, application.StatusChangedAt)
-                .SetProperty(a => a.Note, application.Note)
-                .SetProperty(a => a.AppliedAt, application.AppliedAt));
+            .Where(a => a.Id == application.Id && a.StatusChangedAt == loadedToken)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, a => a.Status));
 
         if (matched == 0)
         {
@@ -142,9 +138,11 @@ public class JobApplicationRepository : IJobApplicationRepository
             throw new DbUpdateConcurrencyException("Application was changed by another request");
         }
 
-        // wiersz aplikacji jest już zapisany - SaveChanges dopisuje tylko nowe wpisy historii
-        entry.OriginalValues.SetValues(entry.CurrentValues);
-        entry.State = EntityState.Unchanged;
+        // zmiana z czasem ustalonym dopiero po uzyskaniu blokady - kolejność dat w historii odpowiada kolejności
+        // zapisów (np. notatka zapisana przed równoległym wycofaniem ma wcześniejszą datę niż wycofanie)
+        change(DateTime.UtcNow);
+
+        // wiersz jest już zablokowany przez tę transakcję - UPDATE (z ponowną kontrolą tokenu) i INSERT historii
         await _context.SaveChangesAsync();
 
         await transaction.CommitAsync();

@@ -78,7 +78,7 @@ public class ApplicationConcurrencyTests
             return application;
         }
 
-        public async Task UpdateApplicationAsync(JobApplication application)
+        public async Task UpdateApplicationAsync(JobApplication application, Action<DateTime> change)
         {
             if (_beforeSave != null)
             {
@@ -87,14 +87,14 @@ public class ApplicationConcurrencyTests
 
             if (_saveLock == null)
             {
-                await _inner.UpdateApplicationAsync(application);
+                await _inner.UpdateApplicationAsync(application, change);
                 return;
             }
 
             await _saveLock.WaitAsync();
             try
             {
-                await _inner.UpdateApplicationAsync(application);
+                await _inner.UpdateApplicationAsync(application, change);
             }
             finally
             {
@@ -275,10 +275,11 @@ public class ApplicationConcurrencyTests
     }
 
     // Notatka i wycofanie wysłane naprawdę równolegle: jeśli notatka przeszła, to jest w historii przed wycofaniem
+    // (data wpisu ustalana jest po zablokowaniu wiersza aplikacji, więc odpowiada kolejności zapisów)
     [Fact]
     public async Task UpdateStatus_NoteAndWithdrawalSavedAtTheSameTime_NoteIsNeverRecordedAfterWithdrawal()
     {
-        for (var round = 0; round < 5; round++)
+        for (var round = 0; round < 10; round++)
         {
             var (_, user, application) = await NewApplicationAsync();
             using var factory = GatedFactory(participants: 2, serializeSaves: false);

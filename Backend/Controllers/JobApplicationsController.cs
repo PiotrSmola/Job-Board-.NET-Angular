@@ -137,14 +137,15 @@ public class JobApplicationsController : ControllerBase
                 return BadRequest(new { message = AlreadyAppliedMessage });
             }
 
-            // ponowna aplikacja po wycofaniu - ta sama aplikacja wraca do statusu Submitted
-            existing.Note = createApplicationDto.Note;
-            existing.AppliedAt = now;
-            existing.ChangeStatus(ApplicationStatus.Submitted, userId, null, now);
-
             try
             {
-                await _applicationRepository.UpdateApplicationAsync(existing);
+                // ponowna aplikacja po wycofaniu - ta sama aplikacja wraca do statusu Submitted
+                await _applicationRepository.UpdateApplicationAsync(existing, changedAt =>
+                {
+                    existing.Note = createApplicationDto.Note;
+                    existing.AppliedAt = changedAt;
+                    existing.ChangeStatus(ApplicationStatus.Submitted, userId, null, changedAt);
+                });
             }
             catch (Exception ex) when (ex.IsConcurrentChangeConflict())
             {
@@ -222,11 +223,10 @@ public class JobApplicationsController : ControllerBase
             return BadRequest(new { message = "Application already has this status - add a comment to record a note" });
         }
 
-        application.ChangeStatus(status, userId, comment, DateTime.UtcNow);
-
         try
         {
-            await _applicationRepository.UpdateApplicationAsync(application);
+            await _applicationRepository.UpdateApplicationAsync(application,
+                changedAt => application.ChangeStatus(status, userId, comment, changedAt));
         }
         catch (Exception ex) when (ex.IsConcurrentChangeConflict())
         {
@@ -264,11 +264,10 @@ public class JobApplicationsController : ControllerBase
             return BadRequest(new { message = "Application cannot be withdrawn in its current status" });
         }
 
-        application.ChangeStatus(ApplicationStatus.Withdrawn, userId, null, DateTime.UtcNow);
-
         try
         {
-            await _applicationRepository.UpdateApplicationAsync(application);
+            await _applicationRepository.UpdateApplicationAsync(application,
+                changedAt => application.ChangeStatus(ApplicationStatus.Withdrawn, userId, null, changedAt));
         }
         catch (Exception ex) when (ex.IsConcurrentChangeConflict())
         {
