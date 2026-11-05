@@ -1,8 +1,11 @@
 using System.Net;
 using System.Net.Http.Headers;
+using Backend.Data;
 using Backend.DTOs;
 using Backend.Models;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Backend.Tests.Infrastructure;
 
@@ -105,6 +108,71 @@ public class ApiFixture : IAsyncLifetime
         var response = await admin.PostJsonAsync("/api/jobs", NewJobDto(customize));
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return await response.ReadJsonAsync<JobOfferDto>();
+    }
+
+    // Oferta w zadanym statusie; data ważności w przeszłości jest dozwolona tylko dla szkicu i oferty zamkniętej
+    public Task<JobOfferDto> CreateJobWithStatusAsync(JobOfferStatus status, DateTime? expiresAt = null, Action<CreateJobOfferDto>? customize = null) =>
+        CreateJobAsync(j =>
+        {
+            j.Status = status;
+            j.ExpiresAt = expiresAt;
+            customize?.Invoke(j);
+        });
+
+    // Oferta aktywna z datą ważności w przeszłości (API nie pozwala jej utworzyć, więc data jest ustawiana w bazie)
+    public async Task<JobOfferDto> CreateExpiredJobAsync(Action<CreateJobOfferDto>? customize = null)
+    {
+        var job = await CreateJobAsync(j =>
+        {
+            j.Status = JobOfferStatus.Active;
+            j.ExpiresAt = DateTime.UtcNow.AddDays(30);
+            customize?.Invoke(j);
+        });
+        return await SetJobExpiresAtAsync(job.Id, DateTime.UtcNow.AddDays(-2));
+    }
+
+    // Ustawia ExpiresAt bezpośrednio w bazie (z pominięciem walidacji API) i zwraca ofertę widzianą przez admina
+    public async Task<JobOfferDto> SetJobExpiresAtAsync(int jobId, DateTime? expiresAt)
+    {
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await context.JobOffers.Where(j => j.Id == jobId)
+                .ExecuteUpdateAsync(s => s.SetProperty(j => j.ExpiresAt, expiresAt));
+        }
+
+        using var admin = await AdminClientAsync();
+        var response = await admin.GetAsync($"/api/jobs/{jobId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await response.ReadJsonAsync<JobOfferDto>();
+    }
+
+    public async Task<HttpResponseMessage> ChangeApplicationStatusAsync(int applicationId, ApplicationStatus status, string? comment = null)
+    {
+        using var admin = await AdminClientAsync();
+        return await admin.PutJsonAsync($"/api/jobapplications/{applicationId}/status",
+            new UpdateApplicationStatusDto { Status = status, Comment = comment });
+    }
+
+    // Zmiana statusu przez admina z oczekiwanym sukcesem; zwraca aplikację z historią
+    public async Task<JobApplicationDto> SetApplicationStatusAsync(int applicationId, ApplicationStatus status, string? comment = null)
+    {
+        var response = await ChangeApplicationStatusAsync(applicationId, status, comment);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await response.ReadJsonAsync<JobApplicationDto>();
+    }
+
+    public async Task<HttpResponseMessage> WithdrawAsync(TestUser user, int applicationId)
+    {
+        using var client = CreateClient(user);
+        return await client.PostAsync($"/api/jobapplications/{applicationId}/withdraw", null);
+    }
+
+    public async Task<JobApplicationDto> GetApplicationAsync(HttpClient client, int applicationId)
+    {
+        var response = await client.GetAsync($"/api/jobapplications/{applicationId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await response.ReadJsonAsync<JobApplicationDto>();
     }
 
     public async Task<JobApplicationDto> ApplyAsync(TestUser user, int jobId, string? note = null)

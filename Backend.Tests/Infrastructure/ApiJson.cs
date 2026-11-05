@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Backend.Helpers;
 
@@ -14,6 +15,25 @@ public static class ApiJson
 
     public static Task<HttpResponseMessage> PutJsonAsync<T>(this HttpClient client, string url, T body) =>
         client.PutAsJsonAsync(url, body, Options);
+
+    // Surowy JSON (np. wartości spoza enuma albo daty z różnymi strefami, których nie da się zbudować z DTO)
+    public static Task<HttpResponseMessage> PostRawJsonAsync(this HttpClient client, string url, string json) =>
+        client.PostAsync(url, new StringContent(json, Encoding.UTF8, "application/json"));
+
+    public static Task<HttpResponseMessage> PutRawJsonAsync(this HttpClient client, string url, string json) =>
+        client.PutAsync(url, new StringContent(json, Encoding.UTF8, "application/json"));
+
+    public static Task<HttpResponseMessage> PatchJsonAsync<T>(this HttpClient client, string url, T body) =>
+        client.SendAsync(new HttpRequestMessage(HttpMethod.Patch, url)
+        {
+            Content = JsonContent.Create(body, options: Options)
+        });
+
+    public static Task<HttpResponseMessage> PatchRawJsonAsync(this HttpClient client, string url, string json) =>
+        client.SendAsync(new HttpRequestMessage(HttpMethod.Patch, url)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        });
 
     public static async Task<T> ReadJsonAsync<T>(this HttpResponseMessage response)
     {
