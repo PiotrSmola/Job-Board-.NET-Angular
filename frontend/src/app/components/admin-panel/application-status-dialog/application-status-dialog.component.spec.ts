@@ -137,6 +137,28 @@ describe('ApplicationStatusDialogComponent', () => {
       expect(root().textContent).toContain('10 / 1000');
     });
 
+    it('blocks saving a comment longer than 1000 characters and explains why', async () => {
+      await create();
+      component.status.set(ApplicationStatus.Interview);
+      component.comment.set('a'.repeat(1001));
+
+      expect(component.commentTooLong()).toBe(true);
+      expect(component.canSave()).toBe(false);
+      expect(saveButton().disabled).toBe(true);
+      expect(root().querySelector('.info.error')?.textContent).toContain('maksymalnie 1000 znaków');
+      component.save();
+      expect(updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('measures the comment length after trimming, like the sent value', async () => {
+      await create();
+      component.status.set(ApplicationStatus.Interview);
+      component.comment.set(`  ${'a'.repeat(1000)}  `);
+
+      expect(component.commentTooLong()).toBe(false);
+      expect(component.canSave()).toBe(true);
+    });
+
     it('sends a comment of exactly 1000 characters unchanged', async () => {
       await create();
       component.status.set(ApplicationStatus.Interview);

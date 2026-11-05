@@ -63,6 +63,9 @@ export const COMMENT_MAX_LENGTH = 1000;
         <mat-hint align="end">{{ comment().length }} / {{ commentMaxLength }}</mat-hint>
       </mat-form-field>
 
+      @if (commentTooLong()) {
+        <p class="info error">Komentarz może mieć maksymalnie {{ commentMaxLength }} znaków.</p>
+      }
       @if (isNoteOnly() && !hasComment()) {
         <p class="info">Wybierz inny status albo dodaj komentarz, aby zapisać notatkę.</p>
       }
@@ -85,6 +88,7 @@ export const COMMENT_MAX_LENGTH = 1000;
     .summary { margin: 0 0 8px; }
     .current { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--text-secondary); }
     .info { margin: 8px 0 0; color: var(--text-secondary); font-size: 0.875rem; }
+    .info.error { color: #f44336; }
     @media (max-width: 600px) { mat-dialog-content { min-width: 0; } }
   `]
 })
@@ -103,11 +107,14 @@ export class ApplicationStatusDialogComponent {
   readonly saving = signal(false);
 
   readonly hasComment = computed(() => this.comment().trim().length > 0);
+  /** Atrybut maxlength nie chroni przed wartością ustawioną programowo (np. wklejoną przez skrypt) – API odrzuca > 1000. */
+  readonly commentTooLong = computed(() => this.comment().trim().length > COMMENT_MAX_LENGTH);
   /** Ten sam status = notatka; API wymaga wtedy niepustego komentarza. */
   readonly isNoteOnly = computed(() => this.status() === this.data.status);
   readonly canSave = computed(() =>
     !this.saving()
     && this.status() !== ApplicationStatus.Withdrawn
+    && !this.commentTooLong()
     && (!this.isNoteOnly() || this.hasComment()));
 
   save(): void {
