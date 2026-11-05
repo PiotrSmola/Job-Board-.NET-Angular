@@ -18,7 +18,7 @@ namespace Backend.Tests.Integration;
 // Współbieżne zmiany tej samej aplikacji. Wyścigu przez samo HTTP nie da się wywołać deterministycznie,
 // dlatego testy "deterministyczne" podmieniają repozytorium dekoratorem, który:
 //  - wstrzymuje żądania po wczytaniu aplikacji, aż wszystkie wczytają ten sam stan (bariera),
-//  - opcjonalnie serializuje zapisy, żeby wynik nie zależał od deadlocków MySQL.
+//  - opcjonalnie serializuje zapisy (albo pozwala im nałożyć się w czasie).
 // Testy bez dekoratora wysyłają prawdziwe równoległe żądania i sprawdzają tylko spójność danych.
 [Collection(ApiCollection.Name)]
 public class ApplicationConcurrencyTests
@@ -244,10 +244,9 @@ public class ApplicationConcurrencyTests
 
     // --- bez ingerencji w zapis: obie zmiany wczytują ten sam stan i zapisują równocześnie ---
 
-    // Znany błąd: gdy zapisy nakładają się w czasie, MySQL wykrywa deadlock (UPDATE aplikacji i INSERT wpisu
-    // historii z kluczem obcym blokują się nawzajem), a kontroler zamienia go na 500 zamiast na 409
-    // (JobApplicationsController.cs:230 łapie tylko DbUpdateConcurrencyException)
-    [Fact(Skip = "Bug: overlapping status changes of one application can fail with 500 (MySQL deadlock) instead of 409 - JobApplicationsController.cs:230")]
+    // Zapisy nakładające się w czasie: repozytorium najpierw blokuje wiersz aplikacji (UPDATE z tokenem), potem
+    // dopisuje historię, więc druga transakcja czeka na blokadę i trafia na zmieniony token (409), a nie na deadlock
+    [Fact]
     public async Task UpdateStatus_TwoChangesSavedAtTheSameTime_OneSucceedsOtherGetsConflict()
     {
         for (var round = 0; round < 5; round++)
@@ -279,12 +278,12 @@ public class ApplicationConcurrencyTests
         var accepted = responses.Count(r => r.StatusCode == HttpStatusCode.OK);
         Assert.True(accepted >= 1, "At least one parallel change must be accepted");
         Assert.All(responses, r => Assert.True(
-            r.StatusCode is HttpStatusCode.OK or HttpStatusCode.Conflict or HttpStatusCode.InternalServerError,
+            r.StatusCode is HttpStatusCode.OK or HttpStatusCode.Conflict,
             $"Unexpected status {r.StatusCode}"));
 
         using var candidate = _api.CreateClient(user);
         var current = await _api.GetApplicationAsync(candidate, application.Id);
-        // (500 z deadlocku to znany błąd, patrz test z Skip wyżej) każda zaakceptowana zmiana dodała dokładnie jeden wpis (plus wpis początkowy), przegrane nic nie zapisały
+        // każda zaakceptowana zmiana dodała dokładnie jeden wpis (plus wpis początkowy), przegrane nic nie zapisały
         Assert.Equal(1 + accepted, current.History!.Count);
         Assert.Equal(current.Status, current.History!.Last().Status);
         Assert.Contains(current.Status, statuses);

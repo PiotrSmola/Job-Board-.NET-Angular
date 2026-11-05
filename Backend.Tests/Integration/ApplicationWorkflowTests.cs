@@ -727,10 +727,8 @@ public class ApplicationWorkflowTests
         Assert.Equal(ApplicationStatus.Interview, updated.Status);
     }
 
-    // Znany błąd: równoległe reaktywacje kończą się deadlockiem MySQL (UPDATE aplikacji vs INSERT wpisu historii
-    // z kluczem obcym), który kontroler zamienia na 500 zamiast na 400 "already applied"
-    // (JobApplicationsController.cs:148 łapie tylko DbUpdateConcurrencyException)
-    [Fact(Skip = "Bug: concurrent reactivation of a withdrawn application returns 500 (MySQL deadlock) instead of 400 - JobApplicationsController.cs:148")]
+    // Równoległe reaktywacje: przegrane żądania dostają 400 "already applied" (wcześniej deadlock MySQL dawał 500)
+    [Fact]
     public async Task Apply_ConcurrentReactivations_RejectedRequestsReturnBadRequest()
     {
         var (job, user, application) = await NewApplicationAsync();

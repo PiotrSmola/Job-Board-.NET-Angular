@@ -15,7 +15,8 @@ public interface IJobApplicationRepository
     Task<IEnumerable<JobApplication>> GetApplicationsByJobIdAsync(int jobId);
     Task<PagedList<JobApplication>> GetApplicationsAsync(ApplicationParams applicationParams);
     Task<JobApplication> AddApplicationAsync(JobApplication application);
-    // zapisuje zmiany śledzonej aplikacji razem z nowymi wpisami historii (jeden SaveChanges = jedna transakcja)
+    // zapisuje zmiany śledzonej aplikacji razem z nowymi wpisami historii w jednej transakcji;
+    // równoległa zmiana tej samej aplikacji (inny token StatusChangedAt) kończy się DbUpdateConcurrencyException
     Task UpdateApplicationAsync(JobApplication application);
     Task<bool> DeleteApplicationAsync(int id);
 }

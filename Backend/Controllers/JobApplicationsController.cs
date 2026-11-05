@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using MySqlConnector;
 
 namespace Backend.Controllers;
 
@@ -145,7 +144,7 @@ public class JobApplicationsController : ControllerBase
             {
                 await _applicationRepository.UpdateApplicationAsync(existing);
             }
-            catch (DbUpdateConcurrencyException)
+            catch (Exception ex) when (ex.IsConcurrentChangeConflict())
             {
                 // równoległe żądanie zdążyło już reaktywować aplikację
                 return BadRequest(new { message = AlreadyAppliedMessage });
@@ -161,7 +160,7 @@ public class JobApplicationsController : ControllerBase
                     JobApplication.Submit(job.Id, userId, createApplicationDto.Note, now));
                 applicationId = created.Id;
             }
-            catch (DbUpdateException ex) when (ex.InnerException is MySqlException { ErrorCode: MySqlErrorCode.DuplicateKeyEntry })
+            catch (Exception ex) when (ex.IsDuplicateKey() || ex.IsConcurrentChangeConflict())
             {
                 // równoległe żądanie zdążyło zapisać aplikację - unikalny indeks (JobOfferId, UserId)
                 return BadRequest(new { message = AlreadyAppliedMessage });
@@ -227,7 +226,7 @@ public class JobApplicationsController : ControllerBase
         {
             await _applicationRepository.UpdateApplicationAsync(application);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (Exception ex) when (ex.IsConcurrentChangeConflict())
         {
             return Conflict(new { message = ConcurrentChangeMessage });
         }
@@ -269,7 +268,7 @@ public class JobApplicationsController : ControllerBase
         {
             await _applicationRepository.UpdateApplicationAsync(application);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (Exception ex) when (ex.IsConcurrentChangeConflict())
         {
             return Conflict(new { message = ConcurrentChangeMessage });
         }
