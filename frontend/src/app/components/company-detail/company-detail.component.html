@@ -1,0 +1,96 @@
+<div class="company-detail-container">
+  <div class="back">
+    <a mat-button routerLink="/companies">
+      <mat-icon>arrow_back</mat-icon>
+      Wszystkie firmy
+    </a>
+  </div>
+
+  @if (loading()) {
+    <div class="state">
+      <mat-spinner></mat-spinner>
+    </div>
+  } @else if (notFound()) {
+    <div class="state">
+      <mat-icon>domain_disabled</mat-icon>
+      <h3>Nie znaleziono firmy</h3>
+      <p>Firma nie istnieje lub jej profil nie jest publiczny.</p>
+    </div>
+  } @else if (loadError()) {
+    <div class="state">
+      <mat-icon>cloud_off</mat-icon>
+      <h3>{{ loadError() }}</h3>
+      <button mat-raised-button color="primary" (click)="loadCompany()">
+        <mat-icon>refresh</mat-icon>
+        Spróbuj ponownie
+      </button>
+    </div>
+  } @else if (company(); as current) {
+    <mat-card class="company-card">
+      <mat-card-header>
+        <mat-icon mat-card-avatar>business</mat-icon>
+        <mat-card-title>
+          {{ current.name }}
+          @if (statusPresentation(); as status) {
+            <app-status-chip [label]="status.label" [tone]="status.tone" />
+          }
+        </mat-card-title>
+        <mat-card-subtitle>Na Job Board od {{ current.createdAt | date: 'dd.MM.yyyy' }}</mat-card-subtitle>
+      </mat-card-header>
+
+      <mat-card-content>
+        <div class="meta">
+          @if (current.location) {
+            <span class="meta-item"><mat-icon>location_on</mat-icon>{{ current.location }}</span>
+          }
+          @if (websiteUrl(); as url) {
+            <a class="meta-item" [href]="url" target="_blank" rel="noopener noreferrer">
+              <mat-icon>language</mat-icon>{{ current.website }}
+            </a>
+          }
+          <span class="meta-item"><mat-icon>work</mat-icon>Aktywne oferty: {{ current.activeJobsCount }}</span>
+        </div>
+
+        @if (current.description) {
+          <mat-divider></mat-divider>
+          <p class="description">{{ current.description }}</p>
+        }
+      </mat-card-content>
+    </mat-card>
+
+    <section class="jobs-section">
+      <h2>Aktywne oferty</h2>
+
+      @if (jobsLoading() && jobs().length === 0) {
+        <div class="state small">
+          <mat-spinner diameter="40"></mat-spinner>
+        </div>
+      } @else {
+        @for (job of jobs(); track job.id) {
+          <a class="job-row" [routerLink]="['/jobs', job.id]">
+            <div>
+              <span class="job-title">{{ job.title }}</span>
+              <span class="job-meta">{{ job.location }} · {{ workTypeLabel(job.workType) }} · {{ formatSalary(job) }}</span>
+            </div>
+            <mat-icon>chevron_right</mat-icon>
+          </a>
+        } @empty {
+          <div class="state small">
+            <mat-icon>work_off</mat-icon>
+            <p>Ta firma nie ma obecnie aktywnych ofert.</p>
+          </div>
+        }
+
+        @if (jobsTotal() > jobsPageSize) {
+          <mat-paginator
+            [length]="jobsTotal()"
+            [pageSize]="jobsPageSize"
+            [pageIndex]="jobsPageIndex()"
+            [hidePageSize]="true"
+            (page)="onJobsPageChange($event)">
+          </mat-paginator>
+        }
+      }
+    </section>
+  }
+</div>

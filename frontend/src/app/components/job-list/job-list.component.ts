@@ -1,5 +1,5 @@
 import { Component, inject, OnInit, ChangeDetectorRef, OnDestroy } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -34,7 +34,8 @@ import { Subject, debounceTime, filter, takeUntil } from 'rxjs';
     MatPaginatorModule,
     MatChipsModule,
     MatProgressSpinnerModule,
-    MatButtonToggleModule
+    MatButtonToggleModule,
+    RouterLink
   ],
   templateUrl: './job-list.component.html',
   styleUrl: './job-list.component.scss'
