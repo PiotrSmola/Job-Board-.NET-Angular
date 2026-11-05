@@ -1,0 +1,60 @@
+@use '../admin-table';
+
+.tab-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 24px;
+  padding: 16px 0;
+}
+
+.add-button {
+  height: 48px;
+  padding: 0 32px;
+  font-size: 1rem;
+}
+
+.companies-table {
+  width: 100%;
+  background-color: transparent;
+
+  th {
+    background-color: rgba(0, 229, 255, 0.05);
+    color: var(--primary-color);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.875rem;
+    letter-spacing: 0.5px;
+  }
+
+  .company-id {
+    color: var(--text-secondary);
+    font-family: 'Courier New', monospace;
+  }
+
+  .company-name {
+    display: block;
+    font-weight: 600;
+  }
+
+  .company-location,
+  .rejection-reason {
+    display: block;
+    max-width: 260px;
+    margin-top: 4px;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .actions-cell {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .approve-button mat-icon {
+    color: var(--success-color);
+  }
+}
