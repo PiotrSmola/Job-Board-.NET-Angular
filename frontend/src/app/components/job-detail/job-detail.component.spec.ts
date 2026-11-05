@@ -24,6 +24,8 @@ describe('JobDetailComponent', () => {
   let applyToJob: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
+  let authenticated: boolean;
+  let admin: boolean;
 
   function create(job: Observable<JobOffer> = of(JOB)): void {
     getJob.mockReturnValue(job);
@@ -38,6 +40,8 @@ describe('JobDetailComponent', () => {
 
   beforeEach(async () => {
     getJob = vi.fn();
+    authenticated = true;
+    admin = false;
     checkIfApplied = vi.fn().mockReturnValue(of({ hasApplied: false }));
     applyToJob = vi.fn();
     snackBarOpen = vi.fn();
@@ -51,7 +55,7 @@ describe('JobDetailComponent', () => {
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: '5' })) } },
         { provide: JobService, useValue: { getJob } },
         { provide: JobApplicationService, useValue: { checkIfApplied, applyToJob } },
-        { provide: AuthService, useValue: { isAuthenticated: () => true, isAdmin: () => false } },
+        { provide: AuthService, useValue: { isAuthenticated: () => authenticated, isAdmin: () => admin } },
         { provide: MatSnackBar, useValue: { open: snackBarOpen } }
       ]
     }).compileComponents();
@@ -142,6 +146,77 @@ describe('JobDetailComponent', () => {
       expect(component.hasApplied).toBe(true);
       expect(component.applicationStatus).toBe(ApplicationStatus.Submitted);
       expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja została złożona ponownie!');
+    });
+
+    it('shows the draft banner and blocks applying for a draft offer', () => {
+      create(of({ ...JOB, status: JobOfferStatus.Draft }));
+
+      expect(component.acceptsApplications).toBe(false);
+      expect(text()).toContain('Szkic – oferta nie jest widoczna publicznie');
+      expect(text()).toContain('Aplikowanie zamknięte');
+    });
+
+    it('does not offer applying for an offer that expires in the past even when the status is Active', () => {
+      create(of({ ...JOB, expiresAt: '2020-01-01T00:00:00Z', isExpired: true }));
+
+      expect(component.acceptsApplications).toBe(false);
+      expect(text()).toContain('Aktualna do');
+      expect(text()).toContain('Ta oferta wygasła');
+    });
+
+    it('does not show "Aktualna do" for an open-ended offer', () => {
+      create();
+
+      expect(text()).not.toContain('Aktualna do');
+    });
+
+    it('shows the "Withdrawn" chip next to "Aplikuj ponownie" after withdrawal', () => {
+      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
+      create();
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.application-status app-status-chip')?.textContent?.trim())
+        .toBe('Wycofana');
+      expect(text()).toContain('Aplikuj ponownie');
+      expect(text()).not.toContain('Już aplikowałeś');
+    });
+
+    it('does not offer applying again for a closed offer even after withdrawal', () => {
+      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
+      create(of({ ...JOB, status: JobOfferStatus.Closed }));
+
+      expect(text()).toContain('Aplikowanie zamknięte');
+      expect(text()).not.toContain('Aplikuj ponownie');
+    });
+
+    it('shows no application status chip when the user has not applied', () => {
+      create();
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.application-status')).toBeNull();
+      expect(component.applicationStatusPresentation).toBeNull();
+    });
+
+    it('lets a logged-out visitor log in to apply for an active offer', () => {
+      authenticated = false;
+      create();
+
+      expect(text()).toContain('Zaloguj się, aby aplikować');
+      expect(checkIfApplied).not.toHaveBeenCalled();
+    });
+
+    it('shows a logged-out visitor no login button for a closed offer', () => {
+      authenticated = false;
+      create(of({ ...JOB, status: JobOfferStatus.Closed }));
+
+      expect(text()).not.toContain('Zaloguj się, aby aplikować');
+      expect(text()).toContain('Rekrutacja na to stanowisko została zakończona');
+    });
+
+    it('shows an admin neither the apply button nor the application status', () => {
+      admin = true;
+      create();
+
+      expect(text()).not.toContain('Aplikuj na to stanowisko');
+      expect(text()).not.toContain('Aplikowanie zamknięte');
     });
 
     it('reloads the offer when the API reports that it no longer accepts applications', () => {
