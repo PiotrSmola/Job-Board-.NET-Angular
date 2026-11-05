@@ -114,7 +114,9 @@ public class JobApplicationsController : ControllerBase
         }
 
         var job = await _jobRepository.GetJobByIdAsync(createApplicationDto.JobOfferId);
-        if (job == null)
+
+        // szkic jest dla nie-admina niewidoczny (jak w GET /api/jobs/{id}) - 404, żeby nie ujawniać jego istnienia
+        if (job == null || (job.Status == JobOfferStatus.Draft && !User.IsInRole("Admin")))
         {
             return NotFound(new { message = "Job offer not found" });
         }

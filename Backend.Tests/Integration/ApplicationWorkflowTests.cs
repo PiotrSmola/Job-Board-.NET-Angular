@@ -58,13 +58,29 @@ public class ApplicationWorkflowTests
 
     // --- aplikowanie na oferty, które nie przyjmują zgłoszeń ---
 
+    // szkic nie istnieje dla kandydata - ta sama odpowiedź co dla nieistniejącej oferty (jak GET /api/jobs/{id})
     [Fact]
-    public async Task Apply_ToDraftOffer_ReturnsBadRequestNotAccepting()
+    public async Task Apply_ToDraftOffer_ReturnsNotFoundLikeMissingOffer()
     {
         var draft = await _api.CreateJobWithStatusAsync(JobOfferStatus.Draft);
         var user = await _api.RegisterUserAsync();
 
         var response = await TryApplyAsync(user, draft.Id);
+        var missing = await TryApplyAsync(user, int.MaxValue);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("Job offer not found", await MessageAsync(response));
+        Assert.Equal(missing.StatusCode, response.StatusCode);
+        Assert.Equal(await MessageAsync(missing), await MessageAsync(response));
+    }
+
+    [Fact]
+    public async Task Apply_AsAdminToDraftOffer_ReturnsBadRequestNotAccepting()
+    {
+        var draft = await _api.CreateJobWithStatusAsync(JobOfferStatus.Draft);
+        using var admin = await _api.AdminClientAsync();
+
+        var response = await admin.PostJsonAsync(Url, new CreateJobApplicationDto { JobOfferId = draft.Id });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(NotAcceptingMessage, await MessageAsync(response));
