@@ -15,6 +15,9 @@ function makeApplication(status = ApplicationStatus.Submitted): JobApplication {
   };
 }
 
+// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
+vi.setConfig({ testTimeout: 20000 });
+
 describe('ApplicationStatusDialogComponent', () => {
   let fixture: ComponentFixture<ApplicationStatusDialogComponent>;
   let component: ApplicationStatusDialogComponent;
