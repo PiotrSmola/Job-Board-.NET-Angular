@@ -1,13 +1,16 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
+import { MatDialog } from '@angular/material/dialog';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { AdminApplicationsTabComponent } from './admin-applications-tab.component';
+import { ApplicationStatusDialogComponent } from '../application-status-dialog/application-status-dialog.component';
+import { ApplicationHistoryDialogComponent } from '../application-history-dialog/application-history-dialog.component';
 import { JobApplicationService } from '../../../services/job-application.service';
 import { ApplicationStatus, JobApplication } from '../../../models/job-application.model';
 import { ApplicationParams } from '../../../models/application-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
 
-function makeApplication(id: number): JobApplication {
+function makeApplication(id: number, status = ApplicationStatus.Submitted): JobApplication {
   return {
     id,
     jobOfferId: 1,
@@ -18,7 +21,7 @@ function makeApplication(id: number): JobApplication {
     company: 'Acme',
     note: null,
     appliedAt: new Date('2026-01-01T10:00:00Z'),
-    status: ApplicationStatus.Submitted,
+    status,
     statusChangedAt: '2026-01-01T10:00:00Z'
   };
 }
@@ -35,6 +38,9 @@ function page(items: number, totalItems: number, currentPage = 1, pageSize = 10)
   };
 }
 
+// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
+vi.setConfig({ testTimeout: 20000 });
+
 describe('AdminApplicationsTabComponent', () => {
   let fixture: ComponentFixture<AdminApplicationsTabComponent>;
   let component: AdminApplicationsTabComponent;
@@ -42,6 +48,8 @@ describe('AdminApplicationsTabComponent', () => {
   let deleteApplication: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
   let confirmSpy: ReturnType<typeof vi.spyOn>;
+  let dialogOpen: ReturnType<typeof vi.fn>;
+  let dialogResult: Observable<JobApplication | undefined>;
 
   function lastParams(): ApplicationParams {
     return getAllApplications.mock.calls[getAllApplications.mock.calls.length - 1][0] as ApplicationParams;
@@ -60,10 +68,15 @@ describe('AdminApplicationsTabComponent', () => {
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    dialogResult = of(undefined);
+    dialogOpen = vi.fn().mockImplementation(() => ({ afterClosed: () => dialogResult }));
 
     await TestBed.configureTestingModule({
       imports: [AdminApplicationsTabComponent],
-      providers: [{ provide: JobApplicationService, useValue: { getAllApplications, deleteApplication } }]
+      providers: [
+        { provide: JobApplicationService, useValue: { getAllApplications, deleteApplication } },
+        { provide: MatDialog, useValue: { open: dialogOpen } }
+      ]
     }).compileComponents();
   });
 
@@ -293,6 +306,190 @@ describe('AdminApplicationsTabComponent', () => {
 
       second.next(page(2, 2));
       expect(component.applications().length).toBe(2);
+    });
+  });
+
+  describe('status filter', () => {
+    it('offers "Wszystkie" and every status in the dropdown', () => {
+      create();
+
+      expect(component.statusOptions.map(o => o.label)).toEqual([
+        'Wszystkie', 'Złożona', 'W analizie', 'Rozmowa', 'Oferta', 'Zatrudniony', 'Odrzucona', 'Wycofana'
+      ]);
+    });
+
+    it('does not send a status by default', () => {
+      create();
+
+      expect(lastParams().status).toBeNull();
+      expect(component.hasActiveFilters()).toBe(false);
+    });
+
+    it('sends the selected status and resets to the first page', () => {
+      create();
+      component.onPageChange({ pageIndex: 2, pageSize: 10, length: 35, previousPageIndex: 0 });
+
+      component.onStatusChange(ApplicationStatus.Interview);
+
+      expect(lastParams().status).toBe(ApplicationStatus.Interview);
+      expect(lastParams().pageNumber).toBe(1);
+      expect(component.hasActiveFilters()).toBe(true);
+    });
+
+    it('sends status 0 (Złożona) as an active filter, not as "no filter"', () => {
+      create();
+
+      component.onStatusChange(ApplicationStatus.Submitted);
+
+      expect(lastParams().status).toBe(0);
+      expect(component.hasActiveFilters()).toBe(true);
+    });
+
+    it('keeps the status filter when paging and sorting', () => {
+      create();
+      component.onStatusChange(ApplicationStatus.Rejected);
+
+      component.onPageChange({ pageIndex: 1, pageSize: 10, length: 35, previousPageIndex: 0 });
+      expect(lastParams().status).toBe(ApplicationStatus.Rejected);
+
+      component.onSortChange({ active: 'appliedAt', direction: 'asc' });
+      expect(lastParams().status).toBe(ApplicationStatus.Rejected);
+    });
+
+    it('selecting an option in the dropdown applies the filter', async () => {
+      create();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const selects = (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('.filters-card .mat-mdc-select-trigger');
+      selects[0].click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const option = Array.from(document.querySelectorAll<HTMLElement>('mat-option')).find(o => o.textContent?.trim() === 'Rozmowa');
+      expect(option).toBeDefined();
+      option!.click();
+      fixture.detectChanges();
+
+      expect(lastParams().status).toBe(ApplicationStatus.Interview);
+    });
+
+    it('clearFilters resets the status filter', () => {
+      create();
+      component.onStatusChange(ApplicationStatus.Hired);
+
+      component.clearFilters();
+
+      expect(lastParams().status).toBeNull();
+      expect(component.status()).toBeNull();
+      expect(component.hasActiveFilters()).toBe(false);
+    });
+
+    it('shows the "no results" state with a clear button when the status filter matches nothing', async () => {
+      create();
+      getAllApplications.mockReturnValue(of(page(0, 0)));
+
+      component.onStatusChange(ApplicationStatus.Hired);
+      fixture.detectChanges();
+
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+      expect(text).toContain('Brak wyników');
+      expect(text).not.toContain('Brak aplikacji');
+    });
+  });
+
+  describe('status column and row actions', () => {
+    async function render(applications: JobApplication[]): Promise<HTMLElement> {
+      create(of({
+        result: applications,
+        pagination: { CurrentPage: 1, ItemsPerPage: 10, TotalItems: applications.length, TotalPages: 1 }
+      }));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      return fixture.nativeElement as HTMLElement;
+    }
+
+    it('shows a Polish status chip in every row', async () => {
+      const root = await render([
+        makeApplication(1, ApplicationStatus.Interview),
+        makeApplication(2, ApplicationStatus.Rejected),
+        makeApplication(3, ApplicationStatus.Withdrawn)
+      ]);
+
+      const chips = Array.from(root.querySelectorAll('td app-status-chip')).map(c => c.textContent?.trim());
+      expect(chips).toEqual(['Rozmowa', 'Odrzucona', 'Wycofana']);
+    });
+
+    it('disables the status change button only for withdrawn applications', async () => {
+      const root = await render([makeApplication(1, ApplicationStatus.Hired), makeApplication(2, ApplicationStatus.Withdrawn)]);
+
+      const rows = Array.from(root.querySelectorAll('tr.table-row'));
+      const changeButton = (row: Element) => row.querySelector<HTMLButtonElement>('.actions-cell button:nth-child(1)')!;
+      expect(changeButton(rows[0]).disabled).toBe(false);
+      expect(changeButton(rows[1]).disabled).toBe(true);
+    });
+
+    it('opens the status dialog from the row button with the application as data', async () => {
+      const root = await render([makeApplication(1, ApplicationStatus.InReview)]);
+
+      root.querySelector<HTMLButtonElement>('.actions-cell button:nth-child(1)')!.click();
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(dialogOpen.mock.calls[0][0]).toBe(ApplicationStatusDialogComponent);
+      expect(dialogOpen.mock.calls[0][1].data).toEqual(expect.objectContaining({ id: 1, status: ApplicationStatus.InReview }));
+    });
+
+    it('opens the history dialog from the row button', async () => {
+      const root = await render([makeApplication(5)]);
+
+      root.querySelector<HTMLButtonElement>('.actions-cell button:nth-child(2)')!.click();
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(dialogOpen.mock.calls[0][0]).toBe(ApplicationHistoryDialogComponent);
+      expect(dialogOpen.mock.calls[0][1].data).toEqual(expect.objectContaining({ id: 5 }));
+    });
+  });
+
+  describe('dialogs', () => {
+    it('reloads the current page after a status change', () => {
+      create();
+      component.onPageChange({ pageIndex: 1, pageSize: 10, length: 35, previousPageIndex: 0 });
+      const callsBefore = getAllApplications.mock.calls.length;
+      dialogResult = of(makeApplication(1, ApplicationStatus.Interview));
+
+      component.openStatusDialog(makeApplication(1));
+
+      expect(getAllApplications.mock.calls.length).toBe(callsBefore + 1);
+      expect(lastParams().pageNumber).toBe(2);
+    });
+
+    it('keeps the active status filter when reloading after a status change', () => {
+      create();
+      component.onStatusChange(ApplicationStatus.Submitted);
+      dialogResult = of(makeApplication(1, ApplicationStatus.Interview));
+
+      component.openStatusDialog(makeApplication(1));
+
+      expect(lastParams().status).toBe(ApplicationStatus.Submitted);
+    });
+
+    it('does not reload when the status dialog is dismissed', () => {
+      create();
+      const callsBefore = getAllApplications.mock.calls.length;
+      dialogResult = of(undefined);
+
+      component.openStatusDialog(makeApplication(1));
+
+      expect(getAllApplications.mock.calls.length).toBe(callsBefore);
+    });
+
+    it('does not reload after the history dialog is closed', () => {
+      create();
+      const callsBefore = getAllApplications.mock.calls.length;
+
+      component.openHistoryDialog(makeApplication(1));
+
+      expect(dialogOpen).toHaveBeenCalledWith(ApplicationHistoryDialogComponent, expect.objectContaining({ data: expect.objectContaining({ id: 1 }) }));
+      expect(getAllApplications.mock.calls.length).toBe(callsBefore);
     });
   });
 
