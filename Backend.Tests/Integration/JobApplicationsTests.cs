@@ -33,7 +33,7 @@ public class JobApplicationsTests
     [Fact]
     public async Task Apply_ToExistingJob_ReturnsCreatedWithFullyPopulatedDto()
     {
-        var job = await _api.CreateJobAsync(j => { j.Title = "Apply target"; j.Company = "Apply company"; });
+        var job = await _api.CreateJobAsync(j => { j.Title = "Apply target"; j.CompanyId = _api.CompanyId("Apply company"); });
         var user = await _api.RegisterUserAsync("applicant");
         using var client = _api.CreateClient(user);
 
@@ -478,7 +478,7 @@ public class JobApplicationsTests
     public async Task All_SearchTerm_MatchesCandidateEmailNameJobTitleAndCompany()
     {
         var token = Guid.NewGuid().ToString("N");
-        var job = await _api.CreateJobAsync(j => { j.Title = $"Title {token}"; j.Company = $"Company {token}"; });
+        var job = await _api.CreateJobAsync(j => { j.Title = $"Title {token}"; j.CompanyId = _api.CompanyId($"Company {token}"); });
         var otherJob = await _api.CreateJobAsync(j => j.Title = "Other title");
         var matchingUser = await _api.RegisterUserAsync($"search{token}");
         var unrelated = await _api.RegisterUserAsync("unrelated");

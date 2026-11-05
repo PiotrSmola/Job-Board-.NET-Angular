@@ -105,7 +105,7 @@ public class ApplicationConcurrencyTests
         public Task<JobApplication?> GetApplicationByIdAsync(int id, bool includeHistory = false) => _inner.GetApplicationByIdAsync(id, includeHistory);
         public Task<IEnumerable<JobApplication>> GetApplicationsByUserIdAsync(string userId) => _inner.GetApplicationsByUserIdAsync(userId);
         public Task<IEnumerable<JobApplication>> GetApplicationsByJobIdAsync(int jobId) => _inner.GetApplicationsByJobIdAsync(jobId);
-        public Task<PagedList<JobApplication>> GetApplicationsAsync(ApplicationParams applicationParams) => _inner.GetApplicationsAsync(applicationParams);
+        public Task<PagedList<JobApplication>> GetApplicationsAsync(ApplicationParams applicationParams, ManagementScope scope) => _inner.GetApplicationsAsync(applicationParams, scope);
         public Task<JobApplication> AddApplicationAsync(JobApplication application) => _inner.AddApplicationAsync(application);
         public Task<bool> DeleteApplicationAsync(int id) => _inner.DeleteApplicationAsync(id);
     }

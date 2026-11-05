@@ -69,11 +69,14 @@ public class MigrationTests
 
     private static async Task<string> InsertUserAsync(ApplicationDbContext context, string email)
     {
-        // tabela AspNetUsers nie zmienia się w migracjach - można użyć bieżącego modelu
-        var user = new ApplicationUser { UserName = email, Email = email };
-        context.Users.Add(user);
-        await context.SaveChangesAsync();
-        return user.Id;
+        // surowy SQL - bieżący model ma już kolumnę AspNetUsers.CompanyId (migracja AddCompanies)
+        var id = Guid.NewGuid().ToString();
+        await InsertAsync(context.Database.GetConnectionString()!,
+            "INSERT INTO AspNetUsers (Id, UserName, NormalizedUserName, Email, NormalizedEmail, CreatedAt, " +
+            "EmailConfirmed, PhoneNumberConfirmed, TwoFactorEnabled, LockoutEnabled, AccessFailedCount) " +
+            "VALUES (@id, @email, UPPER(@email), @email, UPPER(@email), UTC_TIMESTAMP(6), 0, 0, 0, 1, 0)",
+            ("@id", id), ("@email", email));
+        return id;
     }
 
     private static async Task<bool> TableExistsAsync(string connectionString, string table)
@@ -187,7 +190,10 @@ public class MigrationTests
             }
 
             // nowa oferta wstawiona bez kolumny Status dostaje domyślnie Active
-            var defaultedJobId = await InsertJobAsync(connectionString, "Inserted after migration");
+            // (po migracji AddCompanies oferta wskazuje firmę zamiast kolumny tekstowej Company)
+            var defaultedJobId = await InsertAsync(connectionString,
+                "INSERT INTO JobOffers (Title, CompanyId, Description, Location, WorkType, CreatedAt) " +
+                "VALUES ('Inserted after migration', (SELECT MIN(Id) FROM Companies), 'D', 'L', 0, UTC_TIMESTAMP(6))");
             await using (var context = CreateContext(connectionString))
             {
                 Assert.Equal(JobOfferStatus.Active, (await context.JobOffers.AsNoTracking().SingleAsync(j => j.Id == defaultedJobId)).Status);

@@ -85,12 +85,35 @@ public class ApiFixture : IAsyncLifetime
         return new TestUser(email, password, dto.FirstName, dto.LastName, user.Token, JwtTestHelper.GetUserId(user.Token));
     }
 
-    public static CreateJobOfferDto NewJobDto(Action<CreateJobOfferDto>? customize = null)
+    public const string DefaultCompanyName = "Test Company";
+
+    // Zatwierdzona firma testowa (tworzona przy pierwszym użyciu - także po resecie danych demo)
+    public int DefaultCompanyId => CompanyId(DefaultCompanyName);
+
+    // Id firmy o danej nazwie; brakująca firma jest tworzona bezpośrednio w bazie z zadanym statusem
+    public int CompanyId(string name, CompanyStatus status = CompanyStatus.Approved)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var lowered = name.ToLower();
+        var company = context.Companies.FirstOrDefault(c => c.Name.ToLower() == lowered);
+        if (company == null)
+        {
+            company = new Company { Name = name, Status = status, CreatedAt = DateTime.UtcNow };
+            context.Companies.Add(company);
+            context.SaveChanges();
+        }
+
+        return company.Id;
+    }
+
+    // Dane nowej oferty w firmie testowej (admin musi podać companyId)
+    public CreateJobOfferDto NewJobDto(Action<CreateJobOfferDto>? customize = null)
     {
         var dto = new CreateJobOfferDto
         {
             Title = "Test position " + Guid.NewGuid().ToString("N")[..8],
-            Company = "Test Company",
+            CompanyId = DefaultCompanyId,
             Description = "Test description",
             SalaryMin = 5000,
             SalaryMax = 8000,

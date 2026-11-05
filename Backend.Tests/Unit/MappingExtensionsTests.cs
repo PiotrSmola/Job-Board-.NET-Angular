@@ -10,7 +10,8 @@ public class MappingExtensionsTests
     {
         Id = 42,
         Title = "Title",
-        Company = "Company",
+        CompanyId = 3,
+        Company = new Company { Id = 3, Name = "Company" },
         Description = "Description",
         SalaryMin = 1000,
         SalaryMax = 2000,
@@ -29,6 +30,7 @@ public class MappingExtensionsTests
         Assert.Equal(42, dto.Id);
         Assert.Equal("Title", dto.Title);
         Assert.Equal("Company", dto.Company);
+        Assert.Equal(3, dto.CompanyId);
         Assert.Equal("Description", dto.Description);
         Assert.Equal(1000, dto.SalaryMin);
         Assert.Equal(2000, dto.SalaryMax);
@@ -55,15 +57,15 @@ public class MappingExtensionsTests
     {
         var dto = new CreateJobOfferDto
         {
-            Title = "T", Company = "C", Description = "D", SalaryMin = 1, SalaryMax = 2, Location = "L", WorkType = WorkType.Onsite
+            Title = "T", Description = "D", SalaryMin = 1, SalaryMax = 2, Location = "L", WorkType = WorkType.Onsite
         };
         var before = DateTime.UtcNow;
 
-        var job = dto.ToEntity();
+        var job = dto.ToEntity(5);
 
         Assert.Equal(0, job.Id);
         Assert.Equal("T", job.Title);
-        Assert.Equal("C", job.Company);
+        Assert.Equal(5, job.CompanyId);
         Assert.Equal("D", job.Description);
         Assert.Equal(1, job.SalaryMin);
         Assert.Equal(2, job.SalaryMax);
@@ -80,15 +82,16 @@ public class MappingExtensionsTests
         var originalCreatedAt = job.CreatedAt;
         var dto = new UpdateJobOfferDto
         {
-            Title = "New", Company = "New C", Description = "New D", SalaryMin = null, SalaryMax = 9, Location = "New L", WorkType = WorkType.Remote
+            Title = "New", Description = "New D", SalaryMin = null, SalaryMax = 9, Location = "New L", WorkType = WorkType.Remote
         };
 
-        dto.ApplyTo(job);
+        dto.ApplyTo(job, job.CompanyId);
 
         Assert.Equal(42, job.Id);
         Assert.Equal(originalCreatedAt, job.CreatedAt);
         Assert.Equal("New", job.Title);
-        Assert.Equal("New C", job.Company);
+        Assert.Equal(3, job.CompanyId);
+        Assert.Equal("Company", job.Company.Name);
         Assert.Equal("New D", job.Description);
         Assert.Null(job.SalaryMin);
         Assert.Equal(9, job.SalaryMax);
@@ -122,6 +125,7 @@ public class MappingExtensionsTests
         Assert.Equal("Jan Kowalski", dto.UserFullName);
         Assert.Equal("Title", dto.JobTitle);
         Assert.Equal("Company", dto.Company);
+        Assert.Equal(3, dto.CompanyId);
         Assert.NotNull(dto.JobOffer);
         Assert.Equal(42, dto.JobOffer!.Id);
         Assert.Equal("Title", dto.JobOffer.Title);
@@ -216,9 +220,9 @@ public class MappingExtensionsTests
     [Fact]
     public void CreateJobOfferDto_ToEntity_DefaultsToActiveWithoutExpiration()
     {
-        var dto = new CreateJobOfferDto { Title = "T", Company = "C", Description = "D", Location = "L" };
+        var dto = new CreateJobOfferDto { Title = "T", Description = "D", Location = "L" };
 
-        var job = dto.ToEntity();
+        var job = dto.ToEntity(5);
 
         Assert.Equal(JobOfferStatus.Active, job.Status);
         Assert.Null(job.ExpiresAt);
@@ -231,10 +235,10 @@ public class MappingExtensionsTests
         var expires = new DateTime(2031, 3, 4, 5, 6, 7, DateTimeKind.Utc);
         var dto = new UpdateJobOfferDto
         {
-            Title = "T", Company = "C", Description = "D", Location = "L", Status = JobOfferStatus.Draft, ExpiresAt = expires
+            Title = "T", Description = "D", Location = "L", Status = JobOfferStatus.Draft, ExpiresAt = expires
         };
 
-        dto.ApplyTo(job);
+        dto.ApplyTo(job, job.CompanyId);
 
         Assert.Equal(JobOfferStatus.Draft, job.Status);
         Assert.Equal(expires, job.ExpiresAt);
@@ -245,9 +249,9 @@ public class MappingExtensionsTests
     {
         var job = NewJob();
         job.ExpiresAt = DateTime.UtcNow.AddDays(1);
-        var dto = new UpdateJobOfferDto { Title = "T", Company = "C", Description = "D", Location = "L" };
+        var dto = new UpdateJobOfferDto { Title = "T", Description = "D", Location = "L" };
 
-        dto.ApplyTo(job);
+        dto.ApplyTo(job, job.CompanyId);
 
         Assert.Null(job.ExpiresAt);
     }
@@ -260,9 +264,9 @@ public class MappingExtensionsTests
     {
         var job = NewJob();
         job.Status = current;
-        var dto = new UpdateJobOfferDto { Title = "Edited", Company = "C", Description = "D", Location = "L" };
+        var dto = new UpdateJobOfferDto { Title = "Edited", Description = "D", Location = "L" };
 
-        dto.ApplyTo(job);
+        dto.ApplyTo(job, job.CompanyId);
 
         Assert.Equal(current, job.Status);
         Assert.Equal("Edited", job.Title);
@@ -274,9 +278,9 @@ public class MappingExtensionsTests
         var job = NewJob();
         var stored = new DateTime(2031, 3, 4, 5, 6, 7, DateTimeKind.Utc).AddTicks(4567);
         job.ExpiresAt = stored;
-        var dto = new UpdateJobOfferDto { Title = "T", Company = "C", Description = "D", Location = "L", ExpiresAt = stored.AddTicks(-4567) };
+        var dto = new UpdateJobOfferDto { Title = "T", Description = "D", Location = "L", ExpiresAt = stored.AddTicks(-4567) };
 
-        dto.ApplyTo(job);
+        dto.ApplyTo(job, job.CompanyId);
 
         Assert.Equal(stored, job.ExpiresAt);
     }
@@ -284,9 +288,9 @@ public class MappingExtensionsTests
     [Fact]
     public void CreateJobOfferDto_ToEntity_UsesGivenStatus()
     {
-        var dto = new CreateJobOfferDto { Title = "T", Company = "C", Description = "D", Location = "L", Status = JobOfferStatus.Closed };
+        var dto = new CreateJobOfferDto { Title = "T", Description = "D", Location = "L", Status = JobOfferStatus.Closed };
 
-        Assert.Equal(JobOfferStatus.Closed, dto.ToEntity().Status);
+        Assert.Equal(JobOfferStatus.Closed, dto.ToEntity(5).Status);
     }
 
     [Theory]
