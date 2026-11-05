@@ -272,6 +272,37 @@ public class RecruitmentModelTests
         Assert.NotNull(UpdateJob(JobOfferStatus.Active, Now.AddDays(-1)).ValidateExpiresAtAgainst(StoredJob(stored, Now.AddDays(-1)), Now));
     }
 
+    [Theory]
+    [InlineData(JobOfferStatus.Active)]
+    [InlineData(null)]
+    public void UpdateJobOfferDto_ExpiredActiveOfferWithUnchangedDate_IsValid(JobOfferStatus? status)
+    {
+        var stored = StoredJob(JobOfferStatus.Active, Now.AddDays(-2).AddTicks(1234));
+        // klient JS odsyła datę z dokładnością do milisekund
+        var sent = Now.AddDays(-2).AddMilliseconds(0.5);
+
+        Assert.Null(UpdateJob(status, sent).ValidateExpiresAtAgainst(stored, Now));
+    }
+
+    [Fact]
+    public void UpdateJobOfferDto_ExpiredActiveOfferWithChangedPastDate_Fails()
+    {
+        var stored = StoredJob(JobOfferStatus.Active, Now.AddDays(-2));
+
+        Assert.NotNull(UpdateJob(JobOfferStatus.Active, Now.AddDays(-1)).ValidateExpiresAtAgainst(stored, Now));
+    }
+
+    [Fact]
+    public void UpdateJobOfferDto_KeepsExpiresAtOf_ComparesWithSubSecondTolerance()
+    {
+        var stored = StoredJob(JobOfferStatus.Active, Now);
+
+        Assert.True(UpdateJob(null, Now.AddMilliseconds(400)).KeepsExpiresAtOf(stored));
+        Assert.False(UpdateJob(null, Now.AddSeconds(2)).KeepsExpiresAtOf(stored));
+        Assert.False(UpdateJob(null, null).KeepsExpiresAtOf(stored));
+        Assert.True(UpdateJob(null, null).KeepsExpiresAtOf(StoredJob(JobOfferStatus.Active, null)));
+    }
+
     [Fact]
     public void UpdateJobOfferDto_UndefinedStatus_IsInvalid()
     {

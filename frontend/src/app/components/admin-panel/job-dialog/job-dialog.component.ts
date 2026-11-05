@@ -272,7 +272,7 @@ export class JobDialogComponent {
     // domyślnie Active – jak w API (oferta od razu opublikowana)
     status: [JobOfferStatus.Active, [Validators.required]],
     expiresAt: [null as Date | null]
-  }, { validators: [this.salaryRangeValidator, this.expiresAtValidator] });
+  }, { validators: [this.salaryRangeValidator, group => this.expiresAtValidator(group as FormGroup)] });
 
   constructor() {
     if (this.data) {
@@ -290,16 +290,25 @@ export class JobDialogComponent {
     }
   }
 
-  /** Aktywna oferta z datą wygaśnięcia musi być ważna jeszcze dziś (API odrzuca datę z przeszłości). */
+  /**
+   * Aktywna oferta z datą wygaśnięcia musi być ważna jeszcze dziś (API odrzuca datę z przeszłości).
+   * Wyjątek jak w API: wygasłą aktywną ofertę można edytować bez zmiany daty (zostaje wygasła).
+   */
   expiresAtValidator(group: FormGroup): { [key: string]: boolean } | null {
     const status = group.get('status')?.value;
     const expiresAt: Date | null = group.get('expiresAt')?.value ?? null;
 
-    if (status !== JobOfferStatus.Active || !expiresAt) {
+    if (status !== JobOfferStatus.Active || !expiresAt || endOfLocalDay(expiresAt).getTime() > Date.now()) {
       return null;
     }
 
-    return endOfLocalDay(expiresAt).getTime() <= Date.now() ? { expiresAtInPast: true } : null;
+    return this.keepsOriginalExpiresAt(expiresAt) ? null : { expiresAtInPast: true };
+  }
+
+  /** Edycja oferty, która już jest aktywna, z niezmienionym dniem wygaśnięcia. */
+  private keepsOriginalExpiresAt(value: Date): boolean {
+    const original = this.data?.expiresAt;
+    return this.data?.status === JobOfferStatus.Active && !!original && isSameLocalDay(new Date(original), value);
   }
 
   clearExpiresAt(): void {
@@ -359,16 +368,21 @@ export class JobDialogComponent {
 
   /**
    * Wybrany dzień → koniec tego dnia w strefie admina, wysłany jako ISO UTC.
-   * Niezmieniony dzień przy edycji zachowuje dokładną datę z API (bez przesuwania godziny).
+   * Niezmieniony dzień przy edycji zachowuje dokładną datę z API (bez przesuwania godziny) –
+   * także dla wygasłej aktywnej oferty, którą API pozwala wtedy zapisać.
    */
   private toExpiresAtIso(value: Date | null): string | null {
     if (!value) return null;
 
     const original = this.data?.expiresAt ?? null;
-    // wyjątek: aktywna oferta, której godzina wygaśnięcia już dziś minęła – przesuwamy na koniec dnia
-    if (original && isSameLocalDay(new Date(original), value)
-      && (this.jobForm.value.status !== JobOfferStatus.Active || new Date(original).getTime() > Date.now())) {
-      return original;
+    if (original && isSameLocalDay(new Date(original), value)) {
+      // wyjątek: aktywna oferta, której godzina wygaśnięcia minęła dziś – przesuwamy na koniec dnia (znów aktualna)
+      const now = Date.now();
+      const expiredEarlierToday = this.jobForm.value.status === JobOfferStatus.Active
+        && new Date(original).getTime() <= now && endOfLocalDay(value).getTime() > now;
+      if (!expiredEarlierToday) {
+        return original;
+      }
     }
 
     return endOfLocalDay(value).toISOString();

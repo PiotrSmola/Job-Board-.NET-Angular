@@ -269,6 +269,19 @@ public class MappingExtensionsTests
     }
 
     [Fact]
+    public void UpdateJobOfferDto_ApplyTo_UnchangedExpiresAtKeepsStoredPrecision()
+    {
+        var job = NewJob();
+        var stored = new DateTime(2031, 3, 4, 5, 6, 7, DateTimeKind.Utc).AddTicks(4567);
+        job.ExpiresAt = stored;
+        var dto = new UpdateJobOfferDto { Title = "T", Company = "C", Description = "D", Location = "L", ExpiresAt = stored.AddTicks(-4567) };
+
+        dto.ApplyTo(job);
+
+        Assert.Equal(stored, job.ExpiresAt);
+    }
+
+    [Fact]
     public void CreateJobOfferDto_ToEntity_UsesGivenStatus()
     {
         var dto = new CreateJobOfferDto { Title = "T", Company = "C", Description = "D", Location = "L", Status = JobOfferStatus.Closed };

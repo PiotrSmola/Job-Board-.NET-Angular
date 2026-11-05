@@ -232,17 +232,41 @@ describe('JobDialogComponent', () => {
       expect(updateJob).toHaveBeenCalledWith(9, expect.objectContaining({ expiresAt: null }));
     });
 
-    it('opens an expired active offer as invalid and forces a new date or a different status', async () => {
+    it('lets the admin edit an expired active offer without changing its date and sends the original date', async () => {
+      const original = yesterday().toISOString();
+      await create({ ...EXISTING_JOB, expiresAt: original, isExpired: true });
+
+      expect(component.jobForm.hasError('expiresAtInPast')).toBe(false);
+      expect(component.jobForm.valid).toBe(true);
+      component.jobForm.patchValue({ title: 'Poprawiony tytuł' });
+      component.onSubmit();
+
+      expect(updateJob).toHaveBeenCalledWith(9, expect.objectContaining({
+        title: 'Poprawiony tytuł', status: JobOfferStatus.Active, expiresAt: original
+      }));
+    });
+
+    it('rejects a different past date for an expired active offer', async () => {
+      const twoDaysAgo = yesterday();
+      twoDaysAgo.setDate(twoDaysAgo.getDate() - 1);
       await create({ ...EXISTING_JOB, expiresAt: yesterday().toISOString(), isExpired: true });
 
-      expect(component.jobForm.hasError('expiresAtInPast')).toBe(true);
-      expect(component.jobForm.invalid).toBe(true);
-      component.onSubmit();
-      expect(updateJob).not.toHaveBeenCalled();
+      component.jobForm.patchValue({ expiresAt: twoDaysAgo });
 
+      expect(component.jobForm.hasError('expiresAtInPast')).toBe(true);
       component.jobForm.patchValue({ expiresAt: inDays(3) });
       expect(component.jobForm.valid).toBe(true);
     });
+
+    it.each([JobOfferStatus.Draft, JobOfferStatus.Closed])(
+      'rejects publishing an offer with status %s and an unchanged past date', async status => {
+        await create({ ...EXISTING_JOB, status, expiresAt: yesterday().toISOString() });
+        expect(component.jobForm.valid).toBe(true);
+
+        component.jobForm.patchValue({ status: JobOfferStatus.Active });
+
+        expect(component.jobForm.hasError('expiresAtInPast')).toBe(true);
+      });
 
     it('drops the "date in the past" error after switching an offer to Closed', async () => {
       await create();

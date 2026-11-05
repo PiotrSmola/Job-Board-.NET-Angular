@@ -31,11 +31,20 @@ public static class MappingExtensions
         return job;
     }
 
-    // Edycja oferty (bez Id i CreatedAt); brak statusu w żądaniu = status bez zmian
+    // Edycja oferty (bez Id i CreatedAt); brak statusu w żądaniu = status bez zmian,
+    // niezmieniona data ważności zostaje zapisana z pełną precyzją z bazy
     public static void ApplyTo(this UpdateJobOfferDto dto, JobOffer job)
     {
+        var storedExpiresAt = job.ExpiresAt;
+        var keepsExpiresAt = dto.KeepsExpiresAtOf(job);
+
         dto.ApplyFormTo(job);
         job.Status = dto.Status ?? job.Status;
+
+        if (keepsExpiresAt)
+        {
+            job.ExpiresAt = storedExpiresAt;
+        }
     }
 
     // Przepisuje pola wspólne dla tworzenia i edycji

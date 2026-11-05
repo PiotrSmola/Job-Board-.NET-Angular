@@ -614,6 +614,67 @@ public class JobLifecycleTests
         Assert.True(fetched.ExpiresAt > DateTime.UtcNow);
     }
 
+    // Wygasłą aktywną ofertę można edytować bez zmiany daty (np. poprawka opisu) - zostaje wygasła
+    [Fact]
+    public async Task UpdateJob_ExpiredActiveOfferWithUnchangedExpiresAt_Succeeds()
+    {
+        var expired = await _api.CreateExpiredJobAsync();
+        using var admin = await _api.AdminClientAsync();
+
+        var response = await admin.PutJsonAsync($"/api/jobs/{expired.Id}",
+            ApiFixture.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = expired.ExpiresAt; j.Title = "Fixed typo"; }));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var updated = await response.ReadJsonAsync<JobOfferDto>();
+        Assert.Equal("Fixed typo", updated.Title);
+        Assert.True(updated.IsExpired);
+        Assert.Equal(expired.ExpiresAt, updated.ExpiresAt);
+    }
+
+    [Fact]
+    public async Task UpdateJob_ExpiredActiveOfferWithUnchangedExpiresAtInMilliseconds_Succeeds()
+    {
+        var expired = await _api.CreateExpiredJobAsync();
+        using var admin = await _api.AdminClientAsync();
+        // przeglądarka odsyła datę z dokładnością do milisekund (toISOString)
+        var sent = expired.ExpiresAt!.Value.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+        var json = $$"""{"title":"T","company":"C","description":"D","location":"L","workType":0,"status":1,"expiresAt":"{{sent}}"}""";
+
+        var response = await admin.PutRawJsonAsync($"/api/jobs/{expired.Id}", json);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(expired.ExpiresAt, (await response.ReadJsonAsync<JobOfferDto>()).ExpiresAt);
+    }
+
+    [Fact]
+    public async Task UpdateJob_ExpiredActiveOfferWithOtherPastExpiresAt_ReturnsBadRequest()
+    {
+        var expired = await _api.CreateExpiredJobAsync();
+        using var admin = await _api.AdminClientAsync();
+
+        var response = await admin.PutJsonAsync($"/api/jobs/{expired.Id}",
+            ApiFixture.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = expired.ExpiresAt!.Value.AddHours(1); }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True((await ErrorsAsync(response)).TryGetProperty("ExpiresAt", out _));
+    }
+
+    [Theory]
+    [InlineData(JobOfferStatus.Draft)]
+    [InlineData(JobOfferStatus.Closed)]
+    public async Task UpdateJob_PublishingOfferWithUnchangedPastExpiresAt_ReturnsBadRequest(JobOfferStatus status)
+    {
+        var past = DateTime.UtcNow.AddDays(-2);
+        var job = await _api.CreateJobWithStatusAsync(status, past);
+        using var admin = await _api.AdminClientAsync();
+
+        var response = await admin.PutJsonAsync($"/api/jobs/{job.Id}",
+            ApiFixture.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = job.ExpiresAt; }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True((await ErrorsAsync(response)).TryGetProperty("ExpiresAt", out _));
+    }
+
     [Fact]
     public async Task UpdateJob_DraftWithPastExpiresAt_Succeeds()
     {
