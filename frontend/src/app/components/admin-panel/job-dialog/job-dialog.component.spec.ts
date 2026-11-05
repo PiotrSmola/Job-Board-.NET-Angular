@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { of, throwError } from 'rxjs';
-import { JobDialogComponent, endOfLocalDay } from './job-dialog.component';
+import { JobDialogComponent, endOfLocalDay, toSalary } from './job-dialog.component';
 import { JobService } from '../../../services/job.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
 
@@ -325,6 +325,29 @@ describe('JobDialogComponent', () => {
       expect(snackBarOpen.mock.calls[0][0]).toBe('Oferta dodana!');
       expect(close).toHaveBeenCalledWith(true);
       expect(alertSpy).not.toHaveBeenCalled();
+    });
+
+    it('sends a zero salary as 0 instead of dropping it', async () => {
+      await create();
+      fillValidForm({ salaryMin: 0, salaryMax: 0 });
+
+      component.onSubmit();
+
+      expect(createJob).toHaveBeenCalledWith(expect.objectContaining({ salaryMin: 0, salaryMax: 0 }));
+    });
+
+    it('sends empty salary fields as null and numeric strings as numbers', async () => {
+      await create();
+      fillValidForm({ salaryMin: '', salaryMax: '9000' });
+
+      component.onSubmit();
+
+      expect(createJob).toHaveBeenCalledWith(expect.objectContaining({ salaryMin: null, salaryMax: 9000 }));
+    });
+
+    it('normalizes salary values', () => {
+      expect([toSalary(0), toSalary(null), toSalary(undefined), toSalary(''), toSalary('15'), toSalary(8000)])
+        .toEqual([0, null, null, null, 15, 8000]);
     });
 
     it('updates an existing job', async () => {

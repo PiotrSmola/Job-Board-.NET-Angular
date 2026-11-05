@@ -21,6 +21,11 @@ export function endOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
 }
 
+/** Puste pole wynagrodzenia = null; 0 jest poprawną wartością i zostaje wysłane. */
+export function toSalary(value: number | string | null | undefined): number | null {
+  return value === null || value === undefined || value === '' ? null : Number(value);
+}
+
 function isSameLocalDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -339,8 +344,8 @@ export class JobDialogComponent {
 
     const jobData: CreateJobOffer = {
       ...formValue,
-      salaryMin: formValue.salaryMin || null,
-      salaryMax: formValue.salaryMax || null,
+      salaryMin: toSalary(formValue.salaryMin),
+      salaryMax: toSalary(formValue.salaryMax),
       expiresAt: this.toExpiresAtIso(formValue.expiresAt)
     };
 
