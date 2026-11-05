@@ -38,6 +38,9 @@ function page(items: number, totalItems: number, currentPage = 1, pageSize = 10)
   };
 }
 
+// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
+vi.setConfig({ testTimeout: 20000 });
+
 describe('AdminJobsTabComponent', () => {
   let fixture: ComponentFixture<AdminJobsTabComponent>;
   let component: AdminJobsTabComponent;
@@ -460,6 +463,110 @@ describe('AdminJobsTabComponent', () => {
 
       expect(snackBarOpen.mock.calls[0][0]).toBe('Aby opublikować ofertę, ustaw datę wygaśnięcia w przyszłości');
       expect(component.statusChangingId()).toBeNull();
+    });
+
+    describe('rendered table', () => {
+      const STATES: Partial<JobOffer>[] = [
+        { status: JobOfferStatus.Draft },
+        { status: JobOfferStatus.Active, expiresAt: '2026-12-31T22:59:59Z' },
+        { status: JobOfferStatus.Active, isExpired: true },
+        { status: JobOfferStatus.Closed }
+      ];
+
+      async function render(overrides: Partial<JobOffer>[] = STATES): Promise<HTMLElement> {
+        create(of({
+          result: overrides.map((o, i) => ({ ...makeJob(i + 1), ...o })),
+          pagination: { CurrentPage: 1, ItemsPerPage: 10, TotalItems: overrides.length, TotalPages: 1 }
+        }));
+        await fixture.whenStable();
+        fixture.detectChanges();
+        return fixture.nativeElement as HTMLElement;
+      }
+
+      it('shows a state chip per row and the expiration date when present', async () => {
+        const root = await render();
+
+        const chips = Array.from(root.querySelectorAll('td app-status-chip')).map(c => c.textContent?.trim());
+        expect(chips).toEqual(['Szkic', 'Aktywna', 'Wygasła', 'Zamknięta']);
+        expect(root.querySelectorAll('.expires').length).toBe(1);
+        expect(root.querySelector('.expires')?.textContent).toContain('do ');
+      });
+
+      it('renders Opublikuj / Zamknij / Zamknij / Wznów as the first action of each row', async () => {
+        const root = await render();
+
+        const labels = Array.from(root.querySelectorAll('tr.table-row')).map(row =>
+          row.querySelector('.actions-cell button')?.getAttribute('aria-label'));
+        expect(labels).toEqual(['Opublikuj', 'Zamknij', 'Zamknij', 'Wznów']);
+      });
+
+      it('clicking "Opublikuj" sends the Active status for that offer and refreshes the list', async () => {
+        const root = await render();
+        const callsBefore = getManagedJobs.mock.calls.length;
+
+        root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label="Opublikuj"]')!.click();
+
+        expect(updateJobStatus).toHaveBeenCalledWith(1, JobOfferStatus.Active);
+        expect(getManagedJobs.mock.calls.length).toBe(callsBefore + 1);
+      });
+
+      it('clicking "Zamknij" sends the Closed status', async () => {
+        const root = await render();
+
+        root.querySelectorAll('tr.table-row')[1].querySelector<HTMLButtonElement>('button[aria-label="Zamknij"]')!.click();
+
+        expect(updateJobStatus).toHaveBeenCalledWith(2, JobOfferStatus.Closed);
+      });
+
+      it('clicking "Wznów" sends the Active status', async () => {
+        const root = await render();
+
+        root.querySelectorAll('tr.table-row')[3].querySelector<HTMLButtonElement>('button[aria-label="Wznów"]')!.click();
+
+        expect(updateJobStatus).toHaveBeenCalledWith(4, JobOfferStatus.Active);
+      });
+
+      it('disables the quick action of the row being changed', async () => {
+        const pending = new Subject<JobOffer>();
+        updateJobStatus.mockReturnValue(pending);
+        const root = await render();
+
+        root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label="Opublikuj"]')!.click();
+        fixture.detectChanges();
+
+        expect(component.statusChangingId()).toBe(1);
+        expect(root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label="Opublikuj"]')!.disabled).toBe(true);
+        expect(root.querySelectorAll('tr.table-row')[1].querySelector<HTMLButtonElement>('button[aria-label="Zamknij"]')!.disabled).toBe(false);
+      });
+
+      it('keeps the list unchanged and shows the API message when publishing with a past date fails', async () => {
+        updateJobStatus.mockReturnValue(throwError(() => new HttpErrorResponse({
+          status: 400, error: { message: 'Expiration date must be in the future to publish' }
+        })));
+        const root = await render();
+        const callsBefore = getManagedJobs.mock.calls.length;
+
+        root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label="Opublikuj"]')!.click();
+
+        expect(snackBarOpen.mock.calls[0][0]).toBe('Aby opublikować ofertę, ustaw datę wygaśnięcia w przyszłości');
+        expect(getManagedJobs.mock.calls.length).toBe(callsBefore);
+      });
+
+      it('selecting a state in the dropdown requests /manage with that state', async () => {
+        const root = await render();
+
+        // trzecie pole filtrów: szukaj, typ pracy, stan
+        const triggers = root.querySelectorAll<HTMLElement>('.filters-card .mat-mdc-select-trigger');
+        triggers[1].click();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        const option = Array.from(document.querySelectorAll<HTMLElement>('mat-option')).find(o => o.textContent?.trim() === 'Zamknięte');
+        expect(option).toBeDefined();
+        option!.click();
+        fixture.detectChanges();
+
+        expect(lastParams().state).toBe('closed');
+      });
     });
 
     it.each([401, 403])('does not duplicate the interceptor notice when changing status fails with %i', status => {
