@@ -1,173 +1,232 @@
-# Job-Board-.NET-Angular
+# Job Board
 
-## Uruchomienie w Dockerze
+A job board with candidate, employer and admin roles, built with ASP.NET Core 9 and Angular 22 as a portfolio project that runs locally as a Docker stack.
 
-Wymagany Docker Desktop (Docker Compose v2).
+It covers the whole recruitment loop: companies register and get verified, publish offers with a category, level, contract types and skills, candidates search with faceted filters, apply with attachments and follow the status of their applications, and both sides get e-mail notifications and statistics. It is not deployed anywhere and is not meant to be - the stack listens on `127.0.0.1` only.
+
+## Features
+
+| Role | What they can do |
+| --- | --- |
+| Candidate (`User`) | Search offers with filters and facet counts, save offers, apply with up to 10 attachments (CV, cover letter, portfolio, other) or with documents from the profile, follow the status history of each application and withdraw it, manage the profile, profile documents, notification settings, password and account deletion |
+| Employer (`Employer`) | Register together with a company, edit the company profile (sent for verification), manage the company's offers (drafts, publishing, expiry dates, closing), review applications and download attachments, move applications through the recruitment stages with comments visible to the candidate, see the company statistics with offer views and export them to CSV |
+| Admin (`Admin`) | Everything an employer can do for every company, plus: approve or reject companies, manage categories, see platform-wide statistics, delete applications and offers with their files, reset the demo data |
+
+Public pages (no account needed): the job list with filters, facets and URL-driven state (links and the back button work), offer details, the company list and company profiles. Only approved companies and their active, unexpired offers are public.
+
+After signing in (without a `returnUrl`) an employer lands on the `/employer` panel and everyone else on the job list. "My applications" (`/my-applications`) is for candidates only - an employer is redirected to `/employer` and an admin to `/admin`. Only candidates apply to offers - employers and admins cannot.
+
+## Tech stack
+
+| Area | Technology |
+| --- | --- |
+| Backend | ASP.NET Core 9 (controllers), ASP.NET Core Identity, JWT bearer authentication, built-in rate limiting |
+| Data | MySQL 8.4 (LTS), Entity Framework Core 9 with Pomelo.EntityFrameworkCore.MySql 9.0, MySqlConnector |
+| File storage | SeaweedFS 4.50 (S3-compatible API) through AWSSDK.S3; local disk outside Docker |
+| E-mail | MailKit over SMTP, transactional outbox in MySQL, Mailpit as the local mailbox |
+| API docs | Swashbuckle (Swagger UI) |
+| Frontend | Angular 22 (standalone components, signals, `@if`/`@for`, `@defer`), Angular Material 22, TypeScript 6.0, RxJS |
+| Charts | Hand-written SVG components (no chart library) |
+| Web server | nginx (serves the Angular build and proxies `/api` to the backend) |
+| Tests | xUnit with `WebApplicationFactory` on a real MySQL server (backend), Vitest through the Angular CLI (frontend) |
+| Tooling | Docker Compose v2, PowerShell start script (`docker-up.ps1`) |
+
+## Why these technologies
+
+**Pomelo and .NET 9.** MySQL is reached through `Pomelo.EntityFrameworkCore.MySql`, the most complete EF Core provider for MySQL (proper `utf8mb4` collations, `INSERT IGNORE` / `ON DUPLICATE KEY` friendly SQL, MySQL-specific column types). The newest stable Pomelo (9.0.0) supports only EF Core 9, so the project stays on .NET 9 (`net9.0`, ASP.NET Core and EF Core 9.0.x). Moving to .NET 10 (LTS) waits for a stable Pomelo release that supports EF Core 10.
+
+**SeaweedFS instead of MinIO.** Attachments live in an S3-compatible store so that the backend talks to the same API it would use in the cloud. SeaweedFS is a small, actively maintained Apache-2.0 server with an S3 gateway and a pinned Docker image; MinIO's community edition has been cut back (no admin console, no official prebuilt images), which makes it a poor fit for a reproducible local stack. The backend only knows `IFileStorage`, so the store can be swapped (`Storage:Provider`).
+
+**An e-mail outbox instead of Hangfire.** Each e-mail is written to the `EmailMessages` table in the same transaction as the event that causes it (a registration, a status change), and a hosted service sends it with retries. That gives "the e-mail goes out if and only if the change was committed" without a job scheduler, its dashboard and its extra tables - the project needs one kind of background job, not a general-purpose queue.
+
+**Mailpit.** A local SMTP server with a web UI: every e-mail of the application (confirmation links, password reset links, notifications) can be opened in the browser, and nothing is ever sent outside. It also has an HTTP API used by the real SMTP test.
+
+**Hand-written SVG charts.** The statistics dashboard needs a line chart, a funnel and KPI tiles. Small SVG components add no dependency, keep the lazily loaded statistics chunk small and are accessible by design - every chart is an image with a text summary (`role="img"` with an `aria-label`) and has a data table as an alternative, which a general chart library would not give for free.
+
+## Quick start with Docker
+
+Requirements: Docker Desktop (Docker Compose v2) and Windows PowerShell.
 
 ```powershell
 .\docker-up.ps1
 ```
 
-The script builds the images and starts five containers: MySQL, the application attachment storage (SeaweedFS with an S3-compatible API, no published ports - reachable only by the backend in the compose network), Mailpit (a local mailbox that receives all e-mails of the application - see "User account and e-mails"), the backend (ASP.NET Core) and the frontend (Angular served by nginx, which forwards `/api` to the backend). The default ports are 4200 (frontend), 5285 (backend / Swagger), 3306 (MySQL) and 8025 (Mailpit UI) - if one is taken, the next free one is used. The chosen ports are saved to `.env` and printed at the end.
+The script builds the images and starts five containers: MySQL, SeaweedFS (attachment storage), Mailpit, the backend and the frontend (nginx, which forwards `/api` to the backend). For every service it takes the preferred port and, if that port is taken, the next free one. The chosen ports are saved to `.env` and printed at the end:
 
-Preferowane porty można zmienić parametrami:
+| Service | Default address | Notes |
+| --- | --- | --- |
+| Frontend | `http://localhost:4200` | the application |
+| Swagger UI | `http://localhost:5285/swagger` | the backend API; turned off with `SWAGGER_ENABLED=false` |
+| Mailpit | `http://localhost:8025` | every e-mail sent by the application |
+| MySQL | `localhost:3306` | `root` / `DB_PASSWORD` |
+| SeaweedFS | not published | reachable only by the backend inside the compose network |
+
+The preferred ports can be changed:
 
 ```powershell
 .\docker-up.ps1 -FrontendPort 8080 -BackendPort 8081 -DbPort 3310 -MailpitPort 8026
 ```
 
-> **Uwaga:** stack z `docker-compose.yml` jest przeznaczony wyłącznie do lokalnego uruchomienia (demo). Konta demo (tabela niżej) i root MySQL mają znane hasła, a admin może z panelu wyczyścić bazę, dlatego wszystkie porty są publikowane tylko na `127.0.0.1` - aplikacja nie jest dostępna z innych komputerów w sieci. Nie wystawiaj go publicznie bez zmiany haseł i wyłączenia `ALLOW_SEED_REFRESH`.
+On the first run the script generates the secrets and stores them in `.env` (outside the repository): `JWT_SECRET` (64 random characters), `S3_ACCESS_KEY` and `S3_SECRET_KEY` (20 and 40 letters and digits) and `ADMIN_PASSWORD` (20 characters). Later runs keep the existing values. The admin password is printed at the end (`Admin: admin@jobboard.com / ...`).
 
-Zatrzymanie: `docker compose down` (dane bazy zostają w wolumenie `db-data`, pliki załączników w `storage-data`; `docker compose down -v` usuwa je).
+Stopping: `docker compose down` (the database stays in the `db-data` volume and the files in `storage-data`; `docker compose down -v` removes both).
 
-Bez skryptu można też użyć bezpośrednio `docker compose up -d --build` - porty brane są wtedy z `.env` (wzór w `.env.example`) lub domyślne. W `.env` muszą wtedy być ustawione `JWT_SECRET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` i `ADMIN_PASSWORD`.
+The stack can also be started with `docker compose up -d --build` directly - the ports then come from `.env` (template: `.env.example`) or the defaults, and `.env` must contain `JWT_SECRET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `ADMIN_PASSWORD`.
 
-Zmienne w `.env`:
+### Running without Docker
 
-- `JWT_SECRET` - sekret do podpisywania tokenów JWT (min. 32 znaki). Wymagany: bez niego `docker compose` nie wystartuje. `docker-up.ps1` przy pierwszym uruchomieniu generuje losowy 64-znakowy sekret i zapisuje go w `.env`, przy kolejnych zachowuje istniejący (zmiana sekretu unieważnia zalogowane sesje).
-- `S3_ACCESS_KEY`, `S3_SECRET_KEY` - klucze dostępu do magazynu plików załączników (SeaweedFS, usługa `storage`). Wymagane: bez nich `docker compose` nie wystartuje. `docker-up.ps1` generuje losowe (20 i 40 znaków alfanumerycznych) i zachowuje istniejące, jeśli są ciągami co najmniej 16 liter i cyfr - inne zastępuje nowymi z ostrzeżeniem. Własne wartości: tylko litery i cyfry, min. 16 znaków (są wstawiane do pliku konfiguracyjnego S3 generowanego przy starcie kontenera, więc ich zmiana działa po restarcie stacku).
-- `ADMIN_PASSWORD` - password of the admin accounts (`admin@jobboard.com`, `superadmin@jobboard.com`) created by the seeder (`Seed__AdminPassword`). Required: `docker compose` does not start without it. On the first run `docker-up.ps1` generates a random 20-character password and stores it in `.env`, later runs keep the existing one, and the script **prints it at the end** (`Admin: admin@jobboard.com / ...`). A custom value must be letters and digits only, at least 16 characters, with a lowercase letter, an uppercase letter and a digit - otherwise the script replaces it with a new one and prints a warning. The password applies only to admin accounts created with this setting (a new database or a demo data reset): **existing admin accounts in existing databases (the `db-data` volume) keep their current password** (e.g. `Admin123!` from earlier versions) - to switch to the password from `.env`, reset the demo data from the admin panel or remove the volume (`docker compose down -v`). Outside Docker: Development defaults to `Admin123!`; other environments must set `Seed:AdminPassword` to create the admin accounts (a missing password or one that breaks the password policy stops the startup with a clear error).
-- `ALLOW_SEED_REFRESH` - czy admin może z panelu zresetować dane demo (`POST /api/admin/refresh-seed` usuwa **wszystkich** użytkowników, firmy, oferty i aplikacje i odtwarza dane startowe). W lokalnym stacku Dockera domyślnie `true`; ustaw `false`, żeby wyłączyć. Poza Dockerem reset działa tylko w środowisku Development albo po ustawieniu `Admin:AllowSeedRefresh=true`.
-- `MAILPIT_PORT` - port UI Mailpita na `127.0.0.1` (domyślnie 8025, `docker-up.ps1` wybiera wolny). Serwer SMTP Mailpita (1025) nie jest publikowany - korzysta z niego tylko backend w sieci compose. Linki w e-mailach prowadzą do `http://localhost:${FRONTEND_PORT}` (`Frontend__BaseUrl`).
-- `SEED_DEMO_ACCOUNTS` - czy seeder tworzy konta demo kandydatów i pracodawców (tabela niżej). W lokalnym stacku Dockera domyślnie `true` (`Seed__DemoAccounts`); ustaw `false`, żeby powstały tylko konta adminów. Poza Dockerem konta demo powstają tylko w środowisku Development, chyba że jawnie ustawiono `Seed:DemoAccounts` (`true`/`false` ma pierwszeństwo). `docker-up.ps1` zachowuje wartość z `.env`.
-- `SWAGGER_ENABLED` - whether the backend serves Swagger UI (`http://localhost:<BACKEND_PORT>/swagger`). Defaults to `true` in the local Docker stack (`Swagger__Enabled`); set `false` to turn it off. Outside Docker Swagger is always available in Development and in other environments only with `Swagger:Enabled=true`. `docker-up.ps1` keeps the value from `.env`.
+Required versions:
 
-## Konta testowe
+- **.NET SDK 9.0**.
+- **Node.js** `^22.22.3`, `^24.15.0` or `>=26.0.0` (required by Angular 22); the frontend Docker image builds on Node 24 LTS.
+- **MySQL 8.4**.
 
-Tworzone automatycznie przy pierwszym starcie (i po resecie danych demo). Hasła są publicznie znane - konta służą tylko do lokalnego demo. Konta adminów powstają zawsze, konta kandydatów i pracodawców demo tylko w Development albo przy `Seed:DemoAccounts=true` (w stacku Dockera domyślnie włączone, patrz `SEED_DEMO_ACCOUNTS`). Konto demo pracodawcy, które istnieje bez firmy (np. po cofnięciu i ponownym zastosowaniu migracji `AddCompanies`), jest przy starcie dopinane do swojej firmy (brakująca firma jest tworzona):
+Backend: `dotnet run` in `Backend` (needs MySQL on `localhost:3306`). In Development a built-in development JWT key is used when `JwtSettings:Secret` is not set; other environments require it (e.g. `JwtSettings__Secret`). Attachments go to `Backend/storage` by default. E-mails are sent only when `Email:Smtp:Host` is set - e.g. with a local Mailpit (`docker run -p 8025:8025 -p 1025:1025 axllent/mailpit:v1.31.1`): `Email__Smtp__Host=localhost`, `Email__Smtp__Port=1025`, `Email__Smtp__Security=None`.
 
-| Rola | E-mail | Hasło |
+Frontend: `npm start` in `frontend` - `ng serve` forwards `/api` to `http://localhost:5285` (`frontend/proxy.conf.json`).
+
+## Configuration
+
+### Docker stack (`.env`)
+
+| Variable | Default | Meaning |
 | --- | --- | --- |
-| Admin | `admin@jobboard.com` | Development: `Admin123!`; Docker: `ADMIN_PASSWORD` from `.env` (printed by `docker-up.ps1`) |
-| Kandydat | `jan.kowalski@example.com` | `User123!` |
-| Pracodawca (firma zatwierdzona: TechCorp Solutions) | `rekruter@techcorp.pl` | `Employer123!` |
-| Pracodawca (firma oczekująca: Nowa Firma Sp. z o.o.) | `rekruter@nowafirma.pl` | `Employer123!` |
+| `FRONTEND_PORT`, `BACKEND_PORT`, `DB_PORT`, `MAILPIT_PORT` | `4200`, `5285`, `3306`, `8025` | host ports on `127.0.0.1`; `docker-up.ps1` replaces taken ones with the next free port. Mailpit's SMTP port (1025) is not published - only the backend uses it. Links in e-mails point to `http://localhost:${FRONTEND_PORT}` (`Frontend__BaseUrl`) |
+| `DB_PASSWORD` | `jobboard` | the MySQL `root` password |
+| `JWT_SECRET` | generated | the JWT signing key (at least 32 characters). Required - `docker compose` does not start without it. Changing it signs everyone out |
+| `S3_ACCESS_KEY`, `S3_SECRET_KEY` | generated | the SeaweedFS keys. Required. Own values: letters and digits only, at least 16 characters (other values are replaced by the script with a warning). They are written into the SeaweedFS S3 config generated at container start, so the store rejects unsigned requests and a change applies after a restart of the stack |
+| `ADMIN_PASSWORD` | generated | the password of the seeded admin accounts (`admin@jobboard.com`, `superadmin@jobboard.com`, `Seed__AdminPassword`). Required. Own value: letters and digits only, at least 16 characters, with a lowercase letter, an uppercase letter and a digit. It applies only to admin accounts created with it (a new database or a demo data reset) - **admin accounts in an existing `db-data` volume keep their current password** (e.g. `Admin123!` from older versions) until a demo data reset or `docker compose down -v` |
+| `ALLOW_SEED_REFRESH` | `true` | whether an admin can reset the demo data from the panel (`POST /api/admin/refresh-seed` deletes **all** users, companies, offers, applications and files and recreates the seed data). Outside Docker the reset works only in Development or with `Admin:AllowSeedRefresh=true` |
+| `SEED_DEMO_ACCOUNTS` | `true` | whether the seeder creates the demo candidate and employer accounts (`Seed__DemoAccounts`); with `false` only the admin accounts are created. Outside Docker the demo accounts are created only in Development unless `Seed:DemoAccounts` is set explicitly |
+| `SWAGGER_ENABLED` | `true` | whether the backend serves Swagger UI (`Swagger__Enabled`). Outside Docker Swagger is available in Development, and in other environments only with `Swagger:Enabled=true` |
 
-After 5 failed login attempts the account is locked for 5 minutes. The response does not reveal whether an account with the given email exists: a wrong password, an unknown account and a wrong password for a locked account always return `401` `Invalid email or password` in comparable time (for an unknown account the password is verified against a dummy hash). Only someone who gives the **correct** password of a locked account gets `423 Locked`. Attempts during the lockout neither change the counter nor extend the lockout. Parallel login attempts for one account run one at a time (an in-process lock per email), so the failed-attempt counter never loses an attempt.
+`docker-up.ps1` keeps the values of `ALLOW_SEED_REFRESH`, `SEED_DEMO_ACCOUNTS` and `SWAGGER_ENABLED` from `.env`.
 
+### Backend settings (`appsettings.json`, environment variables)
 
-JWT tokens (HS256, valid for 120 minutes - `JwtSettings:ExpirationInMinutes`, no refresh; 30 s clock skew) carry a hash of the user's security stamp (the first 16 bytes of its SHA-256, not the stamp itself - the JWT payload is readable) and are checked on every request: a token of an account that was deleted (e.g. by the demo data reset, which also recreates the seeded accounts) or whose security stamp changed (e.g. after a password change) is rejected with `401` - the user has to log in again.
-
-## Role i firmy
-
-| Rola | Co może |
+| Setting | Meaning |
 | --- | --- |
-| Kandydat (`User`) | przegląda oferty i firmy, aplikuje, śledzi i wycofuje swoje aplikacje |
-| Pracodawca (`Employer`) | zarządza profilem swojej firmy, jej ofertami i aplikacjami do nich (panel `/employer`); nie aplikuje na oferty |
-| Admin (`Admin`) | wszystko: moderuje firmy, zarządza ofertami wszystkich firm i wszystkimi aplikacjami, resetuje dane demo; nie aplikuje na oferty |
+| `JwtSettings:Secret`, `JwtSettings:ExpirationInMinutes` | the HS256 signing key and the token lifetime (120 minutes) |
+| `Seed:AdminPassword`, `Seed:DemoAccounts`, `Admin:AllowSeedRefresh` | see the `.env` table; outside Development a missing or too weak admin password stops the startup with a clear error |
+| `Swagger:Enabled` | Swagger UI outside Development |
+| `Storage:Provider` | `Local` (default) or `S3` |
+| `Storage:LocalPath` | the directory for `Local`; default `<app directory>/storage` (`Backend/storage`, ignored by git) |
+| `Storage:S3:ServiceUrl`, `Storage:S3:Bucket` | the S3-compatible endpoint (e.g. `http://storage:8333`) and the bucket (default `jobboard`, created at startup when missing) |
+| `Storage:S3:AccessKey`, `Storage:S3:SecretKey` | the S3 keys (required for `S3`) |
+| `Frontend:BaseUrl` | the frontend address used in e-mail links (default `http://localhost:4200`; must be an absolute http(s) URL) |
+| `Email:Smtp:Host`, `Email:Smtp:Port` | the SMTP server; without a host e-mails wait in the outbox (a warning in the log) |
+| `Email:Smtp:Security` | `None` (e.g. Mailpit), `StartTls`, `SslOnConnect`, `StartTlsWhenAvailable`, `Auto` (default) |
+| `Email:Smtp:UserName`, `Email:Smtp:Password` | optional SMTP authentication |
+| `Email:FromAddress`, `Email:FromName` | the sender (default `no-reply@jobboard.local`, "Job Board") |
+| `Email:Outbox:*` | `PollIntervalSeconds` (10), `BatchSize` (20), `MaxAttempts` (8), `InitialRetryDelaySeconds` (30), `MaxRetryDelaySeconds` (3600), `SendTimeoutSeconds` (30), `RetentionDays` (30) |
+| `RateLimiting:Auth:*` | `PermitLimit` (10), `WindowSeconds` (60), `ConcurrencyLimit` (4) |
+| `RateLimiting:PublicLists:*` | `PermitLimit` (120), `WindowSeconds` (60) |
+| `RateLimiting:AccountEmails:*` | `PermitLimit` (5), `WindowSeconds` (900) |
+| `RateLimiting:Uploads:*` | `PermitLimit` (30), `WindowSeconds` (600), `ConcurrencyLimit` (8) |
 
-Po zalogowaniu (bez `returnUrl`) pracodawca trafia do swojego panelu `/employer`, pozostali na listę ofert; strona „Moje aplikacje” (`/my-applications`) jest tylko dla kandydatów - pracodawca jest przekierowywany do `/employer`, admin do `/admin`.
+Incomplete storage or e-mail configuration, an unknown storage provider and a rate limit below 1 stop the startup with a clear error.
 
-Rola trafia do tokenu JWT (claim `role`), ale firma pracodawcy jest odczytywana z bazy przy każdym żądaniu, więc zmiana przypisania działa bez ponownego logowania. Sprawdzanie uprawnień do zasobów jest w jednym miejscu (`ICurrentUserAccess`): admin zarządza wszystkim, pracodawca tylko ofertami i aplikacjami swojej firmy - oferta albo aplikacja innej firmy zwraca `404` (bez ujawniania, że istnieje).
+## Demo accounts
 
-### Weryfikacja firm
+Created on the first start and after a demo data reset. The passwords of the demo accounts are publicly known - they exist only for the local demo. Admin accounts are always created; the candidate and employer accounts only in Development or with `Seed:DemoAccounts=true` (on by default in the Docker stack).
 
-1. Pracodawca zakłada konto z firmą (`POST /api/auth/register-employer`, przełącznik „Rekrutuję” na stronie rejestracji). Konto i firma powstają w jednej transakcji; nazwa firmy jest unikalna bez rozróżniania wielkości liter i znaków diakrytycznych (kolacja `utf8mb4_0900_ai_ci` - celowo: „Zażółć” i „Zazolc” to ta sama marka), zajęta nazwa zwraca `400`. Przed zapisem nazwa jest normalizowana: niewidoczne znaki formatujące i kontrolne (np. zero-width space) są usuwane, a wszystkie białe znaki Unicode (także twarda spacja) zwijane do jednej spacji i obcinane na brzegach - nazwa złożona wyłącznie z takich znaków jest odrzucana walidacją.
-2. Firma ma status **Oczekuje** (`Pending`). Pracodawca może już tworzyć i edytować szkice ofert, ale każdy zapis, po którym oferta byłaby aktywna (`POST`/`PUT`/`PATCH` ze statusem `Active`), zwraca `403` (`Company must be approved before publishing offers`); szkic i zamknięcie oferty są dozwolone. W panelu formularz oferty ogranicza wtedy status do „Szkic” (plus bieżący status edytowanej oferty), a akcje „Opublikuj” / „Wznów” są ukryte.
-3. Admin w zakładce „Firmy” zatwierdza firmę (`POST /api/admin/companies/{id}/approve`) albo odrzuca ją z powodem (`POST /api/admin/companies/{id}/reject`). Powód widzi pracodawca w profilu firmy.
-4. Odrzucona firma po edycji profilu przez pracodawcę (`PUT /api/employer/company`, także bez zmian - przycisk „Wyślij ponownie”) wraca do statusu **Oczekuje** - to ponowne zgłoszenie do weryfikacji (powód odrzucenia i data decyzji są czyszczone).
-5. Zatwierdzona firma wraca do statusu **Oczekuje**, gdy pracodawca zmieni jej nazwę (inaczej niż tylko wielkością liter lub odstępami) albo stronę www - chroni to przed podszyciem się pod inną markę po weryfikacji. Do ponownego zatwierdzenia profil i oferty firmy nie są widoczne publicznie (panel pracodawcy ostrzega o tym przed zapisem). Zmiana samego opisu lub lokalizacji nie zmienia statusu, a edycja przez admina (`PUT /api/admin/companies/{id}`) nigdy go nie zmienia.
+| Role | E-mail | Password |
+| --- | --- | --- |
+| Admin | `admin@jobboard.com`, `superadmin@jobboard.com` | Development: `Admin123!`; Docker: `ADMIN_PASSWORD` from `.env` (printed by `docker-up.ps1`) |
+| Candidate | `jan.kowalski@example.com` (also `anna.nowak@`, `piotr.wisniewski@`, `maria.wojcik@`, `tomasz.kaminski@example.com`) | `User123!` |
+| Employer (approved company: TechCorp Solutions) | `rekruter@techcorp.pl` | `Employer123!` |
+| Employer (pending company: Nowa Firma Sp. z o.o.) | `rekruter@nowafirma.pl` | `Employer123!` |
 
-Publicznie widoczne są tylko firmy zatwierdzone (`GET /api/companies`, profil `GET /api/companies/{id}`) i tylko ich oferty: odrzucenie firmy ukrywa jej oferty z listy, szczegółów i aplikowania (`404`), ale ich nie usuwa. Admin może też dodać firmę od razu zatwierdzoną, edytować ją i usunąć (tylko firmę bez ofert i bez kont pracodawców). Przy tworzeniu oferty admin wskazuje firmę (`companyId`), pracodawca zawsze publikuje w swojej.
+The seed also creates demo companies, offers, categories and skills. A demo employer account that exists without its company (e.g. after rolling `AddCompanies` back and forward) is linked to its company again at startup (a missing company is created). On startup the demo categories are created when none exist and demo offers without any taxonomy are filled in.
 
-Szczegóły kontraktu API:
+## How it works
 
-- `companyId` oferty: admin musi go podać (brak - `400` z błędem walidacji pola `CompanyId`, nieistniejąca firma - `400` `Company not found`), pracodawcy jest ignorowany (zawsze jego firma). Konto pracodawcy bez firmy (nie powinno wystąpić) dostaje `403` `Employer account is not linked to a company`.
-- `CompanyDto`: `status`, `rejectionReason` i `reviewedAt` są wypełniane tylko dla admina i członków firmy (publicznie `null`), `membersCount` tylko w `/api/admin/companies`. `activeJobsCount` to liczba ofert widocznych publicznie (aktywnych i niewygasłych) - dla firmy niezatwierdzonej `0`.
-- Pracodawca innej firmy widzi publiczną ofertę (`GET /api/jobs/{id}`) jak każdy; `404` dotyczy operacji zarządzania cudzymi ofertami i aplikacjami.
-- W panelu admina filtr firm w zakładce ofert korzysta z `/api/admin/companies` (wszystkie statusy), a wybór firmy w formularzu oferty z `/api/companies` (tylko zatwierdzone).
+### Roles and companies
 
-Migracja `AddCompanies` zamienia tekstową nazwę firmy w ofertach na firmy: dla każdej nazwy (po usunięciu zbędnych odstępów, bez rozróżniania wielkości liter) powstaje zatwierdzona firma (bez daty weryfikacji) z datą utworzenia najstarszej oferty i pisownią nazwy z tej oferty. Cofnięcie migracji przywraca nazwę firmy w ofertach (w ujednoliconej pisowni); przypisania pracodawców i firmy bez ofert są wtedy tracone.
+The role is carried in the JWT (`role` claim), but the employer's company is read from the database on every request, so a changed assignment applies without signing in again. Resource access is checked in one place (`ICurrentUserAccess`): an admin manages everything, an employer only the offers and applications of their own company - another company's offer or application returns `404` (without revealing that it exists). Another company's employer still sees public offers (`GET /api/jobs/{id}`) like everyone else.
 
-## Cykl życia ofert
+Company verification:
 
-Oferta ma status zapisany w bazie oraz opcjonalną datę ważności (`expiresAt`, UTC):
+1. An employer registers with a company (`POST /api/auth/register-employer`, the "Rekrutuję" switch on the registration page). The account and the company are created in one transaction. Company names are unique regardless of case and diacritics (collation `utf8mb4_0900_ai_ci` - on purpose: "Zażółć" and "Zazolc" are the same brand); a taken name returns `400`. Before saving, invisible formatting and control characters (e.g. a zero-width space) are removed and all Unicode whitespace (including a non-breaking space) is collapsed to one space and trimmed; a name made only of such characters fails validation.
+2. The company is **Pending**. The employer can already create and edit draft offers, but every write that would leave an offer active (`POST`/`PUT`/`PATCH` with status `Active`) returns `403` `Company must be approved before publishing offers`; drafts and closing are allowed. The panel then limits the offer form to "Draft" (plus the current status of the edited offer) and hides "Publish" / "Resume".
+3. An admin approves the company (`POST /api/admin/companies/{id}/approve`) or rejects it with a reason (`POST /api/admin/companies/{id}/reject`). The employer sees the reason in the company profile.
+4. A rejected company goes back to **Pending** when the employer saves the profile (`PUT /api/employer/company`, also without changes - the "Send again" button); the reason and the decision date are cleared.
+5. An approved company goes back to **Pending** when the employer changes its name (other than case or whitespace) or website - this prevents impersonating another brand after verification. Until it is approved again, its profile and offers are not public (the panel warns before saving). Changing only the description or location keeps the status, and an admin's edit (`PUT /api/admin/companies/{id}`) never changes it.
 
-| Stan | Znaczenie | Lista publiczna | Aplikowanie |
+Rejecting a company hides its offers from the list, the details and applying (`404`) without deleting them. An admin can also add an already approved company, edit it and delete it (only without offers and employer accounts). When creating an offer an admin must pass `companyId` (missing - `400` on `CompanyId`, unknown - `400` `Company not found`); for an employer it is ignored and the offer always belongs to their company. An employer account without a company (should not happen) gets `403` `Employer account is not linked to a company`.
+
+`CompanyDto`: `status`, `rejectionReason` and `reviewedAt` are filled only for admins and company members (publicly `null`), `membersCount` only in `/api/admin/companies`; `activeJobsCount` is the number of publicly visible offers (`0` for an unapproved company). In the admin panel the company filter of the offers tab uses `/api/admin/companies` (all statuses), while the company picker in the offer form uses `/api/companies` (approved only).
+
+The `AddCompanies` migration turned the text company name of offers into companies: for every name (whitespace-normalized, case-insensitive) an approved company was created with the creation date of its oldest offer and the spelling from that offer. Rolling it back restores the names on the offers (in the unified spelling); employer assignments and companies without offers are lost then.
+
+### Offer lifecycle
+
+An offer has a stored status and an optional expiry date (`expiresAt`, UTC):
+
+| State | Meaning | Public list | Applying |
 | --- | --- | --- | --- |
-| Szkic (`Draft`) | oferta w przygotowaniu | nie (szczegóły tylko dla admina i pracodawcy firmy) | nie |
-| Aktywna (`Active`) | opublikowana, bez daty lub z datą w przyszłości | tak | tak |
-| Wygasła | `Active` z datą ważności w przeszłości - stan wyliczany, nie zapisywany | nie (szczegóły z banerem) | nie |
-| Zamknięta (`Closed`) | rekrutacja zakończona | nie (szczegóły z banerem) | nie |
+| Draft (`Draft`) | in preparation | no (details only for admins and the company's employers) | no |
+| Active (`Active`) | published, without an expiry date or with one in the future | yes | yes |
+| Expired | `Active` with an expiry date in the past - computed, not stored | no (details with a banner) | no |
+| Closed (`Closed`) | recruitment finished | no (details with a banner) | no |
 
-Admin i pracodawca (tylko oferty swojej firmy) zarządzają ofertami w panelu (`GET /api/jobs/manage` z filtrem `state=draft|active|expired|closed`): szybkie akcje Opublikuj / Zamknij / Wznów (`PATCH /api/jobs/{id}/status`) oraz status i datę „Aktualna do” w formularzu oferty (oferta jest ważna do końca wybranego dnia). Aktywnej oferty nie można opublikować, wznowić ani zapisać z nową datą ważności w przeszłości - trzeba ją przedłużyć albo zamknąć; wygasłą ofertę można natomiast edytować bez zmiany daty (pozostaje wygasła). `PUT /api/jobs/{id}` bez pola `status` zachowuje obecny status oferty (`POST` bez statusu tworzy ofertę aktywną). Istniejące oferty po migracji pozostają aktywne i bezterminowe.
+Admins and employers (own company only) manage offers in the panel (`GET /api/jobs/manage` with `state=draft|active|expired|closed`): quick actions Publish / Close / Resume (`PATCH /api/jobs/{id}/status`) and the status and "valid until" date in the offer form (an offer is valid until the end of the chosen day). An active offer cannot be published, resumed or saved with a new expiry date in the past - extend or close it instead; an expired offer can be edited without changing the date (it stays expired). `PUT /api/jobs/{id}` without `status` keeps the current status (`POST` without a status creates an active offer). Offers that existed before the lifecycle migration stay active without an expiry date.
 
-Usunięcie oferty (`DELETE /api/jobs/{id}`): admin usuwa ofertę razem z jej aplikacjami, pracodawca tylko ofertę bez żadnych aplikacji (także wycofanych) - ofertę z aplikacjami kandydatów zwraca `400` (`Job offer has applications - close it instead`), można ją natomiast zamknąć.
+Deleting an offer (`DELETE /api/jobs/{id}`): an admin deletes it with its applications, an employer only an offer without any applications (including withdrawn ones) - otherwise `400` `Job offer has applications - close it instead`; it can be closed instead.
 
-## Job taxonomy and filters
+### Job taxonomy, filters and facets
 
 Every offer can have a category, a seniority level, contract types, a salary currency and period, and up to 15 skills. The job list (`GET /api/jobs`, and `GET /api/jobs/manage` for admins and employers) accepts these optional filters, all combined with AND:
 
 | Parameter | Meaning |
 | --- | --- |
+| `searchTerm`, `location` | text search, up to 100 characters each |
 | `category` / `categoryId` | category slug (`[a-z0-9-]`, up to 100 characters) and/or id |
 | `seniority` | comma-separated levels (`0` intern, `1` junior, `2` mid, `3` senior, `4` lead, `5` manager); any of them matches |
 | `contractTypes` | bit mask (`1` employment, `2` B2B, `4` mandate, `8` specific-task, `16` internship, `0..31`); an offer matches when it has any selected type; `0` means no filter |
 | `workType` | comma-separated work types (`0,1`); a single number or name still works |
 | `skills` | comma-separated skill names (up to 10, 50 characters each, case-insensitive); an offer must have all of them |
 | `currency` | salary currency (`0` PLN, `1` EUR, `2` USD, `3` GBP); `0` is a real filter. `minSalary` / `maxSalary` are compared in the offer's own currency, without conversion |
+| `orderBy` | `newest` (default), `oldest`, `salaryHigh`, `salaryLow`, `titleAsc`, `titleDesc`, `companyAsc`, `companyDesc`, `locationAsc`, `locationDesc` |
 
-Invalid or oversized values return `400`. All filters run in SQL; the list loads category and skills in the same query.
+Invalid or oversized values return `400`. All filters run in SQL; the list loads category and skills in the same query and is backed by the composite index `(Status, ExpiresAt, CreatedAt)`. Lists are paged with a `Pagination` header (at most 50 items per page, page numbers capped at 100,000 - a page past the end is empty, `200`).
 
-`GET /api/jobs/facets` (public, same filter parameters, no paging) returns `total` and the counts for categories, seniority, single contract-type bits, work types and the 20 most common skills. The counts of a facet ignore that facet's own filter (so a user can widen the selection) and apply all the others; values with a zero count are omitted. `GET /api/categories` lists the categories with the number of publicly visible offers, `GET /api/skills?search=&limit=` suggests skills used by publicly visible offers (substring match, prefixes first, then by popularity; `limit` 1-20, default 10). Admins manage categories with `POST/PUT/DELETE /api/admin/categories`; deleting a category keeps its offers and clears their category.
+`GET /api/jobs/facets` (public, the same filter parameters, no paging) returns `total` and the counts for categories, seniority, single contract-type bits, work types and the 20 most common skills. The counts of a facet ignore that facet's own filter (so the selection can be widened) and apply all the others; values with a zero count are omitted. `GET /api/categories` lists the categories with the number of publicly visible offers, and `GET /api/skills?search=&limit=` suggests skills used by publicly visible offers (substring match, prefixes first, then by popularity; `limit` 1-20, default 10). Admins manage categories with `POST/PUT/DELETE /api/admin/categories`; deleting a category keeps its offers and clears their category.
 
-When an offer is created or updated (`PUT` replaces all taxonomy fields), unknown skills are created automatically and matched to existing ones case-insensitively; a skill name cannot contain a comma (it is the list separator in filters). The migration `AddJobTaxonomy` gives existing offers PLN, monthly salaries, no contract types, no level and no category; on startup the demo categories are created when none exist and the demo offers without any taxonomy are filled in.
+When an offer is created or updated (`PUT` replaces all taxonomy fields), unknown skills are created automatically and matched to existing ones case-insensitively; a skill name cannot contain a comma (the list separator in filters). The `AddJobTaxonomy` migration gives existing offers PLN, monthly salaries, no contract types, no level and no category.
 
-## Proces rekrutacji
+### Recruitment workflow
 
-Każda aplikacja ma status, a każda jego zmiana (także złożenie aplikacji) trafia do historii z datą, autorem i opcjonalnym komentarzem:
+Every application has a status, and every change (including submitting) goes to a history with the date, the author and an optional comment:
 
-`Złożona` → `W analizie` → `Rozmowa` → `Oferta` → `Zatrudniony`, w każdej chwili `Odrzucona`; kandydat może też `Wycofać` aplikację.
+`Submitted` → `InReview` → `Interview` → `Offered` → `Hired`, at any point `Rejected`; the candidate can also withdraw (`Withdrawn`).
 
-- **Rekruter (admin albo pracodawca firmy oferty)** zmienia status w panelu (`PUT /api/jobapplications/{id}/status`) i może dodać komentarz - **komentarz jest widoczny dla kandydata**. Ten sam status z komentarzem zapisuje notatkę bez zmiany statusu. Statusu „Wycofana” nie ustawia rekruter, a aplikacji wycofanej nie można już zmieniać. Trwale usunąć aplikację może tylko admin.
-- **Kandydat** widzi status i historię w „Moich aplikacjach” (bez danych autorów zmian) i może wycofać aplikację na etapie Złożona / W analizie / Rozmowa / Oferta (`POST /api/jobapplications/{id}/withdraw`). Po wycofaniu może aplikować ponownie, dopóki oferta jest aktywna - reaktywowana zostaje ta sama aplikacja (z nową notatką i datą).
-- Aplikować można tylko na oferty aktywne i niewygasłe (próba aplikowania na szkic zwraca dla kandydata `404`, tak jak dla nieistniejącej oferty).
-- Równoległe zmiany tej samej aplikacji (także notatki i wycofanie) są chronione tokenem współbieżności: żądanie oparte na nieaktualnym stanie dostaje `409` (`Application status was changed by another request`), a równoległa ponowna aplikacja - `400` (`You have already applied to this job`).
+- **The recruiter (an admin or an employer of the offer's company)** changes the status in the panel (`PUT /api/jobapplications/{id}/status`) and can add a comment - **the comment is visible to the candidate**. The same status with a comment stores a note without changing the status. A recruiter cannot set "Withdrawn", and a withdrawn application cannot be changed. Only an admin can delete an application.
+- **The candidate** sees the status and history in "My applications" (without the authors of the changes) and can withdraw while the application is Submitted / InReview / Interview / Offered (`POST /api/jobapplications/{id}/withdraw`). After withdrawing they can apply again while the offer is active - the same application is reactivated with a new note and date.
+- Only active, unexpired offers accept applications (applying to a draft returns `404` for a candidate, like a missing offer).
+- Concurrent changes of the same application (including notes and withdrawal) are protected by a concurrency token: a request based on a stale state gets `409` `Application status was changed by another request`, and a concurrent re-application gets `400` `You have already applied to this job`.
 
-## Załączniki aplikacji
+### Application attachments
 
-Kandydat może dołączyć do aplikacji kilka plików - CV, list motywacyjny, portfolio albo inny dokument - przy aplikowaniu (najpierw powstaje aplikacja, potem jednym żądaniem wgrywane są pliki) albo później w „Moich aplikacjach”. Dodawać może, dopóki aplikacja jest na etapie Złożona / W analizie / Rozmowa / Oferta; usunąć załącznik może zawsze (także po decyzji końcowej i wycofaniu). Rekruter (admin albo pracodawca firmy oferty) pobiera załączniki z zakładki aplikacji.
+A candidate can attach several files - a CV, a cover letter, a portfolio or another document - when applying (the application is created first, then the files are uploaded in one request) or later in "My applications". Files can be added while the application is Submitted / InReview / Interview / Offered and removed at any time (also after a final decision and after withdrawal). The recruiter downloads them from the applications tab.
 
-| Endpoint | Kto | Wynik |
+| Endpoint | Who | Result |
 | --- | --- | --- |
-| `POST /api/jobapplications/{id}/attachments` (multipart: pola `files` i równoległe pola `kinds`) | właściciel aplikacji | `201` z aplikacją (lista `attachments`) |
-| `DELETE /api/jobapplications/{id}/attachments/{attachmentId}` | właściciel aplikacji, w każdym statusie | `204`; brak załącznika - `404` `Attachment not found` |
-| `GET /api/jobapplications/{id}/attachments/{attachmentId}` | właściciel, admin, pracodawca firmy oferty | plik (`Content-Disposition: attachment; filename*=UTF-8''...`, `Content-Length`, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`) |
+| `POST /api/jobapplications/{id}/attachments` (multipart: `files` and parallel `kinds` fields) | application owner | `201` with the application (the `attachments` list) |
+| `POST /api/jobapplications/{id}/attachments/from-profile` `{ documentIds }` | application owner | `201`; copies profile documents as attachments (the same limits and statuses as an upload) |
+| `DELETE /api/jobapplications/{id}/attachments/{attachmentId}` | application owner, any status | `204`; missing - `404` `Attachment not found` |
+| `GET /api/jobapplications/{id}/attachments/{attachmentId}` | owner, admin, employer of the offer's company | the file (`Content-Disposition: attachment; filename*=UTF-8''...`, `Content-Length`, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`) |
 
-- Rodzaj (`kinds`, liczba): `0` CV, `1` list motywacyjny, `2` portfolio, `3` inny; i-te pole `kinds` dotyczy i-tego pliku, brak (albo za mało pól) - `3`, wartość spoza listy albo więcej pól niż plików - `400` `Invalid attachment kind`. Każda aplikacja w odpowiedziach API (także w listach) ma `attachments: [{ id, kind, fileName, size, uploadedAt }]` (wg rodzaju i daty dodania) i `attachmentsTotalSize`.
-- Dozwolone są PDF, DOCX, PNG i JPEG do 5 MB (5 242 880 B) na plik, najwyżej 10 plików i 25 MB (26 214 400 B) łącznie na aplikację (istniejące + nowe). Typ jest rozpoznawany po zawartości (PDF - `%PDF-`; PNG i JPEG - sygnatury; DOCX - archiwum ZIP z `[Content_Types].xml` i częściami `word/`), nie po rozszerzeniu ani typie podanym przez przeglądarkę; `Content-Type` i rozszerzenie nazwy ustala serwer. DOCX nie jest rozpakowywany: przed otwarciem archiwum sprawdzany jest rekord końca katalogu centralnego (bez ZIP64 i archiwów wieloczęściowych, katalog do 256 KB, kończący się tuż przed tym rekordem, maks. 1000 wpisów), a potem katalog (maks. 50 MB zadeklarowanej treści po rozpakowaniu) - inaczej plik jest odrzucany jak nieobsługiwany.
-- Wszystko albo nic: najpierw walidowane są wszystkie pliki żądania, potem zapisywane w magazynie, a na końcu - w transakcji z blokadą wiersza aplikacji, która sprawdza limity 10 plików i 25 MB także przy równoległych żądaniach - zapisywane są rekordy. Gdy limit przekroczy równoległe żądanie, zapisane pliki są usuwane. Gdy zapis w bazie skończy się wyjątkiem, usuwane są tylko pliki bez rekordu (wyjątek mógł przyjść już po zatwierdzeniu transakcji); jeśli nie da się tego sprawdzić, pliki zostają (osierocony plik zamiast rekordu bez pliku).
-- Błędy (`400`): `Unsupported file type - upload a PDF, DOCX, PNG or JPEG file`, `File is too large - maximum size is 5 MB`, `File is empty`, `Total size of attachments cannot exceed 25 MB`, `An application can have at most 10 attachments`, `No file uploaded - send files in the 'files' form field`, `Invalid multipart form data` (także ucięte żądanie), `Attachments cannot be added in the current application status`. Żądanie z `Content-Length` ponad 26 MB jest odrzucane (`400` `Total size of attachments cannot exceed 25 MB`) bez czytania treści; w stacku Dockera nginx przepuszcza do 26 MB tylko na tym endpoincie i na `POST /api/account/documents` (`client_max_body_size 26m`), resztę `/api/` ogranicza do 1 MB.
-- Właściciel i status aplikacji są sprawdzane, zanim serwer zacznie czytać treść żądania - cudza albo nieistniejąca aplikacja (także dla pracodawcy innej firmy) zwraca od razu `404`.
-- Upload jest ograniczony do 30 żądań na 10 minut na użytkownika (okno stałe liczone od pierwszego żądania, `RateLimiting:Uploads:PermitLimit` i `RateLimiting:Uploads:WindowSeconds`) i do 8 uploadów naraz łącznie dla wszystkich użytkowników (`RateLimiting:Uploads:ConcurrencyLimit`, bez kolejki). Po przekroczeniu - `429` `Too many requests - try again later`; po wyczerpaniu okna z nagłówkiem `Retry-After` = liczba sekund do końca okna (a rejection by the concurrency limit carries `Retry-After: 1`). Odrzucenie przez limit równoległości nie zużywa limitu okna. Stan limitów jest w pamięci procesu (przy kilku instancjach backendu - osobno w każdej).
-- Nazwa pliku jest zapisywana po sanityzacji (bez ścieżki, znaków sterujących i formatujących, bez kropek i spacji na końcu, nazwy zarezerwowane Windows - `CON`, `NUL`, `COM1`… - z prefiksem `_`, maks. 255 znaków, rozszerzenie zgodne z wykrytym typem) i służy tylko do wyświetlania i pobierania. Plik w magazynie ma klucz generowany przez serwer (`attachments/{applicationId}/{guid}.pdf|docx|png|jpg`), który nie trafia do API.
-- Usunięcie załącznika, aplikacji lub oferty przez admina i reset danych demo usuwają też pliki (po zatwierdzeniu zmian w bazie; błąd usuwania pliku jest tylko logowany). Wycofanie aplikacji nie usuwa załączników, a ponowna aplikacja po wycofaniu je zachowuje.
+- Kind (`kinds`, a number): `0` CV, `1` cover letter, `2` portfolio, `3` other; the i-th `kinds` field belongs to the i-th file, a missing one means `3`, a value outside the list or more fields than files - `400` `Invalid attachment kind`. Every application in API responses (lists too) has `attachments: [{ id, kind, fileName, size, uploadedAt }]` (by kind and upload date) and `attachmentsTotalSize`.
+- Allowed: PDF, DOCX, PNG and JPEG, up to 5 MB (5,242,880 B) per file, at most 10 files and 25 MB (26,214,400 B) per application (existing + new). The type is detected from the content (PDF - `%PDF-`; PNG and JPEG - signatures; DOCX - a ZIP archive with `[Content_Types].xml` and `word/` parts), not from the extension or the browser's content type; the server sets `Content-Type` and the extension. DOCX is never extracted: the end-of-central-directory record is checked first (no ZIP64 or multi-part archives, a directory of at most 256 KB ending right before that record, at most 1,000 entries), then the directory (at most 50 MB of declared uncompressed content) - otherwise the file is rejected as unsupported.
+- All or nothing: all files of a request are validated first, then written to storage, and finally - in a transaction holding a row lock on the application, which enforces the 10-file and 25 MB limits under concurrent requests - the records are saved. When a concurrent request exceeds a limit, the stored files are deleted. When saving to the database throws, only files without a record are deleted (the exception may come after the commit); if that cannot be checked, the files stay (an orphaned file rather than a record without a file).
+- Errors (`400`): `Unsupported file type - upload a PDF, DOCX, PNG or JPEG file`, `File is too large - maximum size is 5 MB`, `File is empty`, `Total size of attachments cannot exceed 25 MB`, `An application can have at most 10 attachments`, `No file uploaded - send files in the 'files' form field`, `Invalid multipart form data` (also a truncated request), `Attachments cannot be added in the current application status`. A request with `Content-Length` above 26 MB is rejected (`400` `Total size of attachments cannot exceed 25 MB`) without reading the body; in the Docker stack nginx allows up to 26 MB only on this endpoint and on `POST /api/account/documents` (`client_max_body_size 26m`) and limits the rest of `/api/` to 1 MB.
+- The owner and the status are checked before the server starts reading the body - another user's or a missing application (also for another company's employer) returns `404` at once.
+- File names are sanitized (no path, control or formatting characters, no trailing dots or spaces, Windows reserved names such as `CON`, `NUL`, `COM1` prefixed with `_`, at most 255 characters, the extension matching the detected type) and are used only for display and download. The stored object has a server-generated key (`attachments/{applicationId}/{guid}.pdf|docx|png|jpg`) that never reaches the API.
+- Deleting an attachment, an application or an offer (admin) and the demo data reset also delete the files (after the database commit; a failure to delete a file is only logged). Withdrawing keeps the attachments, and re-applying after a withdrawal keeps them too.
+- The frontend checks type, size, count and total size before sending (together with the files the application already has, also when re-applying), sends all files in one request with a progress bar, and defaults the kind of a new file to CV until the application has one, then "Other". If the upload after applying fails or the user leaves the page, the application stays submitted and the message points to "My applications"; Escape in the upload dialog cancels the upload.
 
-Nieobsłużony błąd serwera (np. awaria magazynu plików) zwraca `500` `{"message":"An unexpected error occurred"}` bez szczegółów - wyjątek trafia tylko do logu (poziom Error). Błąd klienta przy odczycie żądania (`BadHttpRequestException`) dostaje swój kod statusu i ogólny komunikat - `413` `Request body too large`, `408` `Request timed out`, inne `400` `Invalid request` - i jest logowany jako ostrzeżenie.
-
-Treść żądania jest ograniczona do 1 MB (`RequestBodyLimitMiddleware` i globalny `MaxRequestBodySize` Kestrela); endpoint, który przyjmuje pliki, podnosi limit atrybutem `[RequestSizeLimit(bajty)]` (upload załączników - 26 MB). Limit działa także niezależnie od serwera (strumień z limitem), np. w testach na `TestServer` i dla żądań bez `Content-Length`.
-
-### Interfejs i ograniczenia
-
-- Frontend sprawdza typ, rozmiar, liczbę i sumę plików przed wysłaniem (razem z załącznikami, które aplikacja już ma - także przy ponownym aplikowaniu po wycofaniu) i wysyła wszystkie pliki jednym żądaniem z paskiem postępu. Domyślny rodzaj nowego pliku to CV, dopóki aplikacja go nie ma, potem „Inny”. Jeśli wysyłanie plików po złożeniu aplikacji się nie uda albo użytkownik opuści stronę, aplikacja zostaje złożona, a komunikat odsyła do „Moich aplikacji”; Escape w dialogu dodawania przerywa wysyłanie.
-- Żądanie bez `Content-Length` jest odrzucane dopiero po przesłaniu 26 MB; Kestrel zrywa wtedy połączenie, więc przeglądarka może nie dostać JSON-a - dlatego frontend waliduje rozmiar wcześniej.
-- Model „jedno CV na aplikację” z wcześniejszej wersji tej funkcji nigdy nie trafił do `main` - jego migracja (`AddApplicationCv`) została zastąpiona przez `AddApplicationAttachments`. Bazy deweloperskie, na których ją kiedyś zaaplikowano, mają puste kolumny `Cv*` w `JobApplications` i wpis w `__EFMigrationsHistory` (nieszkodliwe, do ręcznego usunięcia).
-
-### Magazyn plików
-
-Backend zapisuje pliki przez `IFileStorage`, wybierany ustawieniem `Storage:Provider`:
-
-| Ustawienie | Znaczenie |
-| --- | --- |
-| `Storage:Provider` | `Local` (domyślnie) albo `S3` |
-| `Storage:LocalPath` | katalog plików dla `Local`; domyślnie `<katalog aplikacji>/storage` (`Backend/storage`, w `.gitignore`) |
-| `Storage:S3:ServiceUrl` | adres magazynu zgodnego z S3, np. `http://storage:8333` (wymagany dla `S3`) |
-| `Storage:S3:Bucket` | bucket (domyślnie `jobboard`; tworzony przy starcie backendu, jeśli nie istnieje) |
-| `Storage:S3:AccessKey`, `Storage:S3:SecretKey` | klucze dostępu (wymagane dla `S3`) |
-
-Niepełna konfiguracja S3 albo nieznany dostawca przerywają start aplikacji czytelnym błędem. W stacku Dockera backend używa `S3` z usługą `storage` (SeaweedFS 4.50): przy każdym starcie kontenera generowany jest plik konfiguracyjny S3 SeaweedFS (`-s3.config`) z jedną tożsamością o kluczach `S3_ACCESS_KEY` / `S3_SECRET_KEY` z `.env`, więc magazyn nie przyjmuje żądań bez podpisu. Uruchomienie lokalne i testy używają domyślnie `Local`.
-
-## User account and e-mails
+### User account and e-mails
 
 Every signed-in user has a "Moje konto" page (`/account`): the profile (first and last name, phone, headline, location, LinkedIn, about), password change, account deletion (confirmed with the password) and notification settings; candidates also get profile documents (e.g. a default CV) and "Zapisane oferty" (`/saved-jobs`, heart buttons on the list and on the offer details).
 
@@ -178,71 +237,24 @@ Every signed-in user has a "Moje konto" page (`/account`): the profile (first an
 | `DELETE /api/account` `{ password }` | candidate, employer | `204`; deletes the account with its applications, attachments, documents, saved offers and files; an admin and the last member of a company with offers get `400` |
 | `GET/PUT /api/account/notifications` | signed in | `{ applicationStatusChanged, newApplication, companyReview }` (all `true` by default) |
 | `GET/POST /api/account/documents`, `GET/DELETE /api/account/documents/{id}` | candidate | profile documents: uploaded like application attachments (the same types, 5 MB per file), at most 10 documents and 25 MB per profile; `POST` returns `201` with the full list |
-| `POST /api/jobapplications/{id}/attachments/from-profile` `{ documentIds }` | application owner | `201`; copies profile documents as attachments (the same limits and statuses as an upload) |
-| `PUT/DELETE /api/saved-jobs/{jobId}`, `GET /api/saved-jobs`, `GET /api/saved-jobs/ids` | candidate | saved offers (idempotent `204`; the list is paged, newest first, and includes expired and closed offers) |
+| `PUT/DELETE /api/saved-jobs/{jobId}`, `GET /api/saved-jobs`, `GET /api/saved-jobs/ids` | candidate | saved offers (idempotent `204`; the list is paged, newest first, includes expired and closed offers, with category and skills) |
 | `POST /api/auth/confirm-email` `{ userId, token }` | anyone | `204`; an invalid or expired link - `400` |
 | `POST /api/auth/resend-confirmation` | signed in | `204`; an already confirmed address - `400` |
 | `POST /api/auth/forgot-password` `{ email }` | anyone | always `202` (does not reveal whether the account exists) |
 | `POST /api/auth/reset-password` `{ email, token, newPassword }` | anyone | `204`; an invalid or expired link - `400`, a weak password - `400` with validation errors |
 
-- **Address confirmation**: registration sends an e-mail with a `<frontend>/confirm-email?userId=…&token=…` link (valid for 3 days, can be resent from the banner). An unconfirmed address blocks nothing - the frontend only shows a banner (`emailConfirmed` in the login and registration responses).
-- **Password reset**: the `<frontend>/reset-password?email=…&token=…` link is valid for 1 hour and works once. A reset, a password change and an account deletion change the security stamp - JWT tokens issued earlier get `401`. A reset also confirms the e-mail address and lifts the account lockout. The tokens in the links are Base64Url-encoded (`+`, `/` and `=` would break in a URL).
-- **Notifications** (according to the settings): the candidate - confirmation of a submitted application and its status changes (with the recruiter's comment), the company's employers - a new application (without the candidate's data) and the admin's decision about the company. Notifications are sent only to confirmed e-mail addresses (an unconfirmed address may belong to someone else); security e-mails (confirmation, password reset) are always sent, to unconfirmed addresses too.
-- A wrong password when changing the password or deleting the account counts towards the account lockout just like a failed login (`423` after 5 attempts).
-- **Limits**: `forgot-password` (per client IP) and `resend-confirmation` (per user) - 5 requests per 15 minutes (`RateLimiting:AccountEmails`), then `429` with `Retry-After`; on top of that at most 3 password reset e-mails per account per hour. These two endpoints use only the `account-emails` policy - their own `[EnableRateLimiting]` replaces the `auth` policy of `AuthController` (ASP.NET Core applies the attribute closest to the endpoint, so the limits do not add up); the other `AuthController` endpoints, including `confirm-email` and `reset-password`, fall under `auth` (see "Security"). The client IP is the real address from `X-Forwarded-For` (see "Security"), so in the Docker stack every client behind nginx has its own limit. Profile document uploads and `from-profile` count towards the upload limit.
+- **Address confirmation**: registration sends a `<frontend>/confirm-email?userId=…&token=…` link (valid for 3 days, can be resent from the banner). An unconfirmed address blocks nothing - the frontend only shows a banner (`emailConfirmed` in the login and registration responses).
+- **Password reset**: the `<frontend>/reset-password?email=…&token=…` link is valid for 1 hour and works once. A reset, a password change and an account deletion change the security stamp, so JWT tokens issued earlier get `401`. A reset also confirms the e-mail address and lifts the account lockout. The tokens in the links are Base64Url-encoded.
+- **Notifications** (according to the settings): the candidate gets a confirmation of a submitted application and its status changes (with the recruiter's comment), the company's employers a new application (without the candidate's data) and the admin's decision about the company. Notifications go only to confirmed addresses (an unconfirmed address may belong to someone else); security e-mails (confirmation, password reset) are always sent.
+- A wrong password when changing the password or deleting the account counts towards the account lockout like a failed login (`423` after 5 attempts).
 
-### Sending e-mails (outbox) and Mailpit
+E-mails are not sent during the request: each one is stored in `EmailMessages` in the same transaction as the event and sent in the background by `EmailOutboxProcessor` over SMTP (MailKit). A failed attempt is retried with a growing delay (30 s, 60 s, … up to 1 h; at most 8 attempts; a permanent rejection stops the retries at once), and the status, the number of attempts and the last error are kept. After sending (or the final failure) the body is cleared, and entries older than 30 days are deleted. In the Docker stack all e-mails go to Mailpit - nothing is sent outside.
 
-An e-mail is not sent during the request: it is stored in the `EmailMessages` table in the same transaction as the event (e.g. a registration or an application status change) and sent in the background by `EmailOutboxProcessor` over SMTP (MailKit). A failed attempt is retried with a growing delay (30 s, 60 s, … up to 1 h; at most 8 attempts, a permanent rejection by the server stops the retries at once) - the status, the number of attempts and the last error are kept in the table. After sending (or the final failure) the message body is cleared, and entries older than 30 days are deleted. Sending is handled by a single backend instance.
+The Data Protection keys that sign the tokens in the links are stored in the database (`DataProtectionKeys`), so the links survive a rebuild of the backend container. The keys are not encrypted (hence the `No XML encryptor configured` warning at startup).
 
-In the Docker stack all e-mails go to Mailpit - open `http://localhost:8025` (`docker-up.ps1` prints the port) to see e.g. the confirmation link or the password reset link. Nothing is sent outside.
+### Statistics
 
-| Setting | Meaning |
-| --- | --- |
-| `Frontend:BaseUrl` | the frontend address used in the links (default `http://localhost:4200`; must be an absolute http(s) URL) |
-| `Email:Smtp:Host`, `Email:Smtp:Port` | the SMTP server; without a host the e-mails wait in the outbox (a warning in the log) |
-| `Email:Smtp:Security` | `None` (e.g. Mailpit), `StartTls`, `SslOnConnect`, `StartTlsWhenAvailable`, `Auto` (default) |
-| `Email:Smtp:UserName`, `Email:Smtp:Password` | optional authentication |
-| `Email:FromAddress`, `Email:FromName` | the sender (default `no-reply@jobboard.local`, "Job Board") |
-| `Email:Outbox:*` | `PollIntervalSeconds` (10), `BatchSize` (20), `MaxAttempts` (8), `InitialRetryDelaySeconds` (30), `MaxRetryDelaySeconds` (3600), `SendTimeoutSeconds` (30), `RetentionDays` (30) |
-
-The Data Protection keys that sign the tokens in the links are stored in the database (the `DataProtectionKeys` table), so the links keep working after the backend container is rebuilt (the keys are not encrypted - hence the `No XML encryptor configured` warning in the log at startup; the project is local only).
-
-## Security
-
-The project runs locally only (a portfolio project, the Docker stack listens on `127.0.0.1`), but the backend and nginx are hardened as if the application were exposed to a network. This section lists what is protected and the deliberate trade-offs that follow from the local scope.
-
-### What is protected
-
-- **Login and registration** (the whole `AuthController`, rate limiting policy `auth` - new authentication endpoints such as e-mail confirmation and password reset inherit it automatically; only `forgot-password` and `resend-confirmation` use the `account-emails` policy instead - see "User account and e-mails"): at most 10 requests per minute per client IP (`RateLimiting:Auth:PermitLimit`, `RateLimiting:Auth:WindowSeconds`) and 4 at once overall (`RateLimiting:Auth:ConcurrencyLimit`, no queue - password hashing is CPU-heavy). Exceeding a limit returns `429` `Too many requests - try again later` with `Retry-After` (seconds until the end of the window, `1` for the concurrency limit). The limits are validated at startup (a value below 1 stops the startup).
-- **Account lockout** after 5 failed attempts for 5 minutes without account enumeration (see the paragraph under the test accounts): an unknown account and a wrong password give the same `401` in comparable time, `423` only with the correct password. Parallel attempts for one account are serialized (a lock per normalized email whose entries are removed after use), so the counter never loses an attempt.
-- **Input validation**: email up to 256 characters and password up to 100 in every DTO with credentials (login, registration, password change and reset, account deletion - `CredentialLimits`, the same password limit as in the frontend forms), search terms and the location filter of the lists up to 100 characters (`400`), page numbers capped at 100,000 (a page past the end is empty - `200`, not `500`).
-- **Public lists** (`GET /api/jobs`, `GET /api/jobs/facets`, `GET /api/companies`, `GET /api/categories`, `GET /api/skills`, including search - one shared limit): 120 requests per minute per client IP (`RateLimiting:PublicLists:*`); the job list is backed by the composite index `(Status, ExpiresAt, CreatedAt)`.
-- **Client IP behind nginx**: the per-IP limits see the real address - the backend reads `X-Forwarded-For` (`UseForwardedHeaders`, last entry only, i.e. the one appended by nginx, so spoofed earlier entries do not bypass the limit).
-- **JWT**: HS256 only, 30 s clock skew, 120-minute lifetime (`JwtSettings:ExpirationInMinutes`), a hash of the security stamp instead of the stamp itself; every request checks that the account still exists and the stamp is current.
-- **Headers** - nginx (frontend and proxied API): `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (no camera, microphone, geolocation, payment, USB), `Cross-Origin-Opener-Policy: same-origin`, no nginx version (`server_tokens off`); gzip compression; files with a content hash in the name (`*.js`, `*.css`, `*.woff2` from the build) get `Cache-Control: public, max-age=31536000, immutable`, `index.html` gets `no-cache`. The headers are set only at `server` level (`add_header` in a `location` block drops all inherited ones - guarded by `NginxConfigTests`). Backend: no `Server` header, `X-Content-Type-Options: nosniff` on every API response, `Cache-Control: no-store` on responses with user data (requests with a token and endpoints that require login).
-- **CSP**: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`. Scripts come only from the own origin, with no exceptions: the production build does not inline critical CSS (`optimization.styles.inlineCritical: false` in `angular.json`), because that feature adds an inline script to `index.html` that switches the stylesheet on. Alternatives considered: the hash of that script in the header (fragile - it changes with the Angular version, and a stale hash leaves the page unstyled) and `security.autoCsp` (a `<meta>` CSP with the hash of a loader script that contains the `main-<hash>.js` name, so it changes with every build - the static nginx header would then have to allow `'unsafe-inline'`). The cost: the stylesheet (about 6 kB compressed) is render-blocking, which is negligible for an SPA that renders only after `main.js` anyway. `'unsafe-inline'` in `style-src` is needed because Angular and Angular Material inject component styles.
-- **Swagger** only in Development or with `Swagger:Enabled=true` (`SWAGGER_ENABLED` in the Docker stack, default `true`). The backend does not use `UseHttpsRedirection` (it serves HTTP behind nginx).
-- **Containers**: the backend runs as the `app` user of the .NET image (the `Local` storage directory belongs to it), every service runs with `no-new-privileges`, ports are published on `127.0.0.1` only, secrets (`JWT_SECRET`, S3 keys, `ADMIN_PASSWORD`) are random and kept in `.env` (outside the repository).
-- **Logs** without SQL statements (`Microsoft.EntityFrameworkCore.Database.Command` at `Warning`); server errors without details in the response.
-
-### Deliberate trade-offs
-
-- **HTTP without TLS and HSTS** - the stack listens on `127.0.0.1` only; certificates and HSTS make no sense locally.
-- **Rate limits and login locks live in process memory** - a single backend instance; a restart resets the rate limit counters (the account lockout is stored in the database and survives it). Several instances would each count separately.
-- **`X-Forwarded-For` is accepted from any sender** (`KnownNetworks`/`KnownProxies` are cleared because the nginx address in the Docker network is not fixed). The backend is reachable only through nginx and directly on the host's `127.0.0.1` - a local process calling the backend past nginx can send any address and bypass the per-IP limit.
-- **`423` with the correct password** reveals the lockout to whoever knows the password - this removes account enumeration, but during the lockout the response still tells a correct password from a wrong one, so guessing the password of a locked account is limited by the per-IP limit (10 attempts per minute), not by the lockout itself.
-- **No `limit_req` in nginx** - the backend enforces the per-IP limits (a uniform JSON `429` with `Retry-After`); a second limit in nginx would answer with an HTML page without `Retry-After`.
-- **Google Fonts** - the browser downloads fonts from `fonts.gstatic.com` (the build inlines the font CSS into `index.html`), so the CSP allows `fonts.googleapis.com` and `fonts.gstatic.com`. A later clean-up stage will bundle the fonts with the app and drop these sources from the CSP.
-- **`ALLOW_SEED_REFRESH=true` by default in Docker** (a convenient demo reset). The risk chain: whoever takes over an admin account (e.g. the old `Admin123!` password in a database created before `ADMIN_PASSWORD`, a stolen token, an XSS flaw) can delete all users, companies, offers, applications and attachment files with a single `POST /api/admin/refresh-seed`, and after the reset the demo accounts with publicly known passwords exist again. With your own data set `ALLOW_SEED_REFRESH=false` (and `SEED_DEMO_ACCOUNTS=false`).
-- **MySQL as `root`** - the backend connects with the root account. A separate application user (`MYSQL_USER`) is created only when an empty volume is initialized and existing `db-data` volumes do not have one - introducing it would require a manual data migration. The database port is published on `127.0.0.1` only and `DB_PASSWORD` sets the root password.
-- **Demo accounts and admin passwords in older databases** - the demo accounts have publicly known passwords (turned off with `SEED_DEMO_ACCOUNTS=false`), and admin accounts created before `ADMIN_PASSWORD` keep `Admin123!` until a demo data reset or removal of the volume.
-- **Swagger enabled by default in Docker** - the API documentation is part of the portfolio (turn it off with `SWAGGER_ENABLED=false`).
-- **No token refresh** - after 120 minutes the user has to log in again.
-
-## Statistics
-
-Admins and employers get a "Statystyki" tab (lazy-loaded) with KPI tiles, a daily time series, a recruitment funnel, a table of offers, the median first-response time and a CSV export. Admins see the whole platform, an employer only the offers of his own company (the company comes from the database, never from the request).
+Admins and employers get a "Statystyki" tab (lazy-loaded) with KPI tiles, a daily time series, a recruitment funnel, a table of offers, the median first-response time and a CSV export. Admins see the whole platform, an employer only the offers of their own company (the company comes from the database, never from the request).
 
 | Endpoint | Who | Result |
 | --- | --- | --- |
@@ -251,44 +263,146 @@ Admins and employers get a "Statystyki" tab (lazy-loaded) with KPI tiles, a dail
 | `GET /api/admin/stats/export`, `GET /api/employer/stats/export` | admin / employer | the daily series as CSV (UTF-8 with BOM, `;` separator, Polish header, `Content-Disposition: attachment; filename*=UTF-8''statystyki-YYYY-MM-DD_YYYY-MM-DD.csv`); cells starting with `=`, `+`, `-`, `@`, tab or CR are prefixed with `'` (CSV injection) |
 
 - `from` and `to` are inclusive UTC days (`YYYY-MM-DD`); the default is the last 30 days ending today. `from > to` or a malformed day returns `400` `Invalid date range`, a range longer than 366 days `400` `Date range cannot exceed 366 days`. An employer without a company gets `403` `Employer account is not linked to a company`.
-- `totals` are the current state / all-time values; `series`, `funnel`, `topJobs`, the employer `jobs` table and the median describe the requested range. The series contains every day of the range (missing days are filled with zeros on the server).
-- Funnel: applications submitted in the range that reached a stage, according to the status history. Stages are cumulative (`inReview` counts every application whose history contains InReview, Interview, Offered or Hired, and so on); rejection and withdrawal are not stages.
-- Median first response: hours from submitting an application (submitted in the range) to the first status change made by someone other than the candidate (a note without a status change does not count); `null` when there is no such application. The per-application differences are computed in SQL and only the one or two middle values are read, so the whole set never reaches memory.
-- All aggregations run in SQL (`GROUP BY` on the day, conditional counts); date-range filters use indexes on `JobApplications.AppliedAt`, `JobOffers.CreatedAt` and `AspNetUsers.CreatedAt`.
-- Offer views: `GET /api/jobs/{id}` counts one view per (offer, visitor, UTC day) unless the caller is an admin or a member of the offer's company. The visitor is the user id, or the client IP plus User-Agent for anonymous callers; only an HMAC-SHA256 of it (16 bytes, key derived with HKDF from `JwtSettings:Secret`, so the hash cannot be recomputed without the secret) is stored - never the IP. Counting is two statements in one transaction (`INSERT IGNORE` into `JobOfferViewers`, then `INSERT ... ON DUPLICATE KEY UPDATE` of the daily counter in `JobOfferDailyViews`); a failure is only logged and never breaks the offer response. A background service removes deduplication rows older than yesterday (hourly); the daily aggregates stay.
-- Behind the nginx container the client IP is the same address the per-IP rate limits use (`X-Forwarded-For`, last entry - see "Security"). Anonymous visitors that share an IP and a User-Agent count as one visitor per day, and a client that varies its User-Agent can inflate the counter - it is a popularity metric, not an audit log.
+- `totals` are current / all-time values; `series`, `funnel`, `topJobs`, the employer `jobs` table and the median describe the requested range. The series contains every day of the range (missing days are filled with zeros on the server).
+- Funnel: applications submitted in the range that reached a stage according to the status history. Stages are cumulative (`inReview` counts every application whose history contains InReview, Interview, Offered or Hired, and so on); rejection and withdrawal are not stages.
+- Median first response: hours from submitting an application (in the range) to the first status change made by someone other than the candidate (a note without a status change does not count); `null` when there is none. The differences are computed in SQL and only the one or two middle values are read.
+- All aggregations run in SQL (`GROUP BY` on the day, conditional counts); date filters use indexes on `JobApplications.AppliedAt`, `JobOffers.CreatedAt` and `AspNetUsers.CreatedAt`.
+- Offer views: `GET /api/jobs/{id}` counts one view per (offer, visitor, UTC day) unless the caller is an admin or a member of the offer's company. The visitor is the user id, or the client IP plus User-Agent for anonymous callers; only an HMAC-SHA256 of it (16 bytes, key derived with HKDF from `JwtSettings:Secret`) is stored - never the IP. Counting is two statements in one transaction (`INSERT IGNORE` into `JobOfferViewers`, then `INSERT ... ON DUPLICATE KEY UPDATE` of the daily counter in `JobOfferDailyViews`); a failure is only logged and never breaks the offer response. A background service removes deduplication rows older than yesterday (hourly); the daily aggregates stay.
+- Behind nginx the client IP is the same address the per-IP rate limits use (the last `X-Forwarded-For` entry - see "Security").
 
-## Uruchomienie lokalne (bez Dockera)
+### Errors and request limits
 
-Wymagane wersje:
+An unhandled server error (e.g. a storage failure) returns `500` `{"message":"An unexpected error occurred"}` without details - the exception goes to the log only. A client error while reading the request (`BadHttpRequestException`) gets its own status and a generic message (`413` `Request body too large`, `408` `Request timed out`, others `400` `Invalid request`) and is logged as a warning.
 
-- **.NET SDK 9.0** (projekty `net9.0`, ASP.NET Core i EF Core 9.0.x). Przejście na .NET 10 (LTS) czeka na stabilną wersję providera `Pomelo.EntityFrameworkCore.MySql` zgodną z EF Core 10 - najnowsza stabilna (9.0.0) obsługuje tylko EF Core 9.
-- **Node.js** `^22.22.3`, `^24.15.0` albo `>=26.0.0` (wymaganie Angulara 22); obraz Dockera frontendu buduje na Node 24 LTS.
-- **Angular 22** (Angular CLI 22, Angular Material 22, TypeScript 6.0, testy Vitest).
-- **MySQL 8.4** (LTS).
+Request bodies are limited to 1 MB (`RequestBodyLimitMiddleware` and Kestrel's global `MaxRequestBodySize`); upload endpoints raise the limit with `[RequestSizeLimit]` (26 MB). The limit also works independently of the server (a length-limited stream), e.g. on `TestServer` and for requests without `Content-Length`.
 
-Backend: `dotnet run` w katalogu `Backend` (wymaga MySQL na `localhost:3306`). W środowisku Development, gdy nie podano `JwtSettings:Secret`, używany jest wbudowany klucz deweloperski; w innych środowiskach sekret jest wymagany (np. zmienna `JwtSettings__Secret`). Pliki załączników trafiają domyślnie do `Backend/storage` (patrz „Magazyn plików”). E-maile są wysyłane tylko po ustawieniu `Email:Smtp:Host` - np. z lokalnym Mailpitem (`docker run -p 8025:8025 -p 1025:1025 axllent/mailpit:v1.31.1`): `Email__Smtp__Host=localhost`, `Email__Smtp__Port=1025`, `Email__Smtp__Security=None`. Frontend: `npm start` w katalogu `frontend` - `ng serve` przekazuje `/api` do `http://localhost:5285` (`frontend/proxy.conf.json`).
+## Security
 
-## Testy
+The project runs locally only, but the backend and nginx are hardened as if the application were exposed to a network. This section lists what is protected and the deliberate trade-offs that follow from the local scope.
 
-Testy backendu (xUnit) są w katalogu `Backend.Tests` (dodany do `Backend/Backend.sln`): testy jednostkowe (`Unit/`) oraz integracyjne (`Integration/`) uruchamiające aplikację przez `WebApplicationFactory` na prawdziwym MySQL.
+### What is protected
+
+- **Login and registration** - the whole `AuthController` uses the `auth` rate limiting policy (new authentication endpoints inherit it automatically): at most 10 requests per minute per client IP and 4 at once overall (no queue - password hashing is CPU-heavy). Exceeding a limit returns `429` `Too many requests - try again later` with `Retry-After` (seconds until the end of the window, `1` for the concurrency limit).
+- **Security e-mails** - `forgot-password` (per client IP) and `resend-confirmation` (per user) use only the `account-emails` policy: 5 requests per 15 minutes, plus at most 3 password reset e-mails per account per hour. Their own `[EnableRateLimiting]` replaces the `auth` policy (ASP.NET Core applies the attribute closest to the endpoint, so the limits do not add up).
+- **Uploads** - 30 requests per 10 minutes per user (a fixed window from the first request) and 8 uploads at once for all users (no queue); a rejection by the concurrency limit does not use up the window. Profile documents and `from-profile` count towards the same limit.
+- **Public lists** (`GET /api/jobs`, `GET /api/jobs/facets`, `GET /api/companies`, `GET /api/categories`, `GET /api/skills`, including search): one shared limit of 120 requests per minute per client IP. Offer and company details are not limited. Statistics endpoints require a signed-in admin or employer and have no IP limit.
+- **Client IP behind nginx** - the per-IP limits and the offer view counter see the real address: the backend reads `X-Forwarded-For` (`UseForwardedHeaders`, last entry only, i.e. the one appended by nginx, so spoofed earlier entries do not help).
+- **Account lockout** after 5 failed attempts for 5 minutes, without account enumeration: a wrong password, an unknown account and a wrong password for a locked account always return `401` `Invalid email or password` in comparable time (an unknown account is verified against a dummy hash). Only the **correct** password of a locked account gets `423 Locked`. Attempts during the lockout neither change the counter nor extend the lockout. Parallel attempts for one account are serialized (an in-process lock per normalized e-mail, removed after use), so the counter never loses an attempt.
+- **Input validation** - e-mail up to 256 characters and password up to 100 in every DTO with credentials (`CredentialLimits`, the same limit as in the frontend forms), search terms and location filters up to 100 characters, list filters validated on the server (`400`), page numbers capped at 100,000.
+- **JWT** - HS256 only, 30 s clock skew, 120-minute lifetime, no refresh. The token carries a hash of the user's security stamp (the first 16 bytes of its SHA-256 - the payload is readable) and every request checks that the account still exists and the stamp is current, so a token of a deleted account (e.g. after a demo data reset) or of an account whose password changed gets `401`.
+- **Authorization of every resource** through `ICurrentUserAccess`; another company's resources return `404`.
+- **Uploads** - type detected from the content, size and count limits, ZIP structure checks for DOCX (no extraction, zip-bomb limits), server-generated storage keys (no path traversal), sanitized download names.
+- **Headers** - nginx (frontend and proxied API): `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (no camera, microphone, geolocation, payment, USB), `Cross-Origin-Opener-Policy: same-origin`, no nginx version (`server_tokens off`); gzip; hashed build files (`*.js`, `*.css`, `*.woff2`) get `Cache-Control: public, max-age=31536000, immutable`, `index.html` gets `no-cache`. The headers are set only at `server` level (`add_header` in a `location` block would drop the inherited ones - guarded by `NginxConfigTests`). Backend: no `Server` header, `X-Content-Type-Options: nosniff` on every API response, `Cache-Control: no-store` on responses with user data.
+- **CSP** - `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`. Scripts come only from the own origin with no exceptions: the production build does not inline critical CSS (`optimization.styles.inlineCritical: false`), because that feature adds an inline script to `index.html`. The alternatives - the hash of that script in the header (changes with the Angular version) and `security.autoCsp` (a `<meta>` CSP whose hash changes with every build, forcing `'unsafe-inline'` in the static header) - were rejected. The cost is a render-blocking stylesheet of about 6 kB compressed, negligible for an SPA that renders after `main.js` anyway. `'unsafe-inline'` in `style-src` is needed because Angular and Angular Material inject component styles.
+- **Swagger** only in Development or with `Swagger:Enabled=true`. The backend does not use `UseHttpsRedirection` (it serves HTTP behind nginx).
+- **Containers** - the backend runs as the non-root `app` user of the .NET image, every service runs with `no-new-privileges`, ports are published on `127.0.0.1` only, secrets are random and kept in `.env` (outside the repository), SeaweedFS rejects unsigned requests.
+- **Logs** without SQL statements (`Microsoft.EntityFrameworkCore.Database.Command` at `Warning`), server errors without details in responses, no raw IP addresses stored for view statistics.
+
+### Deliberate trade-offs
+
+- **HTTP without TLS and HSTS** - the stack listens on `127.0.0.1` only; certificates and HSTS make no sense locally.
+- **Rate limits and login locks live in process memory** - one backend instance; a restart resets the rate limit counters (the account lockout is stored in the database and survives it). Several instances would each count separately, and the e-mail outbox assumes a single sender.
+- **`X-Forwarded-For` is accepted from any sender** (`KnownNetworks`/`KnownProxies` are cleared because the nginx address in the Docker network is not fixed). The backend is reachable only through nginx and directly on the host's `127.0.0.1` - a local process calling the backend past nginx can send any address and bypass the per-IP limits or inflate the view counter.
+- **View statistics are a popularity metric, not an audit log** - anonymous visitors that share an IP and a User-Agent count as one visitor per day, and a client that varies its User-Agent can inflate the counter.
+- **`423` with the correct password** reveals the lockout to whoever knows the password. Account enumeration is gone, but during the lockout the response still tells a correct password from a wrong one, so guessing the password of a locked account is limited by the per-IP limit (10 attempts per minute), not by the lockout itself.
+- **No `limit_req` in nginx** - the backend enforces the per-IP limits with a uniform JSON `429` and `Retry-After`; a second limit in nginx would answer with an HTML page without `Retry-After`.
+- **Google Fonts** - the browser downloads fonts from `fonts.gstatic.com` (the build inlines the font CSS into `index.html`), so the CSP allows `fonts.googleapis.com` and `fonts.gstatic.com`. A later clean-up will bundle the fonts and drop these sources.
+- **`ALLOW_SEED_REFRESH=true` by default in Docker** - a convenient demo reset. Whoever takes over an admin account (e.g. the old `Admin123!` password in a database created before `ADMIN_PASSWORD`, a stolen token, an XSS flaw) can delete all users, companies, offers, applications and files with a single `POST /api/admin/refresh-seed`, after which the demo accounts with public passwords exist again. With your own data set `ALLOW_SEED_REFRESH=false` and `SEED_DEMO_ACCOUNTS=false`.
+- **MySQL as `root`** - a separate application user (`MYSQL_USER`) is created only when an empty volume is initialized, and existing `db-data` volumes do not have one; introducing it would need a manual data migration. The database port is published on `127.0.0.1` only and `DB_PASSWORD` sets the root password.
+- **Demo accounts and old admin passwords** - the demo accounts have publicly known passwords (turned off with `SEED_DEMO_ACCOUNTS=false`), and admin accounts created before `ADMIN_PASSWORD` keep `Admin123!` until a demo data reset or removal of the volume.
+- **Swagger enabled by default in Docker** - the API documentation is part of the portfolio (`SWAGGER_ENABLED=false` turns it off).
+- **Unencrypted Data Protection keys** in the database - acceptable for a local stack.
+- **No token refresh** - after 120 minutes the user signs in again.
+
+## Running tests
+
+### Backend
+
+Backend tests (xUnit) live in `Backend.Tests` (part of `Backend/Backend.sln`): unit tests (`Unit/`) and integration tests (`Integration/`) that start the application through `WebApplicationFactory` against a real MySQL server.
 
 ```bash
 cd Backend.Tests
-# full suite
-dotnet test
 # fast suite - without the migration tests (each creates and migrates its own databases)
 dotnet test --filter "Category!=Migrations"
+# full suite
+dotnet test
 # migration tests only
 dotnet test --filter "Category=Migrations"
 ```
 
 Migration test classes carry `[Trait("Category", "Migrations")]` (checked by `TestInfrastructureTests`) - every new `*MigrationTests` class needs it too.
 
-Testy integracyjne wymagają działającego serwera MySQL. Każda fabryka tworzy własną bazę o nazwie `JobBoardTest_<guid>` (migracje i seed przy starcie aplikacji) i usuwa ją po zakończeniu - baza `JobBoardDb` nie jest dotykana. Serwer i dane logowania są brane ze zmiennej środowiskowej `JOBBOARD_TEST_CONNECTION` (connection string MySQL; nazwa bazy jest ignorowana i zastępowana), a gdy jej brak - ze zmiennej `ConnectionStrings__DefaultConnection` (też tylko serwer i dane logowania). Bez żadnej z nich używane jest `Server=localhost;Port=3306;User=root;Password=devpass`.
+Each test factory creates its own database named `JobBoardTest_<guid>` (migrations and seed run at startup) and drops it afterwards - `JobBoardDb` is never touched. The server and credentials come from these environment variables:
 
-Przykład: `JOBBOARD_TEST_CONNECTION="Server=localhost;Port=3306;User=root;Password=secret;AllowPublicKeyRetrieval=true;" dotnet test`.
+| Variable | Meaning |
+| --- | --- |
+| `JOBBOARD_TEST_CONNECTION` | a MySQL connection string; the database name is ignored and replaced. Without it `ConnectionStrings__DefaultConnection` is used (server and credentials only), and without both `Server=localhost;Port=3306;User=root;Password=devpass` |
+| `JOBBOARD_TEST_S3_URL` | an S3-compatible endpoint (e.g. `http://localhost:8333`) for the `S3FileStorage` tests; they are skipped without it. Each test creates and deletes its own bucket |
+| `JOBBOARD_TEST_S3_ACCESS_KEY`, `JOBBOARD_TEST_S3_SECRET_KEY` | optional keys for the S3 tests |
+| `JOBBOARD_TEST_MAILPIT_URL` | the Mailpit API address (e.g. `http://localhost:8025`, SMTP on port 1025 of the same host) for the real SMTP test (`MailpitSmtpTests`); skipped without it |
 
-Integration tests store attachment files in the `Local` storage, in a temporary directory separate for each factory (deleted together with its database). The test factory raises the upload limits (`RateLimiting:Uploads:PermitLimit` and `ConcurrencyLimit`), the login limits (`RateLimiting:Auth:*` - all test requests share one client address), the public list limit (`RateLimiting:PublicLists:PermitLimit`) and the security e-mail limit (`RateLimiting:AccountEmails:PermitLimit`); the tests of these limits use the defaults and pass client addresses in `X-Forwarded-For` where they need separate ones. Outside Development the factory sets `Seed:AdminPassword` to the Development admin password. The `S3FileStorage` tests need an S3-compatible storage and are skipped until `JOBBOARD_TEST_S3_URL` is set (e.g. `http://localhost:8333`; keys optionally in `JOBBOARD_TEST_S3_ACCESS_KEY` / `JOBBOARD_TEST_S3_SECRET_KEY`) - each test creates and deletes its own bucket.
+Example: `JOBBOARD_TEST_CONNECTION="Server=localhost;Port=3306;User=root;Password=secret;AllowPublicKeyRetrieval=true;" dotnet test --filter "Category!=Migrations"`.
 
-The test factory replaces SMTP sending with a fake (`FakeEmailSender` - the tests read the sent e-mails from it, decode the links and use them against the API). The real SMTP test (`MailpitSmtpTests`) needs Mailpit and is skipped until `JOBBOARD_TEST_MAILPIT_URL` is set (the Mailpit API address, e.g. `http://localhost:8025`; SMTP on port 1025 of the same host).
+Integration tests store files in the `Local` storage, in a temporary directory per factory (deleted with its database). The test factory replaces SMTP with a fake (`FakeEmailSender` - tests read the sent e-mails, decode the links and use them against the API) and raises the upload, login, public list and security e-mail limits (all test requests share one client address); the tests of these limits use the defaults and pass client addresses in `X-Forwarded-For` where they need separate ones. Outside Development the factory sets `Seed:AdminPassword` to the Development admin password.
+
+### Frontend
+
+```bash
+cd frontend
+npm ci
+npx ng test --watch=false   # unit tests (Vitest)
+npx ng build                # production build
+```
+
+## Repository layout
+
+```
+.
+├── Backend/                  ASP.NET Core 9 API
+│   ├── Controllers/          REST endpoints (jobs, companies, applications, account, stats, admin)
+│   ├── Data/                 ApplicationDbContext and the demo data seeder
+│   ├── DTOs/                 request and response contracts
+│   ├── Helpers/              paging, query parameters, filters, limits
+│   ├── Interfaces/           repository and service contracts
+│   ├── Mappings/             entity <-> DTO mapping
+│   ├── Migrations/           EF Core migrations (MySQL)
+│   ├── Models/               entities
+│   ├── Repositories/         data access (LINQ only)
+│   ├── Services/             auth, storage, e-mail outbox, rate limiting, statistics, middleware
+│   └── Settings/             validated options classes
+├── Backend.Tests/            xUnit tests
+│   ├── Infrastructure/       test factory, fixtures, API helpers
+│   ├── Integration/          API and migration tests on MySQL
+│   └── Unit/                 unit tests
+├── frontend/                 Angular 22 application
+│   ├── docker/               nginx configuration
+│   └── src/app/
+│       ├── components/       pages, panels, dialogs, shared components, statistics charts
+│       ├── guards/           route guards
+│       ├── interceptors/     attaches the JWT, handles expired sessions
+│       ├── models/           API types
+│       ├── services/         API clients
+│       └── utils/            labels, query mapping, error messages
+├── docs/                     notes for continuing work on the feature stages
+├── docker-compose.yml        the local stack (MySQL, SeaweedFS, Mailpit, backend, frontend)
+├── docker-up.ps1             start script: free ports, secrets, build and start
+└── .env.example              template of the stack settings
+```
+
+## Known limitations
+
+- **Local only** - no TLS, no deployment scripts, no CI; the Docker stack is meant for one machine.
+- **One backend instance** - rate limits and login serialization live in process memory, and the e-mail outbox and the view cleanup run in the backend process; several instances would need a shared store.
+- **Salaries are compared in the offer's own currency** - there is no currency conversion, so a salary filter makes sense together with the currency filter.
+- **View counts are approximate** - see the trade-offs above.
+- **Out-of-order migrations** - `AddJobViewStatistics` (stage 6) is dated a few minutes before `AddJobTaxonomy` (stage 5) because both stages were developed in parallel. EF Core applies whichever is missing, so updating any existing database works, but rolling back to a migration between the two also rolls back the other.
+- **Abandoned `AddApplicationCv` migration** - an earlier "one CV per application" model never reached `main` and was replaced by `AddApplicationAttachments`. Development databases where it was applied have empty `Cv*` columns in `JobApplications` and an entry in `__EFMigrationsHistory` (harmless, can be removed by hand).
+- **Requests without `Content-Length`** are rejected only after 26 MB have been received; Kestrel then drops the connection and the browser may not get the JSON error, which is why the frontend validates file sizes first.
+- **Fonts from Google Fonts** - not bundled yet (see the CSP trade-off).
+- **The initial bundle exceeds the 500 kB budget** (about 600 kB, a build warning) - the new screens are lazy-loaded, but the shared shell still needs trimming.
+- **.NET 9, not .NET 10** - waits for a stable Pomelo provider for EF Core 10.
+- **Polish-only interface** - the UI is in Polish; API messages are in English and translated in the frontend.
+
+## Screenshots
+
+Screenshots will be added after the upcoming interface refresh.
