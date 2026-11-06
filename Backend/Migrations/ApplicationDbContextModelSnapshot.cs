@@ -170,6 +170,8 @@ namespace Backend.Migrations
 
                     b.HasIndex("CompanyId");
 
+                    b.HasIndex("CreatedAt");
+
                     b.HasIndex("NormalizedEmail")
                         .HasDatabaseName("EmailIndex");
 
@@ -264,6 +266,8 @@ namespace Backend.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AppliedAt");
+
                     b.HasIndex("UserId");
 
                     b.HasIndex("JobOfferId", "UserId")
@@ -322,7 +326,45 @@ namespace Backend.Migrations
 
                     b.HasIndex("CompanyId");
 
+                    b.HasIndex("CreatedAt");
+
                     b.ToTable("JobOffers");
+                });
+
+            modelBuilder.Entity("Backend.Models.JobOfferDailyViews", b =>
+                {
+                    b.Property<int>("JobOfferId")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Views")
+                        .HasColumnType("int");
+
+                    b.HasKey("JobOfferId", "Date");
+
+                    b.ToTable("JobOfferDailyViews", (string)null);
+                });
+
+            modelBuilder.Entity("Backend.Models.JobOfferViewer", b =>
+                {
+                    b.Property<int>("JobOfferId")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<byte[]>("VisitorHash")
+                        .HasMaxLength(16)
+                        .HasColumnType("binary(16)")
+                        .IsFixedLength();
+
+                    b.HasKey("JobOfferId", "Date", "VisitorHash");
+
+                    b.HasIndex("Date");
+
+                    b.ToTable("JobOfferViewers", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -536,6 +578,28 @@ namespace Backend.Migrations
                     b.Navigation("Company");
                 });
 
+            modelBuilder.Entity("Backend.Models.JobOfferDailyViews", b =>
+                {
+                    b.HasOne("Backend.Models.JobOffer", "JobOffer")
+                        .WithMany("DailyViews")
+                        .HasForeignKey("JobOfferId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("JobOffer");
+                });
+
+            modelBuilder.Entity("Backend.Models.JobOfferViewer", b =>
+                {
+                    b.HasOne("Backend.Models.JobOffer", "JobOffer")
+                        .WithMany()
+                        .HasForeignKey("JobOfferId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("JobOffer");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -609,6 +673,8 @@ namespace Backend.Migrations
             modelBuilder.Entity("Backend.Models.JobOffer", b =>
                 {
                     b.Navigation("Applications");
+
+                    b.Navigation("DailyViews");
                 });
 #pragma warning restore 612, 618
         }
