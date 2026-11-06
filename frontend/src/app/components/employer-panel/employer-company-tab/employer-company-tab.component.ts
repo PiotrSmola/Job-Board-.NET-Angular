@@ -9,10 +9,17 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { Company, CompanyStatus } from '../../../models/company.model';
+import { Company, CompanyStatus, SaveCompany } from '../../../models/company.model';
 import { CompanyService } from '../../../services/company.service';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
 import { COMPANY_DESCRIPTION_MAX, buildCompanyForm, toSaveCompany } from '../../../utils/company-form';
+
+const REVERIFICATION_WARNING = 'Zmiana nazwy lub strony www wymaga ponownej weryfikacji przez administratora. ' +
+  'Do czasu zatwierdzenia oferty firmy nie będą widoczne publicznie.';
+
+function normalizeName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ');
+}
 
 interface StatusBanner {
   tone: 'pending' | 'approved' | 'rejected';
@@ -94,9 +101,13 @@ export class EmployerCompanyTabComponent implements OnInit {
   onSubmit(): void {
     if (!this.canSubmit()) return;
 
-    const resubmitting = this.isRejected();
+    const data = toSaveCompany(this.form.value);
+    const reverifying = this.isApproved() && this.changesIdentity(data);
+    if (reverifying && !confirm(REVERIFICATION_WARNING)) return;
+
+    const resubmitting = this.isRejected() || reverifying;
     this.saving.set(true);
-    this.companyService.updateMyCompany(toSaveCompany(this.form.value)).subscribe({
+    this.companyService.updateMyCompany(data).subscribe({
       next: company => {
         this.saving.set(false);
         this.form.reset(toSaveCompany(company));
@@ -111,6 +122,13 @@ export class EmployerCompanyTabComponent implements OnInit {
         }
       }
     });
+  }
+
+  /** Zmiana nazwy (inna niż wielkość liter / odstępy) lub strony www – jak w API, wymaga ponownej weryfikacji. */
+  private changesIdentity(data: SaveCompany): boolean {
+    const current = this.company();
+    return normalizeName(data.name).toLowerCase() !== normalizeName(current.name).toLowerCase()
+      || (data.website ?? null) !== (current.website?.trim() || null);
   }
 
   private notify(message: string): void {

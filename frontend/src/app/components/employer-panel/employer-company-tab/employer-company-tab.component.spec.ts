@@ -222,9 +222,80 @@ describe('EmployerCompanyTabComponent', () => {
     });
   });
 
+  describe('approved company re-verification', () => {
+    const warning = 'Zmiana nazwy lub strony www wymaga ponownej weryfikacji przez administratora. ' +
+      'Do czasu zatwierdzenia oferty firmy nie będą widoczne publicznie.';
+    let confirmSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    });
+
+    it.each([
+      ['name', 'Acme Nowa'],
+      ['website', 'https://inna.example.com'],
+      ['website', '']
+    ])('asks for confirmation before saving a changed %s and reports the resubmission', async (field, value) => {
+      await create(makeCompany(3, { name: 'Acme', website: 'https://acme.example.com', status: CompanyStatus.Approved }));
+      edit(field, value);
+
+      component.onSubmit();
+
+      expect(confirmSpy).toHaveBeenCalledWith(warning);
+      expect(updateMyCompany).toHaveBeenCalledTimes(1);
+      expect(snackBarOpen).toHaveBeenCalledWith(
+        'Zgłoszenie firmy zostało wysłane ponownie do weryfikacji', 'OK', expect.anything());
+    });
+
+    it('does not save when the confirmation is cancelled and keeps the edits', async () => {
+      await create(makeCompany(3, { name: 'Acme', status: CompanyStatus.Approved }));
+      confirmSpy.mockReturnValue(false);
+      edit('name', 'Podszywka');
+
+      component.onSubmit();
+
+      expect(updateMyCompany).not.toHaveBeenCalled();
+      expect(component.saving()).toBe(false);
+      expect(component.form.get('name')!.value).toBe('Podszywka');
+      expect(component.canSubmit()).toBe(true);
+    });
+
+    it('does not ask when only the description or location changes', async () => {
+      await create(makeCompany(3, { name: 'Acme', website: 'https://acme.example.com', status: CompanyStatus.Approved }));
+      edit('description', 'Nowy opis');
+      edit('location', 'Sopot');
+
+      component.onSubmit();
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(updateMyCompany).toHaveBeenCalledTimes(1);
+      expect(snackBarOpen).toHaveBeenCalledWith('Dane firmy zostały zapisane', 'OK', expect.anything());
+    });
+
+    it('does not ask when the name differs only in case or spacing (same rule as the API)', async () => {
+      await create(makeCompany(3, { name: 'Acme Group', status: CompanyStatus.Approved }));
+      edit('name', '  ACME   group ');
+
+      component.onSubmit();
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(updateMyCompany).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([CompanyStatus.Pending, CompanyStatus.Rejected])('does not ask for a company with status %i', async status => {
+      await create(makeCompany(3, { name: 'Acme', status, rejectionReason: null }));
+      edit('name', 'Acme Nowa');
+
+      component.onSubmit();
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(updateMyCompany).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('saving', () => {
     it('sends trimmed values (blank optional fields as null), emits the updated company and notifies', async () => {
-      await create(makeCompany(3, { name: 'Acme', status: CompanyStatus.Approved }));
+      await create(makeCompany(3, { name: 'Acme', status: CompanyStatus.Pending }));
       edit('name', '  Acme 2  ');
       edit('location', '   ');
       edit('description', '');
