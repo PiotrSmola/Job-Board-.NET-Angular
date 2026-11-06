@@ -704,6 +704,9 @@ describe('AttachmentsPickerComponent', () => {
         other.detectChanges();
         other.componentInstance.progress.set(100);
         other.detectChanges();
+        // Angular 22 planuje kolejne sprawdzenie zmian na najbliższą klatkę (wyścig setTimeout/requestAnimationFrame
+        // planisty aplikacji, nie komponentu) - klatka jest przewijana, dłuższe timery komponentu zostałyby w liczniku
+        vi.advanceTimersToNextFrame();
 
         other.destroy();
 
