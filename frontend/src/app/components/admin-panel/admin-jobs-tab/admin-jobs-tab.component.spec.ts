@@ -8,7 +8,7 @@ import { AdminJobsTabComponent } from './admin-jobs-tab.component';
 import { JobService } from '../../../services/job.service';
 import { CompanyService } from '../../../services/company.service';
 import { AdminService } from '../../../services/admin.service';
-import { JobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
+import { Currency, JobOffer, JobOfferStatus, SalaryPeriod, WorkType } from '../../../models/job-offer.model';
 import { ManageJobParams } from '../../../models/job-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
 import { Company, CompanyStatus } from '../../../models/company.model';
@@ -31,7 +31,15 @@ function makeJob(id: number): JobOffer {
     createdAt: new Date('2026-01-01'),
     status: JobOfferStatus.Active,
     expiresAt: null,
-    isExpired: false
+    isExpired: false,
+    categoryId: null,
+    categoryName: null,
+    categorySlug: null,
+    seniority: null,
+    contractTypes: 0,
+    salaryCurrency: Currency.PLN,
+    salaryPeriod: SalaryPeriod.Month,
+    skills: []
   };
 }
 
@@ -107,7 +115,7 @@ describe('AdminJobsTabComponent', () => {
       expect(params.pageSize).toBe(10);
       expect(params.orderBy).toBe('newest');
       expect(params.searchTerm).toBe('');
-      expect(params.workType).toBeNull();
+      expect(params.workTypes).toEqual([]);
       expect(component.jobs().length).toBe(10);
       expect(component.totalItems()).toBe(35);
       expect(component.loading()).toBe(false);
@@ -213,7 +221,7 @@ describe('AdminJobsTabComponent', () => {
 
       component.onWorkTypeChange(WorkType.Remote);
 
-      expect(lastParams().workType).toBe(WorkType.Remote);
+      expect(lastParams().workTypes).toEqual([WorkType.Remote]);
       expect(lastParams().pageNumber).toBe(1);
       expect(component.hasActiveFilters()).toBe(true);
     });
@@ -275,7 +283,7 @@ describe('AdminJobsTabComponent', () => {
       component.clearFilters();
 
       const params = lastParams();
-      expect(params.workType).toBeNull();
+      expect(params.workTypes).toEqual([]);
       expect(params.searchTerm).toBe('');
       expect(params.orderBy).toBe('newest');
       expect(params.pageNumber).toBe(1);
