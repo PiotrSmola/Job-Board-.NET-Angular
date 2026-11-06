@@ -43,3 +43,25 @@ Cel: kandydat dołącza CV do aplikacji (przy aplikowaniu lub później), rekrut
 Dodatkowy kontener deweloperski `jobboard-dev-seaweedfs` (SeaweedFS 4.50, S3 bez uwierzytelniania pod `http://jobboard-dev-seaweedfs:8333` w sieci `jobboard-dev`). Uruchomienie po restarcie: `docker start jobboard-dev-mysql jobboard-dev-sdk jobboard-dev-node jobboard-dev-seaweedfs`.
 
 Kolejność pracy: implementacja (backend + frontend) → testy → review → poprawki → merge do `main`, potem usunięcie tego pliku.
+
+## Frontend – stan
+
+Zrobione (gałąź `feature/cv-upload`, tylko `frontend/`):
+- Model `JobApplication` += `hasCv`, `cvFileName`, `cvSize`, `cvUploadedAt` (wymagane – DTO zawsze je zwraca); typ `CvUploadEvent` (`progress` z procentem | `done` z aplikacją).
+- `JobApplicationService`: `uploadCv(id, file)` (FormData, pole `file`, `reportProgress` + `observe: 'events'`, mapowane na `CvUploadEvent`), `deleteCv(id)`, `downloadCv(id, fallbackFileName)` (`responseType: 'blob'`, `observe: 'response'`; treść błędu – Blob z JSON – parsowana do `{ message }`, żeby działał `getApiErrorMessage`).
+- Utilsy: `utils/content-disposition.ts` (`filename*=` UTF-8 / ISO-8859-1 → `filename=` → `cvFileName` → `cv`; usuwa ścieżki, znaki sterujące, a `<>:"|?*` zamienia na `_`), `utils/file-download.ts` (link `blob:` tworzony programowo, bez `target`, `revokeObjectURL` w kolejnym takcie), `utils/blob-error.ts` (FileReader – działa też w jsdom), `utils/cv-file.ts` (walidacja: rozszerzenie `.pdf/.docx`, ≤ 5 MB, niepusty; `formatFileSize`), `canChangeCv` w `status-labels.ts` (Submitted/InReview/Interview/Offered).
+- `components/shared/cv-upload.component.ts` (OnPush): prawdziwe `<input type="file">` ukryte wizualnie z `<label>` w roli przycisku (widoczny fokus), `aria-describedby` na stały obszar statusu (podpowiedź / błąd z `role="alert"` / `mat-progress-bar` z `aria-valuetext`) – miejsce zarezerwowane, bez przesunięć układu; `[(file)]` jako input + output `fileChange` (bez `model()`, żeby nie powiększać paczki startowej); `errorMessage` na błąd z API.
+- Dialog aplikowania: opcjonalne CV; najpierw POST, potem PUT; postęp na przycisku („Wysyłanie CV… X%” / „Przetwarzanie CV…”); błąd uploadu → komunikat z kontraktu (8 s). Opuszczenie strony przerywa upload (`takeUntilDestroyed`).
+- „Moje aplikacje”: kolumna CV (nazwa → pobranie, rozmiar, data), przyciski Dodaj/Zmień (dialog `my-applications/cv-dialog.component.ts` z paskiem postępu; zamknięcie przerywa upload) i Usuń (confirm) tylko w statusach z `canChangeCv`; pobieranie zawsze, gdy `hasCv`.
+- Zakładka aplikacji (admin i pracodawca): przycisk „Pobierz CV: nazwa” przy `hasCv`; dialog historii: informacja o CV + „Pobierz CV”.
+- Tłumaczenia: komunikaty walidacji pliku, `Invalid multipart form data`, `CV cannot be changed…`, `CV not found`, `CV was changed by another request`, `No file uploaded…`; status 413 → „Plik jest za duży…”.
+- Paczka startowa bez zmian (623,1 kB jak na `main`); interceptor nietknięty.
+
+Niejasności i rozstrzygnięcia:
+- Parsowanie treści błędu Blob jest w `downloadCv` (leniwy chunk), nie w interceptorze – inaczej rośnie paczka startowa. Skutek: dla 403 przy pobieraniu interceptor pokaże ogólne „Brak uprawnień” (kontrakt i tak zwraca 404 dla braku dostępu).
+- Błąd uploadu CV po złożeniu aplikacji pokazuje komunikat z kontraktu także przy 401/403 (aplikacja jest złożona – to ważniejsza informacja).
+- Postęp przy aplikowaniu jest na przycisku strony oferty (dialog zamyka się przed POST, jak dotychczas); pełny pasek postępu jest w dialogu CV w „Moich aplikacjach”.
+
+Kolejne kroki:
+- Smoke test z działającym backendem (CORS `Content-Disposition`, nazwy z polskimi znakami, 5 MB, DOCX).
+- Pełniejsze testy (osobny agent): np. e2e upload/pobranie, kontrast w motywie, nawigacja klawiaturą w dialogach.
