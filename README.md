@@ -8,7 +8,7 @@ Wymagany Docker Desktop (Docker Compose v2).
 .\docker-up.ps1
 ```
 
-Skrypt buduje obrazy i uruchamia trzy kontenery: MySQL, backend (ASP.NET Core) i frontend (Angular serwowany przez nginx, który przekazuje `/api` do backendu). Domyślne porty to 4200 (frontend), 5285 (backend / Swagger) i 3306 (MySQL) - jeśli któryś jest zajęty, wybierany jest kolejny wolny. Wybrane porty zapisywane są do `.env` i wypisywane na koniec.
+Skrypt buduje obrazy i uruchamia cztery kontenery: MySQL, magazyn plików CV (SeaweedFS z API zgodnym z S3, bez publikowanych portów - dostępny tylko dla backendu w sieci compose), backend (ASP.NET Core) i frontend (Angular serwowany przez nginx, który przekazuje `/api` do backendu). Domyślne porty to 4200 (frontend), 5285 (backend / Swagger) i 3306 (MySQL) - jeśli któryś jest zajęty, wybierany jest kolejny wolny. Wybrane porty zapisywane są do `.env` i wypisywane na koniec.
 
 Preferowane porty można zmienić parametrami:
 
@@ -18,13 +18,14 @@ Preferowane porty można zmienić parametrami:
 
 > **Uwaga:** stack z `docker-compose.yml` jest przeznaczony wyłącznie do lokalnego uruchomienia (demo). Konta demo (tabela niżej) i root MySQL mają znane hasła, a admin może z panelu wyczyścić bazę, dlatego wszystkie porty są publikowane tylko na `127.0.0.1` - aplikacja nie jest dostępna z innych komputerów w sieci. Nie wystawiaj go publicznie bez zmiany haseł i wyłączenia `ALLOW_SEED_REFRESH`.
 
-Zatrzymanie: `docker compose down` (dane bazy zostają w wolumenie `db-data`; `docker compose down -v` usuwa je).
+Zatrzymanie: `docker compose down` (dane bazy zostają w wolumenie `db-data`, pliki CV w `storage-data`; `docker compose down -v` usuwa je).
 
-Bez skryptu można też użyć bezpośrednio `docker compose up -d --build` - porty brane są wtedy z `.env` (wzór w `.env.example`) lub domyślne. W `.env` musi wtedy być ustawiony `JWT_SECRET`.
+Bez skryptu można też użyć bezpośrednio `docker compose up -d --build` - porty brane są wtedy z `.env` (wzór w `.env.example`) lub domyślne. W `.env` muszą wtedy być ustawione `JWT_SECRET`, `S3_ACCESS_KEY` i `S3_SECRET_KEY`.
 
 Zmienne w `.env`:
 
 - `JWT_SECRET` - sekret do podpisywania tokenów JWT (min. 32 znaki). Wymagany: bez niego `docker compose` nie wystartuje. `docker-up.ps1` przy pierwszym uruchomieniu generuje losowy 64-znakowy sekret i zapisuje go w `.env`, przy kolejnych zachowuje istniejący (zmiana sekretu unieważnia zalogowane sesje).
+- `S3_ACCESS_KEY`, `S3_SECRET_KEY` - klucze dostępu do magazynu plików CV (SeaweedFS, usługa `storage`). Wymagane: bez nich `docker compose` nie wystartuje. `docker-up.ps1` generuje losowe (20 i 40 znaków alfanumerycznych) i zachowuje istniejące. Własne wartości: tylko litery i cyfry (są wstawiane do pliku konfiguracyjnego S3 generowanego przy starcie kontenera, więc ich zmiana działa po restarcie stacku).
 - `ALLOW_SEED_REFRESH` - czy admin może z panelu zresetować dane demo (`POST /api/admin/refresh-seed` usuwa **wszystkich** użytkowników, firmy, oferty i aplikacje i odtwarza dane startowe). W lokalnym stacku Dockera domyślnie `true`; ustaw `false`, żeby wyłączyć. Poza Dockerem reset działa tylko w środowisku Development albo po ustawieniu `Admin:AllowSeedRefresh=true`.
 - `SEED_DEMO_ACCOUNTS` - czy seeder tworzy konta demo kandydatów i pracodawców (tabela niżej). W lokalnym stacku Dockera domyślnie `true` (`Seed__DemoAccounts`); ustaw `false`, żeby powstały tylko konta adminów. Poza Dockerem konta demo powstają tylko w środowisku Development, chyba że jawnie ustawiono `Seed:DemoAccounts` (`true`/`false` ma pierwszeństwo). `docker-up.ps1` zachowuje wartość z `.env`.
 
@@ -100,9 +101,38 @@ Każda aplikacja ma status, a każda jego zmiana (także złożenie aplikacji) t
 - Aplikować można tylko na oferty aktywne i niewygasłe (próba aplikowania na szkic zwraca dla kandydata `404`, tak jak dla nieistniejącej oferty).
 - Równoległe zmiany tej samej aplikacji (także notatki i wycofanie) są chronione tokenem współbieżności: żądanie oparte na nieaktualnym stanie dostaje `409` (`Application status was changed by another request`), a równoległa ponowna aplikacja - `400` (`You have already applied to this job`).
 
+## CV kandydata
+
+Kandydat może dołączyć CV przy aplikowaniu (najpierw powstaje aplikacja, potem wgrywany jest plik) albo później w „Moich aplikacjach” - i zmienić lub usunąć je, dopóki aplikacja jest na etapie Złożona / W analizie / Rozmowa / Oferta. Rekruter (admin albo pracodawca firmy oferty) pobiera CV z zakładki aplikacji.
+
+| Endpoint | Kto | Wynik |
+| --- | --- | --- |
+| `PUT /api/jobapplications/{id}/cv` (multipart, pole `file`) | właściciel aplikacji | `200` z aplikacją; zastępuje poprzednie CV |
+| `DELETE /api/jobapplications/{id}/cv` | właściciel aplikacji | `204`; brak CV - `404` |
+| `GET /api/jobapplications/{id}/cv` | właściciel, admin, pracodawca firmy oferty | plik (`Content-Disposition: attachment; filename*=UTF-8''...`, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`) |
+
+- Dozwolone są PDF i DOCX do 5 MB (5 242 880 B). Typ jest rozpoznawany po zawartości (PDF - nagłówek `%PDF-`; DOCX - archiwum ZIP z `[Content_Types].xml` i częściami `word/`), nie po rozszerzeniu ani typie podanym przez przeglądarkę; `Content-Type` i rozszerzenie nazwy ustala serwer. DOCX nie jest rozpakowywany - sprawdzany jest tylko katalog centralny ZIP (maks. 1000 wpisów i 50 MB zadeklarowanej treści po rozpakowaniu, inaczej plik jest odrzucany jak nieobsługiwany). Błędy: `400` `Unsupported file type - upload a PDF or DOCX file`, `File is too large - maximum size is 5 MB`, `File is empty`; po decyzji końcowej albo wycofaniu - `400` `CV cannot be changed in the current application status`. Żądanie większe niż 6 MB jest odrzucane bez czytania treści.
+- Nazwa pliku jest zapisywana po sanityzacji (bez ścieżki, znaków sterujących i formatujących, maks. 255 znaków, rozszerzenie zgodne z wykrytym typem) i służy tylko do wyświetlania i pobierania. Plik w magazynie ma klucz generowany przez serwer (`cv/{applicationId}/{guid}.pdf|docx`), który nie trafia do API.
+- Cudza aplikacja (także dla pracodawcy innej firmy) zwraca `404`. Zamiana CV zapisuje najpierw nowy plik, potem warunkowo rekord w bazie (tylko gdy CV nie zmieniło się w międzyczasie - inaczej `409` `CV was changed by another request`), a na końcu usuwa stary plik; gdy zapis w bazie się nie uda, nowy plik jest usuwany.
+- Usunięcie aplikacji lub oferty przez admina i reset danych demo usuwają też pliki CV (po zatwierdzeniu zmian w bazie; błąd usuwania pliku jest tylko logowany). Ponowna aplikacja po wycofaniu zachowuje CV.
+
+### Magazyn plików
+
+Backend zapisuje pliki przez `IFileStorage`, wybierany ustawieniem `Storage:Provider`:
+
+| Ustawienie | Znaczenie |
+| --- | --- |
+| `Storage:Provider` | `Local` (domyślnie) albo `S3` |
+| `Storage:LocalPath` | katalog plików dla `Local`; domyślnie `<katalog aplikacji>/storage` (`Backend/storage`, w `.gitignore`) |
+| `Storage:S3:ServiceUrl` | adres magazynu zgodnego z S3, np. `http://storage:8333` (wymagany dla `S3`) |
+| `Storage:S3:Bucket` | bucket (domyślnie `jobboard`; tworzony przy starcie backendu, jeśli nie istnieje) |
+| `Storage:S3:AccessKey`, `Storage:S3:SecretKey` | klucze dostępu (wymagane dla `S3`) |
+
+Niepełna konfiguracja S3 albo nieznany dostawca przerywają start aplikacji czytelnym błędem. W stacku Dockera backend używa `S3` z usługą `storage` (SeaweedFS 4.50): przy każdym starcie kontenera generowany jest plik konfiguracyjny S3 SeaweedFS (`-s3.config`) z jedną tożsamością o kluczach `S3_ACCESS_KEY` / `S3_SECRET_KEY` z `.env`, więc magazyn nie przyjmuje żądań bez podpisu. Uruchomienie lokalne i testy używają domyślnie `Local`.
+
 ## Uruchomienie lokalne (bez Dockera)
 
-Backend: `dotnet run` w katalogu `Backend` (wymaga MySQL na `localhost:3306`). W środowisku Development, gdy nie podano `JwtSettings:Secret`, używany jest wbudowany klucz deweloperski; w innych środowiskach sekret jest wymagany (np. zmienna `JwtSettings__Secret`). Frontend: `npm start` w katalogu `frontend` - `ng serve` przekazuje `/api` do `http://localhost:5285` (`frontend/proxy.conf.json`).
+Backend: `dotnet run` w katalogu `Backend` (wymaga MySQL na `localhost:3306`). W środowisku Development, gdy nie podano `JwtSettings:Secret`, używany jest wbudowany klucz deweloperski; w innych środowiskach sekret jest wymagany (np. zmienna `JwtSettings__Secret`). Pliki CV trafiają domyślnie do `Backend/storage` (patrz „Magazyn plików”). Frontend: `npm start` w katalogu `frontend` - `ng serve` przekazuje `/api` do `http://localhost:5285` (`frontend/proxy.conf.json`).
 
 ## Testy
 
@@ -116,3 +146,5 @@ dotnet test
 Testy integracyjne wymagają działającego serwera MySQL. Każda fabryka tworzy własną bazę o nazwie `JobBoardTest_<guid>` (migracje i seed przy starcie aplikacji) i usuwa ją po zakończeniu - baza `JobBoardDb` nie jest dotykana. Serwer i dane logowania są brane ze zmiennej środowiskowej `JOBBOARD_TEST_CONNECTION` (connection string MySQL; nazwa bazy jest ignorowana i zastępowana), a gdy jej brak - ze zmiennej `ConnectionStrings__DefaultConnection` (też tylko serwer i dane logowania). Bez żadnej z nich używane jest `Server=localhost;Port=3306;User=root;Password=devpass`.
 
 Przykład: `JOBBOARD_TEST_CONNECTION="Server=localhost;Port=3306;User=root;Password=secret;AllowPublicKeyRetrieval=true;" dotnet test`.
+
+Testy integracyjne zapisują pliki CV w magazynie `Local` w katalogu tymczasowym osobnym dla każdej fabryki (usuwanym razem z bazą). Testy `S3FileStorage` wymagają magazynu zgodnego z S3 i są pomijane, dopóki nie ustawiono `JOBBOARD_TEST_S3_URL` (np. `http://localhost:8333`; klucze opcjonalnie w `JOBBOARD_TEST_S3_ACCESS_KEY` / `JOBBOARD_TEST_S3_SECRET_KEY`) - każdy test tworzy i usuwa własny bucket.
