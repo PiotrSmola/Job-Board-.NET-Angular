@@ -13,7 +13,8 @@ public interface IEmailOutbox
     // (nic nie dodano)
     Task<bool> QueuePasswordResetAsync(ApplicationUser user);
 
-    // Powiadomienia przygotowane wg preferencji adresatów (pusta lista - nikt ich nie chce); Queue dodaje je do kontekstu.
+    // Powiadomienia przygotowane wg preferencji adresatów, tylko na potwierdzone adresy (pusta lista - nikt ich nie chce
+    // albo nie ma potwierdzonego adresu); Queue dodaje je do kontekstu.
     // Przygotowanie przed zapisem pozwala dodać je w miejscu, w którym zapis zdarzenia jest już pewny.
 
     // kandydat - potwierdzenie złożenia aplikacji, członkowie firmy oferty - nowa aplikacja

@@ -95,7 +95,7 @@ Zrobione wg sekcji E, F, G i rozstrzygnięć frontendu (1–13). Merge `main` do
 
 ### Powiadomienia e-mail
 - Kandydat (`applicationStatusChanged`): potwierdzenie złożenia aplikacji (także ponownego po wycofaniu) i zmiana statusu przez rekrutera (z komentarzem); notatka bez zmiany statusu nie wysyła e-maila. Członkowie firmy oferty (`newApplication`): nowa aplikacja – bez danych kandydata (tylko tytuł oferty i link do panelu). Członkowie firmy (`companyReview`): zatwierdzenie (tylko gdy firma nie była zatwierdzona) i odrzucenie (z powodem; ponowne odrzucenie tylko przy zmianie powodu).
-- E-maile bezpieczeństwa (potwierdzenie, reset) wysyłane zawsze, niezależnie od preferencji. Powiadomienia idą też na niepotwierdzone adresy (niepotwierdzony e-mail niczego nie blokuje).
+- E-maile bezpieczeństwa (potwierdzenie, reset) wysyłane zawsze, niezależnie od preferencji. Powiadomienia (złożenie aplikacji, zmiana statusu, nowa aplikacja, decyzja o firmie) idą TYLKO na potwierdzone adresy (`EmailConfirmed`, filtr w `EmailOutbox.Recipients`) – niepotwierdzony adres mógł zostać wpisany cudzy; e-maile bezpieczeństwa idą także na niepotwierdzone. Poza tym niepotwierdzony e-mail niczego nie blokuje. Testy powiadomień używają kont potwierdzonych (`ApiFixture.MarkEmailConfirmedAsync`).
 - Szablony (`EmailTemplates`): HTML (`lang="pl"`, style inline, kontrast ≥ 4,5:1, przycisk + adres do skopiowania) i tekst, po polsku; dane użytkowników kodowane `WebUtility.HtmlEncode`, temat w jednym wierszu bez znaków sterujących (≤300 znaków). Linki z `Frontend:BaseUrl`: `/confirm-email?userId=…&token=…`, `/reset-password?email=…&token=…` (tokeny Identity zakodowane `WebEncoders.Base64UrlEncode`, `userId`/`email` – `Uri.EscapeDataString`), `/my-applications`, `/employer`, stopka powiadomień → `/account?tab=notifications`.
 - Ważność linków: reset 1 h (domyślny dostawca tokenów Identity), potwierdzenie 3 dni (osobny `EmailConfirmationTokenProvider` – inny cel ochrony danych). Klucze Data Protection w bazie (`DataProtectionKeys`, pakiet `Microsoft.AspNetCore.DataProtection.EntityFrameworkCore`), więc linki działają po przebudowie kontenera; klucze nie są szyfrowane (ostrzeżenie `No XML encryptor configured` przy starcie – akceptowane w projekcie lokalnym).
 
@@ -124,6 +124,5 @@ Kontener sdk, Development, port 5093, baza `JobBoardDb_account`, magazyn Local w
 ### Ryzyka / do przeglądu
 - Limit per IP za nginx działa jak limit globalny do merge'u `chore/quality-backend` (`UseForwardedHeaders`, patrz wyżej); brak limitu `login`/`register`.
 - Odpowiedź `forgot-password` może minimalnie różnić się czasem dla istniejących kont (generowanie tokenu i zapis w outboksie) – jak przy logowaniu (hashowanie hasła tylko dla istniejących kont).
-- Powiadomienia są wysyłane także na niepotwierdzone adresy.
 - Link resetu ważny 1 h – jeśli SMTP jest niedostępny dłużej, wysłany później e-mail zawiera już nieważny link (użytkownik może poprosić ponownie).
 - Klucze Data Protection w bazie bez szyfrowania (projekt lokalny).

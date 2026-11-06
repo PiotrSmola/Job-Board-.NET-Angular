@@ -119,11 +119,14 @@ public sealed class EmailOutbox : IEmailOutbox
 
     private DateTime Now => _time.GetUtcNow().UtcDateTime;
 
+    // odbiorcy powiadomień: tylko potwierdzone adresy - niepotwierdzony adres mógł zostać wpisany przy rejestracji
+    // cudzy, a powiadomienia nie mogą trafiać do osób, które nie założyły konta (e-maile bezpieczeństwa - potwierdzenie
+    // i reset - idą na adres konta niezależnie od potwierdzenia, poza tą metodą)
     private IQueryable<Recipient> Recipients(System.Linq.Expressions.Expression<Func<ApplicationUser, bool>> filter) =>
         _context.Users
             .AsNoTracking()
             .Where(filter)
-            .Where(u => u.Email != null)
+            .Where(u => u.Email != null && u.EmailConfirmed)
             .Select(u => new Recipient(u.Id, u.Email!, u.FirstName, u.LastName));
 
     private Task<JobSummary?> JobSummaryAsync(int jobOfferId) =>

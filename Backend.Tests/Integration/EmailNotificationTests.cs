@@ -7,7 +7,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Tests.Integration;
 
 // Powiadomienia e-mail wg preferencji: kandydat - złożenie aplikacji i zmiana statusu, członkowie firmy - nowa
-// aplikacja i decyzja admina o firmie; e-maile powstają w outboksie razem ze zdarzeniem
+// aplikacja i decyzja admina o firmie; e-maile powstają w outboksie razem ze zdarzeniem. Powiadomienia idą tylko na
+// potwierdzone adresy, więc scenariusze używają kont z potwierdzonym e-mailem.
 [Collection(ApiCollection.Name)]
 public class EmailNotificationTests
 {
@@ -27,12 +28,32 @@ public class EmailNotificationTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    private async Task<TestUser> ConfirmedUserAsync()
+    {
+        var user = await _api.RegisterUserAsync("notify");
+        await _api.MarkEmailConfirmedAsync(user);
+        return user;
+    }
+
+    // pracodawca z potwierdzonym adresem; approved - firma od razu zatwierdzona przez admina
+    private async Task<TestEmployer> ConfirmedEmployerAsync(bool approved)
+    {
+        var employer = await _api.RegisterEmployerAsync();
+        await _api.MarkEmailConfirmedAsync(employer.User);
+        if (approved)
+        {
+            await _api.ApproveCompanyAsync(employer.CompanyId);
+        }
+
+        return employer;
+    }
+
     [Fact]
     public async Task Apply_NotifiesTheCandidateAndTheCompanyMembersWithoutCandidateData()
     {
-        var employer = await _api.RegisterApprovedEmployerAsync();
+        var employer = await ConfirmedEmployerAsync(approved: true);
         var job = await _api.CreateEmployerJobAsync(employer, j => j.Title = "Angular <Developer>");
-        var candidate = await _api.RegisterUserAsync("notify");
+        var candidate = await ConfirmedUserAsync();
 
         await _api.ApplyAsync(candidate, job.Id);
 
@@ -50,9 +71,9 @@ public class EmailNotificationTests
     [Fact]
     public async Task ReapplyAfterWithdrawal_NotifiesAgain()
     {
-        var employer = await _api.RegisterApprovedEmployerAsync();
+        var employer = await ConfirmedEmployerAsync(approved: true);
         var job = await _api.CreateEmployerJobAsync(employer);
-        var candidate = await _api.RegisterUserAsync("notify");
+        var candidate = await ConfirmedUserAsync();
         var application = await _api.ApplyAsync(candidate, job.Id);
         await _api.Emails.WaitForAsync(candidate.Email, e => e.Subject.StartsWith("Aplikacja złożona"));
         Assert.Equal(HttpStatusCode.OK, (await _api.WithdrawAsync(candidate, application.Id)).StatusCode);
@@ -68,9 +89,9 @@ public class EmailNotificationTests
     [Fact]
     public async Task StatusChange_NotifiesTheCandidateWithTheCommentButANoteAloneDoesNot()
     {
-        var employer = await _api.RegisterApprovedEmployerAsync();
+        var employer = await ConfirmedEmployerAsync(approved: true);
         var job = await _api.CreateEmployerJobAsync(employer, j => j.Title = "QA Engineer");
-        var candidate = await _api.RegisterUserAsync("notify");
+        var candidate = await ConfirmedUserAsync();
         var application = await _api.ApplyAsync(candidate, job.Id);
         using var recruiter = _api.CreateClient(employer);
 
@@ -95,10 +116,10 @@ public class EmailNotificationTests
     [Fact]
     public async Task DisabledPreferences_StopTheNotificationsButNotTheSecurityEmails()
     {
-        var employer = await _api.RegisterApprovedEmployerAsync();
+        var employer = await ConfirmedEmployerAsync(approved: true);
         await SetPreferencesAsync(employer.User, applicationStatusChanged: true, newApplication: false, companyReview: true);
         var job = await _api.CreateEmployerJobAsync(employer);
-        var candidate = await _api.RegisterUserAsync("notify");
+        var candidate = await ConfirmedUserAsync();
         await SetPreferencesAsync(candidate, applicationStatusChanged: false, newApplication: true, companyReview: true);
 
         var application = await _api.ApplyAsync(candidate, job.Id);
@@ -117,7 +138,7 @@ public class EmailNotificationTests
     [Fact]
     public async Task CompanyDecisions_NotifyTheMembers()
     {
-        var employer = await _api.RegisterEmployerAsync();
+        var employer = await ConfirmedEmployerAsync(approved: false);
 
         await _api.RejectCompanyAsync(employer.CompanyId, "Brak strony <www>");
         var rejected = await _api.Emails.WaitForAsync(employer.Email, e => e.Subject.EndsWith("nie została zatwierdzona"));
@@ -139,12 +160,46 @@ public class EmailNotificationTests
     [Fact]
     public async Task CompanyDecision_WithTheNotificationDisabled_SendsNothing()
     {
-        var employer = await _api.RegisterEmployerAsync();
+        var employer = await ConfirmedEmployerAsync(approved: false);
         await SetPreferencesAsync(employer.User, applicationStatusChanged: true, newApplication: true, companyReview: false);
 
         await _api.ApproveCompanyAsync(employer.CompanyId);
 
         Assert.False(await _api.QueryDbAsync(db =>
             db.EmailMessages.AnyAsync(m => m.UserId == employer.Id && m.Type == EmailType.CompanyReviewed)));
+    }
+
+    // niepotwierdzony adres mógł zostać wpisany cudzy - powiadomienia (wszystkie cztery rodzaje) idą dopiero po
+    // potwierdzeniu, e-maile bezpieczeństwa (potwierdzenie, reset hasła) od razu
+    [Fact]
+    public async Task UnconfirmedAddresses_GetOnlyTheSecurityEmails()
+    {
+        var employer = await _api.RegisterEmployerAsync();
+        await _api.ApproveCompanyAsync(employer.CompanyId);
+        var job = await _api.CreateEmployerJobAsync(employer, j => j.Title = "Unconfirmed Notifications");
+        var candidate = await _api.RegisterUserAsync("notify");
+
+        var application = await _api.ApplyAsync(candidate, job.Id);
+        await _api.SetApplicationStatusAsync(application.Id, ApplicationStatus.InReview);
+        using var anonymous = _api.CreateClient();
+        await anonymous.ForgotPasswordAsync(candidate.Email);
+
+        await _api.Emails.ConfirmationLinkAsync(candidate.Email);
+        await _api.Emails.ConfirmationLinkAsync(employer.Email);
+        await _api.Emails.ResetLinkAsync(candidate.Email);
+        Assert.False(await _api.QueryDbAsync(db => db.EmailMessages.AnyAsync(m =>
+            (m.UserId == candidate.Id || m.UserId == employer.Id)
+            && m.Type != EmailType.EmailConfirmation && m.Type != EmailType.PasswordReset)));
+
+        // po potwierdzeniu adresu kandydat dostaje kolejne powiadomienie, pracodawca nadal nie
+        await _api.MarkEmailConfirmedAsync(candidate);
+        await _api.SetApplicationStatusAsync(application.Id, ApplicationStatus.Interview);
+
+        var email = await _api.Emails.WaitForAsync(candidate.Email,
+            e => e.Subject == "Zmiana statusu aplikacji: Unconfirmed Notifications");
+        Assert.Contains("zmienił się na: Rozmowa", email.TextBody);
+        Assert.Equal(1, await _api.QueryDbAsync(db => db.EmailMessages.CountAsync(m =>
+            (m.UserId == candidate.Id || m.UserId == employer.Id)
+            && m.Type != EmailType.EmailConfirmation && m.Type != EmailType.PasswordReset)));
     }
 }
