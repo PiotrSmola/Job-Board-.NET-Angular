@@ -289,7 +289,13 @@ describe('AttachmentsDialogComponent in a real MatDialog', () => {
       'Nieobsługiwany typ pliku – prześlij plik PDF, DOCX, PNG lub JPEG'],
     [400, 'Bad Request', { message: 'Attachments cannot be added in the current application status' },
       'Na tym etapie rekrutacji nie można już dodawać załączników'],
-    [404, 'Not Found', { message: 'Application not found' }, 'Aplikacja nie została znaleziona']
+    [404, 'Not Found', { message: 'Application not found' }, 'Aplikacja nie została znaleziona'],
+    // kształty prawdziwego backendu: ponad 5 plików z polami kinds, ucięty multipart, brak pola files, 413 z nginx (HTML)
+    [400, 'Bad Request', { message: 'Invalid multipart form data' }, 'Nie udało się odczytać przesłanych plików'],
+    [400, 'Bad Request', { message: "No file uploaded - send files in the 'files' form field" }, 'Nie wybrano plików do przesłania'],
+    [400, 'Bad Request', { message: 'File is too large - maximum size is 5 MB' }, 'Plik jest za duży – maksymalny rozmiar to 5 MB'],
+    [413, 'Request Entity Too Large', '<html><head><title>413 Request Entity Too Large</title></head><body>nginx</body></html>',
+      'Przesyłane pliki są za duże – maksymalnie 5 MB na plik i 25 MB łącznie']
   ])('shows an announced, translated message for a %i response and lets the user retry', async (status, statusText, body, expected) => {
     open();
     chooseFiles(PDF);
