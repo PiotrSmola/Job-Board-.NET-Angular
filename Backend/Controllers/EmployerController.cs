@@ -41,7 +41,8 @@ public class EmployerController : ControllerBase
         return Ok(company.ToDto(includeReview: true));
     }
 
-    // Edycja profilu; firma odrzucona wraca po edycji do weryfikacji (Pending, powód odrzucenia czyszczony)
+    // Edycja profilu; do weryfikacji (Pending, powód i data decyzji czyszczone) wraca firma odrzucona po każdej edycji
+    // oraz zatwierdzona po zmianie nazwy lub strony www (sam opis / lokalizacja nie zmieniają statusu)
     [HttpPut("company")]
     [ProducesResponseType(typeof(CompanyDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -62,8 +63,13 @@ public class EmployerController : ControllerBase
             return BadRequest(new { message = CompanyMessages.NameTaken });
         }
 
+        // zmiana nazwy lub strony www zatwierdzonej firmy wymaga ponownej weryfikacji (ochrona przed podszywaniem się pod marki)
+        var identityChanged = !string.Equals(company.Name, CompanyNames.Normalize(companyDto.Name), StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(company.Website, CompanyNames.NormalizeOptional(companyDto.Website), StringComparison.Ordinal);
+
         companyDto.ApplyTo(company);
-        if (company.Status == CompanyStatus.Rejected)
+        if (company.Status == CompanyStatus.Rejected
+            || (company.Status == CompanyStatus.Approved && identityChanged))
         {
             company.Resubmit();
         }

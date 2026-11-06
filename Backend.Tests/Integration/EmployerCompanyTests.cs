@@ -2,6 +2,7 @@ using System.Net;
 using Backend.DTOs;
 using Backend.Models;
 using Backend.Tests.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Tests.Integration;
 
@@ -450,20 +451,157 @@ public class EmployerCompanyTests
         Assert.Equal(employer.CompanyId, company.Id);
     }
 
+    // --- zmiana nazwy / strony www zatwierdzonej firmy wymaga ponownej weryfikacji ---
+
     [Fact]
-    public async Task Put_ApprovedCompanyRename_IsVisibleInPublicProfileAndJobs()
+    public async Task Put_ApprovedCompanyRename_ResubmitsAndHidesProfileAndJobsUntilReapproved()
     {
         var employer = await _api.RegisterApprovedEmployerAsync();
         var job = await _api.CreateEmployerJobAsync(employer);
         var newName = ApiFixture.UniqueName("Przemianowana");
         using var client = _api.CreateClient(employer);
 
-        await client.PutJsonAsync(Url, Form(newName));
+        var response = await client.PutJsonAsync(Url, Form(newName));
+
+        var company = await response.ReadJsonAsync<CompanyDto>();
+        Assert.Equal(CompanyStatus.Pending, company.Status);
+        Assert.Null(company.ReviewedAt);
+        Assert.Null(company.RejectionReason);
+        Assert.Equal(newName, company.Name);
+        Assert.Null(await _api.QueryDbAsync(db => db.Companies.Where(c => c.Id == employer.CompanyId)
+            .Select(c => c.ReviewedByUserId).SingleAsync()));
 
         using var anonymous = _api.CreateClient();
-        var company = await (await anonymous.GetAsync($"/api/companies/{employer.CompanyId}")).ReadJsonAsync<CompanyDto>();
+        Assert.Equal(HttpStatusCode.NotFound, (await anonymous.GetAsync($"/api/companies/{employer.CompanyId}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await anonymous.GetAsync($"/api/jobs/{job.Id}")).StatusCode);
+
+        await _api.ApproveCompanyAsync(employer.CompanyId);
+
+        var publicCompany = await (await anonymous.GetAsync($"/api/companies/{employer.CompanyId}")).ReadJsonAsync<CompanyDto>();
         var publicJob = await (await anonymous.GetAsync($"/api/jobs/{job.Id}")).ReadJsonAsync<JobOfferDto>();
-        Assert.Equal(newName, company.Name);
+        Assert.Equal(newName, publicCompany.Name);
         Assert.Equal(newName, publicJob.Company);
+    }
+
+    [Theory]
+    [InlineData("https://nowa-strona.example.com")]
+    [InlineData("https://firma.example.com/kariera")]
+    public async Task Put_ApprovedCompanyWebsiteChange_Resubmits(string website)
+    {
+        var employer = await _api.RegisterApprovedEmployerAsync();
+        using var client = _api.CreateClient(employer);
+        await _api.QueryDbAsync(async db =>
+        {
+            var entity = await db.Companies.SingleAsync(c => c.Id == employer.CompanyId);
+            entity.Website = "https://firma.example.com";
+            return await db.SaveChangesAsync();
+        });
+
+        var response = await client.PutJsonAsync(Url, Form(employer.CompanyName, d => d.Website = website));
+
+        var company = await response.ReadJsonAsync<CompanyDto>();
+        Assert.Equal(CompanyStatus.Pending, company.Status);
+        Assert.Null(company.ReviewedAt);
+        Assert.Equal(website, company.Website);
+    }
+
+    [Fact]
+    public async Task Put_ApprovedCompanyAddingOrRemovingWebsite_Resubmits()
+    {
+        var added = await _api.RegisterApprovedEmployerAsync();
+        var removed = await _api.RegisterEmployerAsync(customize: d => d.Website = "https://usuwana.example.com");
+        await _api.ApproveCompanyAsync(removed.CompanyId);
+
+        using var addedClient = _api.CreateClient(added);
+        using var removedClient = _api.CreateClient(removed);
+        var afterAdd = await (await addedClient.PutJsonAsync(Url, Form(added.CompanyName, d => d.Website = "https://dodana.example.com")))
+            .ReadJsonAsync<CompanyDto>();
+        var afterRemove = await (await removedClient.PutJsonAsync(Url, Form(removed.CompanyName, d => d.Website = "  ")))
+            .ReadJsonAsync<CompanyDto>();
+
+        Assert.Equal(CompanyStatus.Pending, afterAdd.Status);
+        Assert.Equal(CompanyStatus.Pending, afterRemove.Status);
+        Assert.Null(afterRemove.Website);
+    }
+
+    [Fact]
+    public async Task Put_ApprovedCompanyOnlyDescriptionAndLocation_KeepsApprovedStatusAndReviewer()
+    {
+        var employer = await _api.RegisterEmployerAsync(customize: d => d.Website = "https://bez-zmian.example.com");
+        await _api.ApproveCompanyAsync(employer.CompanyId);
+        var before = await GetOwnAsync(employer);
+        using var client = _api.CreateClient(employer);
+
+        var response = await client.PutJsonAsync(Url, Form(employer.CompanyName, d =>
+        {
+            d.Description = "Nowy opis";
+            d.Location = "Sopot";
+            d.Website = "  https://bez-zmian.example.com  ";
+        }));
+
+        var company = await response.ReadJsonAsync<CompanyDto>();
+        Assert.Equal(CompanyStatus.Approved, company.Status);
+        Assert.Equal(before.ReviewedAt, company.ReviewedAt);
+        Assert.NotNull(await _api.QueryDbAsync(db => db.Companies.Where(c => c.Id == employer.CompanyId)
+            .Select(c => c.ReviewedByUserId).SingleAsync()));
+    }
+
+    [Fact]
+    public async Task Put_ApprovedCompanyNameDifferingOnlyInCaseOrSpacing_KeepsApprovedStatus()
+    {
+        var employer = await _api.RegisterApprovedEmployerAsync();
+        using var client = _api.CreateClient(employer);
+
+        foreach (var name in new[] { "  " + employer.CompanyName.Replace(" ", "   ") + " ", employer.CompanyName.ToUpperInvariant() })
+        {
+            var response = await client.PutJsonAsync(Url, Form(name));
+
+            Assert.Equal(CompanyStatus.Approved, (await response.ReadJsonAsync<CompanyDto>()).Status);
+        }
+    }
+
+    [Fact]
+    public async Task Put_PendingCompanyRename_StaysPending()
+    {
+        var employer = await _api.RegisterEmployerAsync();
+        using var client = _api.CreateClient(employer);
+
+        var response = await client.PutJsonAsync(Url, Form(ApiFixture.UniqueName("Nowa"), d => d.Website = "https://x.example.com"));
+
+        Assert.Equal(CompanyStatus.Pending, (await response.ReadJsonAsync<CompanyDto>()).Status);
+    }
+
+    [Fact]
+    public async Task Put_ApprovedCompanyRenameToTakenName_ReturnsBadRequestAndStaysApproved()
+    {
+        var other = await _api.CreateCompanyAsync();
+        var employer = await _api.RegisterApprovedEmployerAsync();
+        using var client = _api.CreateClient(employer);
+
+        var response = await client.PutJsonAsync(Url, Form(other.Name));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var own = await GetOwnAsync(employer);
+        Assert.Equal(CompanyStatus.Approved, own.Status);
+        Assert.NotNull(own.ReviewedAt);
+    }
+
+    [Fact]
+    public async Task AdminRenameOfApprovedCompany_KeepsApprovedStatus()
+    {
+        var employer = await _api.RegisterApprovedEmployerAsync();
+        var before = await GetOwnAsync(employer);
+        using var admin = await _api.AdminClientAsync();
+
+        var response = await admin.PutJsonAsync($"/api/admin/companies/{employer.CompanyId}", new CompanyFormDto
+        {
+            Name = ApiFixture.UniqueName("Admin zmienia"),
+            Website = "https://admin.example.com"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var own = await GetOwnAsync(employer);
+        Assert.Equal(CompanyStatus.Approved, own.Status);
+        Assert.Equal(before.ReviewedAt, own.ReviewedAt);
     }
 }

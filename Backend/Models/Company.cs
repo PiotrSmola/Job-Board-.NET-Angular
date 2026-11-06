@@ -54,7 +54,7 @@ public class Company
         ReviewedByUserId = reviewerId;
     }
 
-    // Ponowne zgłoszenie odrzuconej firmy do weryfikacji (po edycji profilu przez pracodawcę)
+    // Ponowne zgłoszenie do weryfikacji: odrzucona firma po edycji profilu albo zatwierdzona po zmianie nazwy / www
     public void Resubmit()
     {
         Status = CompanyStatus.Pending;
