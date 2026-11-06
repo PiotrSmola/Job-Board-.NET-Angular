@@ -1,4 +1,4 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, input, ChangeDetectionStrategy } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ApplicationStatusHistoryEntry } from '../../models/job-application.model';
 import { getApplicationStatusPresentation } from '../../utils/status-labels';
@@ -34,6 +34,7 @@ import { StatusChipComponent } from './status-chip.component';
       </ol>
     }
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .timeline {
       list-style: none;

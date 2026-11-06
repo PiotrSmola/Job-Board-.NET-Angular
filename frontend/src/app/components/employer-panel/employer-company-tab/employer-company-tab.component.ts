@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, output, signal, ChangeDetectionStrategy } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -44,6 +44,7 @@ interface StatusBanner {
     MatProgressSpinnerModule
   ],
   templateUrl: './employer-company-tab.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './employer-company-tab.component.scss'
 })
 export class EmployerCompanyTabComponent implements OnInit {

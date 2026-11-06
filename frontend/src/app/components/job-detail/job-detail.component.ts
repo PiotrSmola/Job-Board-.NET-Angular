@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, inject, OnInit, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -50,6 +50,7 @@ const NOT_ACCEPTING_MESSAGE = 'This job offer is not accepting applications';
       <button mat-raised-button color="primary" [mat-dialog-close]="{ confirmed: true, note: note }">Aplikuj</button>
     </mat-dialog-actions>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .full-width { width: 100%; }
     mat-dialog-content { min-width: 400px; padding: 20px; }
@@ -75,6 +76,7 @@ export class ApplyDialogComponent {
     StatusChipComponent
   ],
   templateUrl: './job-detail.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './job-detail.component.scss'
 })
 export class JobDetailComponent implements OnInit {
