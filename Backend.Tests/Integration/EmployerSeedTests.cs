@@ -3,6 +3,8 @@ using Backend.Data;
 using Backend.DTOs;
 using Backend.Models;
 using Backend.Tests.Infrastructure;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Backend.Tests.Integration;
 
@@ -297,5 +299,64 @@ public class EmployerSeedRefreshTests : IClassFixture<ProductionRefreshEnabledFi
 
         Assert.True(publicTotal >= 20);
         Assert.Equal(publicTotal + 1, adminTotal);
+    }
+
+    // Konta demo bez firmy (np. po cofnięciu i ponownym zastosowaniu migracji AddCompanies) są przy starcie dopinane do firm;
+    // brakująca firma demo jest tworzona od nowa
+    [Fact]
+    public async Task Seed_AttachesExistingDemoEmployersWithoutCompany()
+    {
+        await RefreshAsync();
+        var demoEmails = new[] { DatabaseSeeder.ApprovedEmployerEmail, DatabaseSeeder.PendingEmployerEmail };
+        var oldPendingName = ApiFixture.UniqueName("Dawna firma demo");
+        await _api.QueryDbAsync(async db =>
+        {
+            await db.Users.Where(u => demoEmails.Contains(u.Email!)).ExecuteUpdateAsync(u => u.SetProperty(x => x.CompanyId, (int?)null));
+            // firma oczekująca "znika" (zmiana nazwy) - seeder musi utworzyć ją ponownie
+            return await db.Companies.Where(c => c.Name == DatabaseSeeder.PendingEmployerCompany)
+                .ExecuteUpdateAsync(c => c.SetProperty(x => x.Name, oldPendingName));
+        });
+        var userIds = await _api.QueryDbAsync(db => db.Users.Where(u => demoEmails.Contains(u.Email!))
+            .OrderBy(u => u.Email).Select(u => u.Id).ToListAsync());
+
+        using (var scope = _api.Factory.Services.CreateScope())
+        {
+            await DatabaseSeeder.SeedAsync(scope.ServiceProvider);
+        }
+
+        using var techCorp = _api.CreateClient(await _api.LoginAsync(DatabaseSeeder.ApprovedEmployerEmail, DatabaseSeeder.EmployerPassword));
+        var techCorpCompany = await (await techCorp.GetAsync("/api/employer/company")).ReadJsonAsync<CompanyDto>();
+        Assert.Equal(DatabaseSeeder.ApprovedEmployerCompany, techCorpCompany.Name);
+        Assert.Equal(CompanyStatus.Approved, techCorpCompany.Status);
+        Assert.True(techCorpCompany.ActiveJobsCount >= 1);
+
+        using var nowa = _api.CreateClient(await _api.LoginAsync(DatabaseSeeder.PendingEmployerEmail, DatabaseSeeder.EmployerPassword));
+        var nowaCompany = await (await nowa.GetAsync("/api/employer/company")).ReadJsonAsync<CompanyDto>();
+        Assert.Equal(DatabaseSeeder.PendingEmployerCompany, nowaCompany.Name);
+        Assert.Equal(CompanyStatus.Pending, nowaCompany.Status);
+
+        // te same konta (bez duplikatów), dopięte do firm
+        var after = await _api.QueryDbAsync(db => db.Users.Where(u => demoEmails.Contains(u.Email!))
+            .OrderBy(u => u.Email).Select(u => new { u.Id, u.CompanyId }).ToListAsync());
+        Assert.Equal(userIds, after.Select(u => u.Id));
+        Assert.All(after, u => Assert.NotNull(u.CompanyId));
+    }
+
+    [Fact]
+    public async Task Seed_DoesNotReassignDemoEmployerAlreadyLinkedToACompany()
+    {
+        await RefreshAsync();
+        var other = await _api.CreateCompanyAsync();
+        await _api.QueryDbAsync(db => db.Users.Where(u => u.Email == DatabaseSeeder.ApprovedEmployerEmail)
+            .ExecuteUpdateAsync(u => u.SetProperty(x => x.CompanyId, other.Id)));
+
+        using (var scope = _api.Factory.Services.CreateScope())
+        {
+            await DatabaseSeeder.SeedAsync(scope.ServiceProvider);
+        }
+
+        var companyId = await _api.QueryDbAsync(db => db.Users.Where(u => u.Email == DatabaseSeeder.ApprovedEmployerEmail)
+            .Select(u => u.CompanyId).SingleAsync());
+        Assert.Equal(other.Id, companyId);
     }
 }

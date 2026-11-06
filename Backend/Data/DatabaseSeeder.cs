@@ -447,7 +447,8 @@ public static class DatabaseSeeder
 
         foreach (var employerData in employers)
         {
-            if (await userManager.FindByEmailAsync(employerData.Email) != null)
+            var existing = await userManager.FindByEmailAsync(employerData.Email);
+            if (existing?.CompanyId != null)
             {
                 continue;
             }
@@ -456,6 +457,14 @@ public static class DatabaseSeeder
             if (company.Id == 0)
             {
                 await context.SaveChangesAsync();
+            }
+
+            if (existing != null)
+            {
+                // konto demo bez firmy (np. po cofnięciu i ponownym zastosowaniu migracji AddCompanies) - dopinamy je do firmy
+                existing.CompanyId = company.Id;
+                await userManager.UpdateAsync(existing);
+                continue;
             }
 
             var employer = new ApplicationUser
