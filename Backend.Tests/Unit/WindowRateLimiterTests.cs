@@ -3,9 +3,9 @@ using Backend.Services;
 
 namespace Backend.Tests.Unit;
 
-// Limiter polityki "uploads": okno stałe na użytkownika z Retry-After = czas do końca okna i wspólny limit
-// równoległych uploadów, którego odrzucenie nie zużywa limitu okna
-public class UploadRateLimiterTests
+// Limiter partycji polityk "uploads" / "auth" / "public-lists": okno stałe z Retry-After = czas do końca okna
+// i wspólny limit równoległych żądań, którego odrzucenie nie zużywa limitu okna
+public class WindowRateLimiterTests
 {
     private static readonly TimeSpan Window = TimeSpan.FromSeconds(600);
 
@@ -26,7 +26,7 @@ public class UploadRateLimiterTests
     public void Rejection_ReportsTheTimeLeftUntilTheEndOfTheWindow()
     {
         var time = new ManualTime();
-        using var limiter = new UploadRateLimiter(2, Window, null, time);
+        using var limiter = new WindowRateLimiter(2, Window, null, time);
 
         Assert.True(limiter.AttemptAcquire().IsAcquired);
         time.Advance(TimeSpan.FromSeconds(100));
@@ -47,7 +47,7 @@ public class UploadRateLimiterTests
     public void AfterTheWindow_TheLimitStartsAgainFromTheNextRequest()
     {
         var time = new ManualTime();
-        using var limiter = new UploadRateLimiter(1, Window, null, time);
+        using var limiter = new WindowRateLimiter(1, Window, null, time);
         Assert.True(limiter.AttemptAcquire().IsAcquired);
         time.Advance(Window);
 
@@ -63,7 +63,7 @@ public class UploadRateLimiterTests
     public async Task AcquireAsync_DoesNotQueue()
     {
         var time = new ManualTime();
-        using var limiter = new UploadRateLimiter(1, Window, null, time);
+        using var limiter = new WindowRateLimiter(1, Window, null, time);
         Assert.True((await limiter.AcquireAsync()).IsAcquired);
 
         var rejected = await limiter.AcquireAsync();
@@ -77,8 +77,8 @@ public class UploadRateLimiterTests
     {
         var time = new ManualTime();
         using var concurrency = new ConcurrencyLimiter(new ConcurrencyLimiterOptions { PermitLimit = 1, QueueLimit = 0 });
-        using var alice = new UploadRateLimiter(30, Window, concurrency, time);
-        using var bob = new UploadRateLimiter(30, Window, concurrency, time);
+        using var alice = new WindowRateLimiter(30, Window, concurrency, time);
+        using var bob = new WindowRateLimiter(30, Window, concurrency, time);
 
         var running = alice.AttemptAcquire();
         Assert.True(running.IsAcquired);
@@ -99,8 +99,8 @@ public class UploadRateLimiterTests
     {
         var time = new ManualTime();
         using var concurrency = new ConcurrencyLimiter(new ConcurrencyLimiterOptions { PermitLimit = 1, QueueLimit = 0 });
-        using var alice = new UploadRateLimiter(1, Window, concurrency, time);
-        using var bob = new UploadRateLimiter(1, Window, concurrency, time);
+        using var alice = new WindowRateLimiter(1, Window, concurrency, time);
+        using var bob = new WindowRateLimiter(1, Window, concurrency, time);
         alice.AttemptAcquire().Dispose();
 
         Assert.False(alice.AttemptAcquire().IsAcquired);
@@ -114,7 +114,7 @@ public class UploadRateLimiterTests
     {
         var time = new ManualTime();
         using var concurrency = new ConcurrencyLimiter(new ConcurrencyLimiterOptions { PermitLimit = 2, QueueLimit = 0 });
-        using var limiter = new UploadRateLimiter(30, Window, concurrency, time);
+        using var limiter = new WindowRateLimiter(30, Window, concurrency, time);
         var first = limiter.AttemptAcquire();
         using var second = limiter.AttemptAcquire();
 
@@ -128,7 +128,7 @@ public class UploadRateLimiterTests
     public void IdleDuration_IsNullDuringTheWindowAndCountsFromItsEnd()
     {
         var time = new ManualTime();
-        using var limiter = new UploadRateLimiter(5, Window, null, time);
+        using var limiter = new WindowRateLimiter(5, Window, null, time);
         time.Advance(TimeSpan.FromSeconds(3));
         Assert.Equal(TimeSpan.FromSeconds(3), limiter.IdleDuration);
 
@@ -143,7 +143,7 @@ public class UploadRateLimiterTests
     [Fact]
     public void PermitCountAboveTheLimit_Throws()
     {
-        using var limiter = new UploadRateLimiter(2, Window, null, new ManualTime());
+        using var limiter = new WindowRateLimiter(2, Window, null, new ManualTime());
 
         Assert.Throws<ArgumentOutOfRangeException>(() => limiter.AttemptAcquire(3));
     }

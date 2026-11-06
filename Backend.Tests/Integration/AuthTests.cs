@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Backend.DTOs;
 using Backend.Tests.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Tests.Integration;
 
@@ -298,5 +299,26 @@ public class AuthTests
         }
 
         Assert.Equal(HttpStatusCode.OK, (await client.PostJsonAsync("/api/auth/login", correct)).StatusCode);
+    }
+
+    // Równoległe nieudane próby nie gubią inkrementacji licznika ani nie kończą się konfliktem zapisu (500):
+    // blokada per konto szereguje sprawdzenie hasła, więc konto blokuje się dokładnie po 5 nieudanych próbach
+    [Fact]
+    public async Task Login_TwentyParallelFailedAttempts_LockTheAccountAfterFive()
+    {
+        var user = await _api.RegisterUserAsync("parallel");
+        var wrong = new LoginDto { Email = user.Email, Password = "WrongPassw0rd" };
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 20).Select(async _ =>
+        {
+            using var client = _api.CreateClient();
+            return (await client.PostJsonAsync("/api/auth/login", wrong)).StatusCode;
+        }));
+
+        Assert.Equal(4, responses.Count(s => s == HttpStatusCode.Unauthorized));
+        Assert.Equal(16, responses.Count(s => s == HttpStatusCode.Locked));
+        var account = await _api.QueryDbAsync(db => db.Users.AsNoTracking().SingleAsync(u => u.Id == user.Id));
+        Assert.True(account.LockoutEnd > DateTimeOffset.UtcNow.AddMinutes(4), $"Account should be locked, LockoutEnd = {account.LockoutEnd}");
+        Assert.Equal(0, account.AccessFailedCount);
     }
 }

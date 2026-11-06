@@ -3,8 +3,10 @@ using Backend.Helpers;
 using Backend.Interfaces;
 using Backend.Mappings;
 using Backend.Models;
+using Backend.Settings;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Backend.Controllers;
 
@@ -39,6 +41,7 @@ public class JobsController : ControllerBase
 
     // Publiczna lista - wyłącznie oferty aktywne i niewygasłe firm zatwierdzonych (opcjonalny filtr companyId)
     [HttpGet]
+    [EnableRateLimiting(RateLimitingSettings.PublicListsPolicy)]
     [ProducesResponseType(typeof(IEnumerable<JobOfferDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<JobOfferDto>>> GetJobs([FromQuery] JobParams jobParams)
     {

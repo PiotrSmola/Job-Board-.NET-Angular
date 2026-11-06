@@ -3,12 +3,14 @@ using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
 using Backend.Data;
+using Backend.Helpers;
 using Backend.Interfaces;
 using Backend.Models;
 using Backend.Repositories;
 using Backend.Services;
 using Backend.Settings;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -99,6 +101,8 @@ builder.Services.AddScoped<IJobRepository, JobRepository>();
 builder.Services.AddScoped<IJobApplicationRepository, JobApplicationRepository>();
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<ILoginService, LoginService>();
+builder.Services.AddSingleton<LoginLocks>();
 
 // Magazyn plików załączników wg Storage:Provider (Local - katalog na dysku, S3 - magazyn zgodny z S3, np. SeaweedFS);
 // konfiguracja walidowana w jednym miejscu (StorageSettings.Validate)
@@ -118,21 +122,43 @@ builder.Services.AddSingleton<IFileStorage>(sp =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserAccess, CurrentUserAccess>();
 
-// Ograniczanie liczby żądań: polityka "uploads" (upload załączników) - osobny limit dla każdego zalogowanego
-// użytkownika (okno stałe od pierwszego żądania, bez kolejki) i wspólny limit równoległych uploadów (bez kolejki);
-// przekroczenie -> 429 z komunikatem API, po wyczerpaniu okna z Retry-After = czas do końca okna (UploadRateLimiter).
-// Limitery nieaktywnych użytkowników są usuwane przez PartitionedRateLimiter (brak nieograniczonego cache'u).
+// Ograniczanie liczby żądań (RateLimitingSettings, okno stałe od pierwszego żądania partycji - WindowRateLimiter):
+// - "uploads" (upload załączników) - osobny limit dla każdego zalogowanego użytkownika i wspólny limit równoległych uploadów,
+// - "auth" (logowanie, rejestracja - cały AuthController) - osobny limit dla każdego adresu IP i wspólny limit
+//   równoległych żądań (haszowanie haseł obciąża CPU),
+// - "public-lists" (publiczne listy ofert i firm) - osobny limit dla każdego adresu IP.
+// Bez kolejek; przekroczenie -> 429 z komunikatem API i Retry-After (czas do końca okna, przy limicie równoległości 1 s).
+// Limitery nieaktywnych partycji są usuwane przez PartitionedRateLimiter (brak nieograniczonego cache'u).
 builder.Services.AddOptions<RateLimitingSettings>()
     .Bind(builder.Configuration.GetSection(RateLimitingSettings.SectionName))
     .PostConfigure(settings => settings.Validate());
 
-// wspólny dla wszystkich użytkowników limit równoległych uploadów (singleton zwalniany razem z kontenerem DI)
+// wspólne dla wszystkich partycji limity równoległych żądań (singletony zwalniane razem z kontenerem DI)
 builder.Services.AddKeyedSingleton<RateLimiter>(RateLimitingSettings.UploadsPolicy, (sp, _) =>
     new ConcurrencyLimiter(new ConcurrencyLimiterOptions
     {
         PermitLimit = sp.GetRequiredService<IOptions<RateLimitingSettings>>().Value.Uploads.ConcurrencyLimit,
         QueueLimit = 0
     }));
+builder.Services.AddKeyedSingleton<RateLimiter>(RateLimitingSettings.AuthPolicy, (sp, _) =>
+    new ConcurrencyLimiter(new ConcurrencyLimiterOptions
+    {
+        PermitLimit = sp.GetRequiredService<IOptions<RateLimitingSettings>>().Value.Auth.ConcurrencyLimit,
+        QueueLimit = 0
+    }));
+
+// Adres klienta za reverse proxy: backend jest osiągalny tylko przez nginx z kontenera frontendu (sieć compose) i na
+// 127.0.0.1 hosta, więc X-Forwarded-For jest przyjmowany od każdego nadawcy (KnownNetworks/KnownProxies wyczyszczone -
+// adres nginx w sieci Dockera nie jest stały). ForwardLimit = 1: brany jest tylko ostatni wpis, czyli adres dopisany
+// przez nginx ($proxy_add_x_forwarded_for) - wpisy podrobione przez klienta przed nim są ignorowane. Bez proxy (żądanie
+// wprost na 127.0.0.1) lokalny klient mógłby podać dowolny adres - akceptowalne dla stacku dostępnego tylko lokalnie.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+    options.ForwardLimit = 1;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -144,23 +170,46 @@ builder.Services.AddRateLimiter(options =>
         var concurrency = services.GetRequiredKeyedService<RateLimiter>(RateLimitingSettings.UploadsPolicy);
         var limit = services.GetRequiredService<IOptions<RateLimitingSettings>>().Value.Uploads;
         // endpoint wymaga zalogowania - adres IP tylko obronnie, gdyby polityka trafiła na endpoint anonimowy
-        var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
-                           ?? "ip:" + httpContext.Connection.RemoteIpAddress;
+        var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? httpContext.ClientIpPartitionKey();
 
-        return RateLimitPartition.Get(partitionKey, _ => new UploadRateLimiter(
+        return RateLimitPartition.Get(partitionKey, _ => new WindowRateLimiter(
             limit.PermitLimit,
             TimeSpan.FromSeconds(limit.WindowSeconds),
             concurrency,
             TimeProvider.System));
     });
 
+    options.AddPolicy(RateLimitingSettings.AuthPolicy, httpContext =>
+    {
+        var services = httpContext.RequestServices;
+        var concurrency = services.GetRequiredKeyedService<RateLimiter>(RateLimitingSettings.AuthPolicy);
+        var limit = services.GetRequiredService<IOptions<RateLimitingSettings>>().Value.Auth;
+
+        return RateLimitPartition.Get(httpContext.ClientIpPartitionKey(), _ => new WindowRateLimiter(
+            limit.PermitLimit,
+            TimeSpan.FromSeconds(limit.WindowSeconds),
+            concurrency,
+            TimeProvider.System));
+    });
+
+    options.AddPolicy(RateLimitingSettings.PublicListsPolicy, httpContext =>
+    {
+        var limit = httpContext.RequestServices.GetRequiredService<IOptions<RateLimitingSettings>>().Value.PublicLists;
+
+        return RateLimitPartition.Get(httpContext.ClientIpPartitionKey(), _ => new WindowRateLimiter(
+            limit.PermitLimit,
+            TimeSpan.FromSeconds(limit.WindowSeconds),
+            shared: null,
+            TimeProvider.System));
+    });
+
     options.OnRejected = async (context, cancellationToken) =>
     {
-        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
-        {
-            context.HttpContext.Response.Headers.RetryAfter =
-                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
-        }
+        // odrzucenie przez limit równoległości nie ma czasu do końca okna - klient może spróbować po sekundzie
+        var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var windowLeft)
+            ? Math.Max(1, (int)Math.Ceiling(windowLeft.TotalSeconds))
+            : 1;
+        context.HttpContext.Response.Headers.RetryAfter = retryAfter.ToString(CultureInfo.InvariantCulture);
 
         await context.HttpContext.Response.WriteAsJsonAsync(
             new { message = RateLimitingSettings.RejectedMessage }, cancellationToken);
@@ -228,7 +277,11 @@ using (var scope = app.Services.CreateScope())
     await DatabaseSeeder.SeedAsync(scope.ServiceProvider);
 }
 
-// konfiguracja potoku HTTP - obsługa wyjątków jako pierwsza (obejmuje cały potok); zaraz za nią błędy klienta
+// konfiguracja potoku HTTP - najpierw prawdziwy adres klienta z X-Forwarded-For (nginx), z którego korzysta reszta
+// potoku (limity żądań per IP); middleware nie rzuca wyjątków
+app.UseForwardedHeaders();
+
+// obsługa wyjątków (obejmuje resztę potoku); zaraz za nią błędy klienta
 // przy odczycie żądania (BadHttpRequestException) - ich kod statusu i log Warning zamiast 500 i Error
 app.UseExceptionHandler();
 app.UseMiddleware<ClientRequestErrorMiddleware>();
@@ -250,7 +303,7 @@ app.UseCors("AllowAngularApp");
 app.UseAuthentication();
 app.UseAuthorization();
 
-// po uwierzytelnieniu - limit liczony per użytkownik; anonim dostaje 401, zanim zostanie policzony
+// po uwierzytelnieniu - limit uploadów liczony per użytkownik; anonim dostaje 401, zanim zostanie policzony
 app.UseRateLimiter();
 
 app.MapControllers();

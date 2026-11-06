@@ -3,32 +3,37 @@ using Backend.DTOs;
 using Backend.Helpers;
 using Backend.Interfaces;
 using Backend.Models;
+using Backend.Settings;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Backend.Controllers;
 
+// Cały kontroler pod polityką "auth" (limit per IP i wspólny limit równoległych żądań) - każdy nowy endpoint
+// uwierzytelniania (np. reset hasła) dziedziczy ją automatycznie; poza tym kontrolerem użyj tego samego atrybutu
 [Route("api/[controller]")]
 [ApiController]
+[EnableRateLimiting(RateLimitingSettings.AuthPolicy)]
 public class AuthController : ControllerBase
 {
     private const string EmailTakenMessage = "Email is already taken";
 
     private readonly UserManager<ApplicationUser> _userManager;
-    private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly ILoginService _loginService;
     private readonly ITokenService _tokenService;
     private readonly ICompanyRepository _companyRepository;
     private readonly ApplicationDbContext _context;
 
     public AuthController(
         UserManager<ApplicationUser> userManager,
-        SignInManager<ApplicationUser> signInManager,
+        ILoginService loginService,
         ITokenService tokenService,
         ICompanyRepository companyRepository,
         ApplicationDbContext context)
     {
         _userManager = userManager;
-        _signInManager = signInManager;
+        _loginService = loginService;
         _tokenService = tokenService;
         _companyRepository = companyRepository;
         _context = context;
@@ -137,27 +142,15 @@ public class AuthController : ControllerBase
     [ProducesResponseType(typeof(object), StatusCodes.Status423Locked)]
     public async Task<ActionResult<UserDto>> Login(LoginDto loginDto)
     {
-        var user = await _userManager.FindByEmailAsync(loginDto.Email);
+        var result = await _loginService.CheckCredentialsAsync(loginDto.Email, loginDto.Password, HttpContext.RequestAborted);
 
-        if (user == null)
+        return result.Status switch
         {
-            return Unauthorized(new { message = "Invalid email or password" });
-        }
-
-        var result = await _signInManager.CheckPasswordSignInAsync(user, loginDto.Password, lockoutOnFailure: true);
-
-        if (result.IsLockedOut)
-        {
-            return StatusCode(StatusCodes.Status423Locked,
-                new { message = "Account is temporarily locked due to too many failed login attempts" });
-        }
-
-        if (!result.Succeeded)
-        {
-            return Unauthorized(new { message = "Invalid email or password" });
-        }
-
-        return await ToUserDtoAsync(user);
+            LoginStatus.Succeeded => await ToUserDtoAsync(result.User!),
+            LoginStatus.LockedOut => StatusCode(StatusCodes.Status423Locked,
+                new { message = "Account is temporarily locked due to too many failed login attempts" }),
+            _ => Unauthorized(new { message = "Invalid email or password" })
+        };
     }
 
     private BadRequestObjectResult EmailTaken() => BadRequest(new { message = EmailTakenMessage });
