@@ -155,7 +155,8 @@ builder.Services.AddRateLimiter(options =>
     };
 });
 
-// Nieobsłużone wyjątki -> 500 {message} bez szczegółów (GlobalExceptionHandler), także w Development
+// Nieobsłużone wyjątki -> 500 {message} bez szczegółów (GlobalExceptionHandler), także w Development;
+// BadHttpRequestException -> jego kod statusu (np. 413 {message:"Request body too large"})
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
@@ -215,8 +216,10 @@ using (var scope = app.Services.CreateScope())
     await DatabaseSeeder.SeedAsync(scope.ServiceProvider);
 }
 
-// konfiguracja potoku HTTP - obsługa wyjątków jako pierwsza (obejmuje cały potok)
+// konfiguracja potoku HTTP - obsługa wyjątków jako pierwsza (obejmuje cały potok); zaraz za nią błędy klienta
+// przy odczycie żądania (BadHttpRequestException) - ich kod statusu i log Warning zamiast 500 i Error
 app.UseExceptionHandler();
+app.UseMiddleware<ClientRequestErrorMiddleware>();
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>

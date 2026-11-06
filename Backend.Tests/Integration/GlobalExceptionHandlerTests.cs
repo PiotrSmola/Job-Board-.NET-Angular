@@ -4,6 +4,7 @@ using Backend.Services;
 using Backend.Tests.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -22,6 +23,10 @@ public class ExceptionTestController : ControllerBase
 
     [HttpGet("throw")]
     public IActionResult Throw() => throw new InvalidOperationException(Secret);
+
+    // błąd klienta przy odczycie żądania (jak z Kestrela albo strumienia z limitem) z danym kodem statusu
+    [HttpGet("bad-request/{status:int}")]
+    public IActionResult ThrowBadRequest(int status) => throw new BadHttpRequestException(Secret, status);
 }
 
 // Globalna obsługa wyjątków (UseExceptionHandler + GlobalExceptionHandler): nieobsłużony wyjątek -> 500
@@ -104,5 +109,59 @@ public class GlobalExceptionHandlerTests
 
             Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/jobapplications/my-applications")).StatusCode);
         });
+    }
+
+    // BadHttpRequestException (za duże ciało, przekroczony czas, uszkodzone żądanie) to błąd klienta: jego kod statusu,
+    // ogólny komunikat bez treści wyjątku i log Warning zamiast Error
+    [Theory]
+    [InlineData(413, GlobalExceptionHandler.RequestTooLargeMessage)]
+    [InlineData(408, GlobalExceptionHandler.RequestTimeoutMessage)]
+    [InlineData(400, GlobalExceptionHandler.BadRequestMessage)]
+    [InlineData(431, GlobalExceptionHandler.BadRequestMessage)]
+    public async Task BadHttpRequestException_ReturnsItsStatusCodeAndIsNotLoggedAsError(int status, string message)
+    {
+        await RunAsync("Production", async (client, logs) =>
+        {
+            var response = await client.GetAsync($"/api/test-exceptions/bad-request/{status}");
+
+            Assert.Equal(status, (int)response.StatusCode);
+            Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+            Assert.Equal(message, await response.ReadMessageAsync());
+            Assert.DoesNotContain(ExceptionTestController.Secret, await response.Content.ReadAsStringAsync());
+
+            Assert.DoesNotContain(logs.Entries, e => e.Level >= LogLevel.Error);
+            Assert.Contains(logs.Entries, e => e.Level == LogLevel.Warning && e.Category == typeof(ClientRequestErrorMiddleware).FullName);
+        });
+    }
+
+    [Fact]
+    public async Task BadHttpRequestExceptionWithAServerErrorStatus_IsStillAClientError()
+    {
+        await RunAsync("Production", async (client, logs) =>
+        {
+            var response = await client.GetAsync("/api/test-exceptions/bad-request/500");
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(GlobalExceptionHandler.BadRequestMessage, await response.ReadMessageAsync());
+            Assert.DoesNotContain(logs.Entries, e => e.Level >= LogLevel.Error);
+        });
+    }
+
+    // BadHttpRequestException spoza ClientRequestErrorMiddleware (np. z middleware'u przed nim) - handler też
+    // zwraca kod statusu klienta, nie 500
+    [Fact]
+    public async Task Handler_MapsBadHttpRequestExceptionToItsStatusCode()
+    {
+        var context = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
+
+        var handled = await new GlobalExceptionHandler().TryHandleAsync(context,
+            new BadHttpRequestException(ExceptionTestController.Secret, StatusCodes.Status413PayloadTooLarge), CancellationToken.None);
+
+        Assert.True(handled);
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, context.Response.StatusCode);
+        context.Response.Body.Position = 0;
+        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        Assert.Contains(GlobalExceptionHandler.RequestTooLargeMessage, body);
+        Assert.DoesNotContain(ExceptionTestController.Secret, body);
     }
 }
