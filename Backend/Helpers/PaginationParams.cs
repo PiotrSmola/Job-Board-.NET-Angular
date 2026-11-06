@@ -6,6 +6,9 @@ public abstract class PaginationParams
     public const int MaxPageSize = 50;
     public const int DefaultPageSize = 10;
 
+    // maksymalna długość tekstu wyszukiwania i filtrów tekstowych list (SearchTerm, Location)
+    public const int MaxSearchLength = 100;
+
     // dalsze strony i tak byłyby puste (5 mln elementów przy maksymalnym rozmiarze strony)
     public const int MaxPageNumber = 100_000;
 

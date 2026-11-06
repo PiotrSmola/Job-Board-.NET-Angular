@@ -322,6 +322,8 @@ namespace Backend.Migrations
 
                     b.HasIndex("CompanyId");
 
+                    b.HasIndex("Status", "ExpiresAt", "CreatedAt");
+
                     b.ToTable("JobOffers");
                 });
 

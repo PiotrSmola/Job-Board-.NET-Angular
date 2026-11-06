@@ -45,6 +45,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.Status).HasConversion<int>();
             entity.Property(e => e.ExpiresAt);
 
+            // publiczna lista ofert: filtr po statusie i dacie ważności, domyślne sortowanie po dacie utworzenia
+            entity.HasIndex(e => new { e.Status, e.ExpiresAt, e.CreatedAt });
+
             entity.HasMany(e => e.Applications)
                 .WithOne(e => e.JobOffer)
                 .HasForeignKey(e => e.JobOfferId)
