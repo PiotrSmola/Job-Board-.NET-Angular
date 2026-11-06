@@ -219,6 +219,26 @@ describe('CompanyDialogComponent', () => {
       expect(root().textContent).toContain('Podaj adres zaczynający się od http:// lub https://');
     });
 
+    it('validates the trimmed website and sends it without the surrounding spaces', async () => {
+      await create(null);
+      fill('name', 'Acme');
+
+      fill('website', '  https://acme.example.com  ');
+
+      expect(component.form.get('website')!.valid).toBe(true);
+      expect(submitButton().disabled).toBe(false);
+      submitButton().click();
+      expect(createCompany).toHaveBeenCalledWith(expect.objectContaining({ website: 'https://acme.example.com' }));
+    });
+
+    it('treats a website of only spaces as empty (optional)', async () => {
+      await create(null);
+
+      fill('website', '   ');
+
+      expect(component.form.get('website')!.valid).toBe(true);
+    });
+
     it('treats an empty website as valid (optional)', async () => {
       await create(null);
 

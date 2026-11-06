@@ -18,7 +18,7 @@ import {
   COMPANY_LOCATION_MAX,
   COMPANY_NAME_MAX,
   COMPANY_WEBSITE_MAX,
-  WEBSITE_PATTERN
+  websiteValidator
 } from '../../utils/company-form';
 
 /** „Szukam pracy” – konto kandydata, „Rekrutuję” – konto pracodawcy z firmą do weryfikacji. */
@@ -73,7 +73,7 @@ export class RegisterComponent {
       // Pola firmy – aktywne tylko w trybie „Rekrutuję”
       companyName: ['', [Validators.required, Validators.pattern(/\S/), Validators.maxLength(COMPANY_NAME_MAX)]],
       companyDescription: ['', [Validators.maxLength(COMPANY_DESCRIPTION_MAX)]],
-      website: ['', [Validators.maxLength(COMPANY_WEBSITE_MAX), Validators.pattern(WEBSITE_PATTERN)]],
+      website: ['', [Validators.maxLength(COMPANY_WEBSITE_MAX), websiteValidator]],
       location: ['', [Validators.maxLength(COMPANY_LOCATION_MAX)]]
     });
 

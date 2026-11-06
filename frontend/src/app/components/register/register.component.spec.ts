@@ -200,7 +200,7 @@ describe('RegisterComponent', () => {
       expect(root().textContent).toContain('Podaj adres zaczynający się od http:// lub https://');
     });
 
-    it.each([['https://acme.pl'], ['http://acme.pl/kariera'], ['']])('employer: accepts the website %j', website => {
+    it.each([['https://acme.pl'], ['http://acme.pl/kariera'], [''], ['  https://acme.pl  '], ['   ']])('employer: accepts the website %j', website => {
       create({ type: 'employer' });
       fillPerson();
 

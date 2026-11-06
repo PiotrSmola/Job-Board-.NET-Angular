@@ -163,6 +163,16 @@ describe('EmployerCompanyTabComponent', () => {
       expect(component.canSubmit()).toBe(false);
     });
 
+    it('validates the trimmed website and saves it without the surrounding spaces', async () => {
+      await create(makeCompany(3, { status: CompanyStatus.Pending }));
+
+      edit('website', '  https://acme.pl/kariera  ');
+
+      expect(component.form.get('website')!.valid).toBe(true);
+      component.onSubmit();
+      expect(updateMyCompany).toHaveBeenCalledWith(expect.objectContaining({ website: 'https://acme.pl/kariera' }));
+    });
+
     it('accepts http and https websites', async () => {
       await create(makeCompany(3));
 
@@ -264,6 +274,7 @@ describe('EmployerCompanyTabComponent', () => {
       await create(makeCompany(3, { name: 'Acme', website: 'https://acme.example.com', status: CompanyStatus.Approved }));
       edit('description', 'Nowy opis');
       edit('location', 'Sopot');
+      edit('website', '  https://acme.example.com  ');
 
       component.onSubmit();
 
