@@ -10,6 +10,7 @@ using Backend.Services;
 using Backend.Services.Email;
 using Backend.Settings;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -189,12 +190,17 @@ builder.Services.AddRateLimiter(options =>
             TimeProvider.System));
     });
 
-    // e-maile bezpieczeństwa: reset hasła (anonimowy) - per adres IP, ponowne wysłanie potwierdzenia - per użytkownik
+    // e-maile bezpieczeństwa: endpoint anonimowy (reset hasła) - zawsze per adres IP, także gdy żądanie niesie token
+    // (inaczej tokeny kilku kont dawałyby osobne pule z jednego adresu); endpoint z [Authorize] (ponowne wysłanie
+    // potwierdzenia) - per użytkownik
     options.AddPolicy(RateLimitingSettings.AccountEmailsPolicy, httpContext =>
     {
         var limit = httpContext.RequestServices.GetRequiredService<IOptions<RateLimitingSettings>>().Value.AccountEmails;
-        var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
-                           ?? "ip:" + httpContext.Connection.RemoteIpAddress;
+        var endpoint = httpContext.GetEndpoint();
+        var perUser = endpoint?.Metadata.GetMetadata<IAuthorizeData>() != null
+                      && endpoint.Metadata.GetMetadata<IAllowAnonymous>() == null;
+        var userId = perUser ? httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) : null;
+        var partitionKey = userId != null ? "user:" + userId : "ip:" + httpContext.Connection.RemoteIpAddress;
 
         return RateLimitPartition.Get(partitionKey, _ => new UploadRateLimiter(
             limit.PermitLimit,
