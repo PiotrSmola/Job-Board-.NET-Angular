@@ -160,7 +160,7 @@ describe('NavbarComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
       return Array.from(document.querySelectorAll<HTMLAnchorElement>('a[mat-menu-item]')).map(a => ({
-        text: a.textContent?.replace(/s+/g, ' ').trim().replace(/^S+ /, '') ?? '',
+        text: a.textContent?.replace(/\s+/g, ' ').trim().replace(/^\S+ /, '') ?? '',
         href: a.getAttribute('href')
       }));
     }

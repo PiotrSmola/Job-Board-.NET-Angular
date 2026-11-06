@@ -170,9 +170,9 @@ describe('SaveJobButtonComponent', () => {
 
     fixture.componentInstance.shown.set(false);
     fixture.detectChanges();
+    expect(req.cancelled).toBe(false);
     req.flush(null);
 
-    expect(req.cancelled).toBe(false);
     expect(announce).not.toHaveBeenCalled();
 
     fixture.componentInstance.shown.set(true);
