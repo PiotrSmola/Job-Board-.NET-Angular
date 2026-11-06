@@ -1,10 +1,12 @@
-import { Component, inject, ChangeDetectorRef } from '@angular/core';
+import { Component, DestroyRef, inject, signal, ChangeDetectorRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { AbstractControl, ReactiveFormsModule, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -12,12 +14,19 @@ import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MAT_DATE_LOCALE, provideNativeDateAdapter } from '@angular/material/core';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { JobService } from '../../../services/job.service';
-import { JobOffer, CreateJobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
+import { CategoryService } from '../../../services/category.service';
+import { JobOffer, CreateJobOffer, JobOfferStatus, WorkType, Currency, SalaryPeriod } from '../../../models/job-offer.model';
+import { Category } from '../../../models/taxonomy.model';
 import { Company, CompanyStatus } from '../../../models/company.model';
 import { PanelMode } from '../../../models/panel-mode.model';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
 import { JOB_STATUS_OPTIONS } from '../../../utils/status-labels';
 import { CompanyAutocompleteComponent, CompanyOption } from '../../shared/company-autocomplete.component';
+import { SkillsInputComponent } from '../../shared/skills-input.component';
+import {
+  CONTRACT_TYPE_OPTIONS, CURRENCY_OPTIONS, SALARY_PERIOD_OPTIONS, SENIORITY_OPTIONS, getCurrencyLabel, hasFlag, setFlag
+} from '../../../utils/job-labels';
+import { MAX_SKILLS, isValidSkillName } from '../../../utils/job-query';
 
 export interface JobDialogData {
   /** null = tryb dodawania, oferta = tryb edycji. */
@@ -35,6 +44,12 @@ export function endOfLocalDay(date: Date): Date {
 /** Puste pole wynagrodzenia = null; 0 jest poprawną wartością i zostaje wysłane. */
 export function toSalary(value: number | string | null | undefined): number | null {
   return value === null || value === undefined || value === '' ? null : Number(value);
+}
+
+/** Te same reguły co API: 0-15 umiejętności, każda 1-50 znaków (bez przecinka - rozdziela listy w filtrach). */
+function skillsValidator(control: AbstractControl): ValidationErrors | null {
+  const skills: string[] = control.value ?? [];
+  return skills.length <= MAX_SKILLS && skills.every(isValidSkillName) ? null : { skillsInvalid: true };
 }
 
 function isSameLocalDay(a: Date, b: Date): boolean {
@@ -55,7 +70,9 @@ function isSameLocalDay(a: Date, b: Date): boolean {
     MatIconModule,
     MatProgressSpinnerModule,
     MatDatepickerModule,
-    CompanyAutocompleteComponent
+    MatCheckboxModule,
+    CompanyAutocompleteComponent,
+    SkillsInputComponent
   ],
   providers: [provideNativeDateAdapter(), { provide: MAT_DATE_LOCALE, useValue: 'pl-PL' }],
   template: `
@@ -106,11 +123,63 @@ function isSameLocalDay(a: Date, b: Date): boolean {
         </mat-form-field>
 
         <div class="salary-row">
+          <mat-form-field appearance="outline">
+            <mat-label>Kategoria</mat-label>
+            <mat-select formControlName="categoryId" [canSelectNullableOptions]="true">
+              <mat-option [value]="null">Brak</mat-option>
+              @for (category of categories(); track category.id) {
+                <mat-option [value]="category.id">{{ category.name }}</mat-option>
+              }
+            </mat-select>
+            <mat-icon matPrefix>category</mat-icon>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Poziom</mat-label>
+            <mat-select formControlName="seniority" [canSelectNullableOptions]="true">
+              <mat-option [value]="null">Nie określono</mat-option>
+              @for (option of seniorityOptions; track option.value) {
+                <mat-option [value]="option.value">{{ option.label }}</mat-option>
+              }
+            </mat-select>
+            <mat-icon matPrefix>trending_up</mat-icon>
+          </mat-form-field>
+        </div>
+
+        <fieldset class="contract-types">
+          <legend>Typ umowy</legend>
+          @for (option of contractOptions; track option.value) {
+            <mat-checkbox [checked]="hasContract(option.value)" (change)="toggleContract(option.value, $event.checked)">
+              {{ option.label }}
+            </mat-checkbox>
+          }
+        </fieldset>
+
+        <div class="salary-row">
+          <mat-form-field appearance="outline">
+            <mat-label>Waluta</mat-label>
+            <mat-select formControlName="salaryCurrency">
+              @for (option of currencyOptions; track option.value) {
+                <mat-option [value]="option.value">{{ option.label }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Okres wynagrodzenia</mat-label>
+            <mat-select formControlName="salaryPeriod">
+              @for (option of periodOptions; track option.value) {
+                <mat-option [value]="option.value">{{ option.label }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        </div>
+
+        <div class="salary-row">
           <mat-form-field appearance="outline" class="salary-field">
             <mat-label>Wynagrodzenie od</mat-label>
             <input matInput type="number" min="0" formControlName="salaryMin" placeholder="8000">
-            <span matTextPrefix>$&nbsp;</span>
-            <span matTextSuffix>&nbsp;PLN</span>
+            <span matTextSuffix>&nbsp;{{ currencyLabel }}</span>
             @if (jobForm.get('salaryMin')?.hasError('min')) {
               <mat-error>Wynagrodzenie nie może być ujemne</mat-error>
             }
@@ -119,8 +188,7 @@ function isSameLocalDay(a: Date, b: Date): boolean {
           <mat-form-field appearance="outline" class="salary-field">
             <mat-label>Wynagrodzenie do</mat-label>
             <input matInput type="number" min="0" formControlName="salaryMax" placeholder="15000">
-            <span matTextPrefix>$&nbsp;</span>
-            <span matTextSuffix>&nbsp;PLN</span>
+            <span matTextSuffix>&nbsp;{{ currencyLabel }}</span>
             @if (jobForm.get('salaryMax')?.hasError('min')) {
               <mat-error>Wynagrodzenie nie może być ujemne</mat-error>
             }
@@ -131,6 +199,12 @@ function isSameLocalDay(a: Date, b: Date): boolean {
             <mat-error>Wynagrodzenie "Od" nie może być wyższe niż "Do"</mat-error>
           </div>
         }
+
+        <app-skills-input
+          label="Umiejętności"
+          [allowCreate]="true"
+          [skills]="jobForm.value.skills"
+          (skillsChange)="onSkillsChange($event)" />
 
         <mat-form-field appearance="outline">
           <mat-label>Opis stanowiska</mat-label>
@@ -228,6 +302,23 @@ function isSameLocalDay(a: Date, b: Date): boolean {
         gap: 16px;
       }
 
+      .contract-types {
+        margin: 0;
+        padding: 0;
+        border: 0;
+
+        legend {
+          padding: 0;
+          margin-bottom: 4px;
+          color: var(--text-secondary);
+        }
+
+        mat-checkbox {
+          display: inline-block;
+          margin-right: 16px;
+        }
+      }
+
       .salary-error {
         margin-top: -12px;
         margin-bottom: 8px;
@@ -288,6 +379,14 @@ export class JobDialogComponent {
   private dialogRef = inject(MatDialogRef<JobDialogComponent>);
   private cdr = inject(ChangeDetectorRef);
   private snackBar = inject(MatSnackBar);
+  private categoryService = inject(CategoryService);
+  private destroyRef = inject(DestroyRef);
+
+  readonly categories = signal<Category[]>([]);
+  readonly seniorityOptions = SENIORITY_OPTIONS;
+  readonly contractOptions = CONTRACT_TYPE_OPTIONS;
+  readonly currencyOptions = CURRENCY_OPTIONS;
+  readonly periodOptions = SALARY_PERIOD_OPTIONS;
 
   readonly data: JobDialogData = inject<JobDialogData | null>(MAT_DIALOG_DATA, { optional: true }) ?? { job: null, mode: 'admin' };
   // null = tryb dodawania, oferta = tryb edycji
@@ -315,10 +414,22 @@ export class JobDialogComponent {
     description: ['', [Validators.required, Validators.minLength(50)]],
     // domyślnie Active – jak w API (oferta od razu opublikowana); bez prawa publikacji – szkic
     status: [this.canPublish ? JobOfferStatus.Active : JobOfferStatus.Draft, [Validators.required]],
-    expiresAt: [null as Date | null]
+    expiresAt: [null as Date | null],
+    categoryId: [null as number | null],
+    seniority: [null as number | null],
+    contractTypes: [0],
+    salaryCurrency: [Currency.PLN],
+    salaryPeriod: [SalaryPeriod.Month],
+    skills: [[] as string[], [skillsValidator]]
   }, { validators: [this.salaryRangeValidator, group => this.expiresAtValidator(group as FormGroup)] });
 
   constructor() {
+    this.categoryService.getCategories().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: categories => this.categories.set(categories),
+      // Bez listy kategorii formularz nadal działa (kategoria jest opcjonalna)
+      error: error => console.error('Error loading categories:', error)
+    });
+
     if (!this.isAdmin) {
       this.jobForm.removeControl('companyId');
     }
@@ -332,7 +443,13 @@ export class JobDialogComponent {
         salaryMax: this.job.salaryMax,
         description: this.job.description,
         status: this.job.status ?? JobOfferStatus.Active,
-        expiresAt: this.job.expiresAt ? new Date(this.job.expiresAt) : null
+        expiresAt: this.job.expiresAt ? new Date(this.job.expiresAt) : null,
+        categoryId: this.job.categoryId ?? null,
+        seniority: this.job.seniority ?? null,
+        contractTypes: this.job.contractTypes ?? 0,
+        salaryCurrency: this.job.salaryCurrency ?? Currency.PLN,
+        salaryPeriod: this.job.salaryPeriod ?? SalaryPeriod.Month,
+        skills: [...(this.job.skills ?? [])]
       });
     }
   }
@@ -362,6 +479,26 @@ export class JobDialogComponent {
     const control = this.jobForm.get('companyId');
     control?.setValue(company?.id ?? null);
     control?.markAsTouched();
+  }
+
+  get currencyLabel(): string {
+    return getCurrencyLabel(this.jobForm.value.salaryCurrency);
+  }
+
+  hasContract(flag: number): boolean {
+    return hasFlag(this.jobForm.value.contractTypes ?? 0, flag);
+  }
+
+  toggleContract(flag: number, on: boolean): void {
+    const control = this.jobForm.get('contractTypes');
+    control?.setValue(setFlag(control.value ?? 0, flag, on));
+    control?.markAsDirty();
+  }
+
+  onSkillsChange(skills: string[]): void {
+    const control = this.jobForm.get('skills');
+    control?.setValue(skills);
+    control?.markAsDirty();
   }
 
   clearExpiresAt(): void {
@@ -394,6 +531,8 @@ export class JobDialogComponent {
       ...formValue,
       // API ignoruje companyId pracodawcy (zawsze jego firma) – wysyłamy jego firmę dla spójności
       companyId: this.isAdmin ? formValue.companyId : this.data.company?.id ?? this.job?.companyId ?? null,
+      seniority: formValue.seniority ?? null,
+      categoryId: formValue.categoryId ?? null,
       salaryMin: toSalary(formValue.salaryMin),
       salaryMax: toSalary(formValue.salaryMax),
       expiresAt: this.toExpiresAtIso(formValue.expiresAt)

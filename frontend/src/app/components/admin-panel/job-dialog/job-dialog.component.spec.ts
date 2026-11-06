@@ -7,8 +7,16 @@ import { JobDialogComponent, JobDialogData, endOfLocalDay, toSalary } from './jo
 import { JobService } from '../../../services/job.service';
 import { CompanyService } from '../../../services/company.service';
 import { AdminService } from '../../../services/admin.service';
-import { JobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
+import { CategoryService } from '../../../services/category.service';
+import { SkillService } from '../../../services/skill.service';
+import { ContractTypes, Currency, JobOffer, JobOfferStatus, SalaryPeriod, SeniorityLevel, WorkType } from '../../../models/job-offer.model';
+import { Category } from '../../../models/taxonomy.model';
 import { Company, CompanyStatus } from '../../../models/company.model';
+
+const CATEGORIES: Category[] = [
+  { id: 1, name: 'Programowanie', slug: 'programowanie', sortOrder: 1, activeJobsCount: 5 },
+  { id: 2, name: 'Testowanie', slug: 'testowanie', sortOrder: 2, activeJobsCount: 2 }
+];
 
 const EMPTY_PAGE = { result: [], pagination: { CurrentPage: 1, ItemsPerPage: 10, TotalItems: 0, TotalPages: 1 } };
 
@@ -24,7 +32,9 @@ const DESCRIPTION = 'Opis stanowiska, który ma co najmniej pięćdziesiąt znak
 const EXISTING_JOB: JobOffer = {
   id: 9, title: 'Backend Developer', company: 'Acme', companyId: 1, description: DESCRIPTION, salaryMin: 8000, salaryMax: 12000,
   location: 'Rzeszów', workType: WorkType.Hybrid, createdAt: new Date('2026-01-01'),
-  status: JobOfferStatus.Active, expiresAt: null, isExpired: false
+  status: JobOfferStatus.Active, expiresAt: null, isExpired: false,
+  categoryId: null, categoryName: null, categorySlug: null, seniority: null, contractTypes: 0,
+  salaryCurrency: Currency.PLN, salaryPeriod: SalaryPeriod.Month, skills: []
 };
 
 // Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
@@ -38,6 +48,7 @@ describe('JobDialogComponent', () => {
   let close: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
+  let getCategories: ReturnType<typeof vi.fn>;
 
   async function create(job: JobOffer | null = null, options: Partial<JobDialogData> = {}): Promise<void> {
     const data: JobDialogData = { job, mode: 'admin', ...options };
@@ -47,6 +58,8 @@ describe('JobDialogComponent', () => {
         { provide: JobService, useValue: { createJob, updateJob } },
         { provide: CompanyService, useValue: { getCompanies: vi.fn().mockReturnValue(of(EMPTY_PAGE)) } },
         { provide: AdminService, useValue: { getCompanies: vi.fn().mockReturnValue(of(EMPTY_PAGE)) } },
+        { provide: CategoryService, useValue: { getCategories } },
+        { provide: SkillService, useValue: { suggest: vi.fn().mockReturnValue(of([])) } },
         { provide: MatDialogRef, useValue: { close } },
         { provide: MAT_DIALOG_DATA, useValue: data },
         { provide: MatSnackBar, useValue: { open: snackBarOpen } }
@@ -69,6 +82,12 @@ describe('JobDialogComponent', () => {
       description: DESCRIPTION,
       status: JobOfferStatus.Active,
       expiresAt: null,
+      categoryId: null,
+      seniority: null,
+      contractTypes: 0,
+      salaryCurrency: Currency.PLN,
+      salaryPeriod: SalaryPeriod.Month,
+      skills: [],
       ...overrides
     });
   }
@@ -78,6 +97,7 @@ describe('JobDialogComponent', () => {
   }
 
   beforeEach(() => {
+    getCategories = vi.fn().mockReturnValue(of(CATEGORIES));
     createJob = vi.fn().mockReturnValue(of({}));
     updateJob = vi.fn().mockReturnValue(of(undefined));
     close = vi.fn();
@@ -458,7 +478,8 @@ describe('JobDialogComponent', () => {
       expect(component.statusOptions.map(o => o.label)).toEqual(['Szkic', 'Aktywna', 'Zamknięta']);
       component.jobForm.setValue({
         title: 'Angular Developer', location: 'Rzeszów', workType: WorkType.Remote, salaryMin: null, salaryMax: null,
-        description: DESCRIPTION, status: JobOfferStatus.Active, expiresAt: null
+        description: DESCRIPTION, status: JobOfferStatus.Active, expiresAt: null,
+        categoryId: null, seniority: null, contractTypes: 0, salaryCurrency: Currency.PLN, salaryPeriod: SalaryPeriod.Month, skills: []
       });
       component.onSubmit();
 
@@ -473,6 +494,121 @@ describe('JobDialogComponent', () => {
       expect(component.jobForm.value.status).toBe(JobOfferStatus.Draft);
       expect((fixture.nativeElement as HTMLElement).querySelector('.publish-info')?.textContent)
         .toContain('Firma nie została jeszcze zatwierdzona');
+    });
+  });
+
+  describe('taxonomy fields', () => {
+    const root = () => fixture.nativeElement as HTMLElement;
+
+    it('loads the categories for the select', async () => {
+      await create();
+
+      expect(getCategories).toHaveBeenCalledTimes(1);
+      expect(component.categories()).toEqual(CATEGORIES);
+    });
+
+    it('still works when the category list cannot be loaded', async () => {
+      getCategories.mockReturnValue(throwError(() => httpError(500)));
+      await create();
+      fillValidForm();
+
+      expect(component.categories()).toEqual([]);
+      expect(component.jobForm.valid).toBe(true);
+    });
+
+    it('defaults a new offer to no category, no level, no contract types, PLN per month and no skills', async () => {
+      await create();
+
+      expect(component.jobForm.value).toMatchObject({
+        categoryId: null, seniority: null, contractTypes: 0, salaryCurrency: Currency.PLN, salaryPeriod: SalaryPeriod.Month, skills: []
+      });
+    });
+
+    it('sends the new fields on create', async () => {
+      await create();
+      fillValidForm({
+        categoryId: 2, seniority: SeniorityLevel.Lead, salaryCurrency: Currency.EUR, salaryPeriod: SalaryPeriod.Hour,
+        skills: ['Angular', 'C#']
+      });
+      component.toggleContract(ContractTypes.B2B, true);
+      component.toggleContract(ContractTypes.Internship, true);
+
+      component.onSubmit();
+
+      expect(createJob).toHaveBeenCalledWith(expect.objectContaining({
+        categoryId: 2, seniority: SeniorityLevel.Lead, contractTypes: 18, salaryCurrency: Currency.EUR,
+        salaryPeriod: SalaryPeriod.Hour, skills: ['Angular', 'C#']
+      }));
+    });
+
+    it('prefills the new fields when editing and sends them back', async () => {
+      await create({
+        ...EXISTING_JOB, categoryId: 1, categoryName: 'Programowanie', categorySlug: 'programowanie',
+        seniority: SeniorityLevel.Mid, contractTypes: ContractTypes.EmploymentContract, salaryCurrency: Currency.GBP,
+        salaryPeriod: SalaryPeriod.Year, skills: ['Docker']
+      });
+
+      expect(component.jobForm.value).toMatchObject({
+        categoryId: 1, seniority: SeniorityLevel.Mid, contractTypes: 1, salaryCurrency: Currency.GBP, salaryPeriod: SalaryPeriod.Year, skills: ['Docker']
+      });
+      expect(component.hasContract(ContractTypes.EmploymentContract)).toBe(true);
+      expect(component.hasContract(ContractTypes.B2B)).toBe(false);
+
+      component.onSubmit();
+
+      expect(updateJob).toHaveBeenCalledWith(9, expect.objectContaining({
+        categoryId: 1, seniority: SeniorityLevel.Mid, contractTypes: 1, salaryCurrency: Currency.GBP, salaryPeriod: SalaryPeriod.Year, skills: ['Docker']
+      }));
+    });
+
+    it('shows the selected currency in the salary fields', async () => {
+      await create();
+      fillValidForm({ salaryCurrency: Currency.USD });
+      fixture.detectChanges();
+
+      const suffixes = Array.from(root().querySelectorAll('.salary-field [matTextSuffix], .salary-field .mat-mdc-form-field-text-suffix'));
+      expect(component.currencyLabel).toBe('USD');
+      expect(suffixes.every(s => s.textContent?.includes('USD'))).toBe(true);
+    });
+
+    it('groups the contract type checkboxes in a fieldset with a legend', async () => {
+      await create();
+
+      const group = root().querySelector('fieldset.contract-types')!;
+      expect(group.querySelector('legend')?.textContent).toBe('Typ umowy');
+      expect(group.querySelectorAll('mat-checkbox').length).toBe(5);
+    });
+
+    it('ticking a contract type checkbox toggles its bit', async () => {
+      await create();
+
+      root().querySelector<HTMLInputElement>('fieldset.contract-types mat-checkbox input')!.click();
+      expect(component.jobForm.value.contractTypes).toBe(ContractTypes.EmploymentContract);
+
+      root().querySelector<HTMLInputElement>('fieldset.contract-types mat-checkbox input')!.click();
+      expect(component.jobForm.value.contractTypes).toBe(0);
+    });
+
+    it('marks the form invalid for more than 15 skills or a name that is too long', async () => {
+      await create();
+
+      fillValidForm({ skills: Array.from({ length: 16 }, (_, i) => `S${i}`) });
+      expect(component.jobForm.valid).toBe(false);
+
+      fillValidForm({ skills: ['x'.repeat(51)] });
+      expect(component.jobForm.valid).toBe(false);
+
+      fillValidForm({ skills: Array.from({ length: 15 }, (_, i) => `S${i}`) });
+      expect(component.jobForm.valid).toBe(true);
+    });
+
+    it('takes skills from the skills input', async () => {
+      await create();
+
+      component.onSkillsChange(['Rust']);
+
+      expect(component.jobForm.value.skills).toEqual(['Rust']);
+      expect(component.jobForm.get('skills')?.dirty).toBe(true);
     });
   });
 });
