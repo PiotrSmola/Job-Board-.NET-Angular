@@ -108,9 +108,14 @@ public class ApplicationConcurrencyTests
         public Task<IEnumerable<JobApplication>> GetApplicationsByJobIdAsync(int jobId) => _inner.GetApplicationsByJobIdAsync(jobId);
         public Task<PagedList<JobApplication>> GetApplicationsAsync(ApplicationParams applicationParams, ManagementScope scope) => _inner.GetApplicationsAsync(applicationParams, scope);
         public Task<JobApplication> AddApplicationAsync(JobApplication application) => _inner.AddApplicationAsync(application);
-        public Task<bool> UpdateCvAsync(int id, string userId, string? expectedFileKey, CvFile? cv, CancellationToken cancellationToken = default) =>
-            _inner.UpdateCvAsync(id, userId, expectedFileKey, cv, cancellationToken);
-        public Task<(bool Deleted, string? CvFileKey)> DeleteApplicationAsync(int id) => _inner.DeleteApplicationAsync(id);
+        public Task<ApplicationOwnership?> GetOwnershipAsync(int id, CancellationToken cancellationToken = default) =>
+            _inner.GetOwnershipAsync(id, cancellationToken);
+        public Task<AttachmentsAddResult> AddAttachmentsAsync(int applicationId, string userId,
+            IReadOnlyList<ApplicationAttachment> attachments, CancellationToken cancellationToken = default) =>
+            _inner.AddAttachmentsAsync(applicationId, userId, attachments, cancellationToken);
+        public Task<(AttachmentDeleteResult Result, string? FileKey)> DeleteAttachmentAsync(int applicationId, int attachmentId, string userId,
+            CancellationToken cancellationToken = default) => _inner.DeleteAttachmentAsync(applicationId, attachmentId, userId, cancellationToken);
+        public Task<(bool Deleted, IReadOnlyList<string> FileKeys)> DeleteApplicationAsync(int id) => _inner.DeleteApplicationAsync(id);
     }
 
     // Aplikacja na tej samej bazie, ale z repozytorium czekającym na wszystkich uczestników wyścigu

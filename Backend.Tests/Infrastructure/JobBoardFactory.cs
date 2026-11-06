@@ -12,6 +12,8 @@ public class JobBoardFactory : WebApplicationFactory<Program>
     // sekret >= 32 znaki, niezależny od klucza deweloperskiego z JwtSettings.DevelopmentSecret
     public const string TestJwtSecret = "integration-tests-signing-key-0123456789-abcdef";
 
+    public const string UploadPermitLimitKey = "RateLimiting:Uploads:PermitLimit";
+
     private readonly string _environment;
     private readonly Dictionary<string, string?> _settings;
 
@@ -38,7 +40,10 @@ public class JobBoardFactory : WebApplicationFactory<Program>
             ["JwtSettings:Secret"] = jwtSecret ?? string.Empty,
             ["Admin:AllowSeedRefresh"] = allowSeedRefresh ? "true" : "false",
             ["Storage:Provider"] = "Local",
-            ["Storage:LocalPath"] = StoragePath
+            ["Storage:LocalPath"] = StoragePath,
+            // testy wgrywają wiele plików jako ten sam użytkownik - limit uploadów podniesiony; testy limitu
+            // ustawiają własną wartość (WithSetting) albo przywracają domyślną (null)
+            [UploadPermitLimitKey] = "100000"
         };
 
         // brak wartości = domyślne zachowanie seedera (konta demo tylko w Development)
