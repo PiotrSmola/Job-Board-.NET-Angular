@@ -267,6 +267,34 @@ public class AdminCompaniesTests
         Assert.Equal(1, Assert.Single(items).ActiveJobsCount);
     }
 
+    [Fact]
+    public async Task List_ActiveJobsCount_IsZeroForCompanyThatIsNotApproved()
+    {
+        // oferty aktywne firmy odrzuconej nie są widoczne publicznie - licznik zgodny z listą ofert
+        var employer = await _api.RegisterApprovedEmployerAsync();
+        await _api.CreateEmployerJobAsync(employer);
+        await _api.CreateEmployerJobAsync(employer);
+        await _api.RejectCompanyAsync(employer.CompanyId);
+
+        var (_, rejected) = await ListAsync(Q(employer.CompanyName));
+        using var client = _api.CreateClient(employer);
+        var own = await (await client.GetAsync("/api/employer/company")).ReadJsonAsync<CompanyDto>();
+        using var admin = await _api.AdminClientAsync();
+        var detail = await (await admin.GetAsync($"/api/companies/{employer.CompanyId}")).ReadJsonAsync<CompanyDto>();
+        using var anonymous = _api.CreateClient();
+        var publicJobs = await anonymous.GetAsync($"/api/jobs?companyId={employer.CompanyId}");
+
+        Assert.Equal(0, Assert.Single(rejected).ActiveJobsCount);
+        Assert.Equal(0, own.ActiveJobsCount);
+        Assert.Equal(0, detail.ActiveJobsCount);
+        Assert.Equal(0, publicJobs.ReadPagination().TotalItems);
+
+        await _api.ApproveCompanyAsync(employer.CompanyId);
+
+        var (_, approved) = await ListAsync(Q(employer.CompanyName));
+        Assert.Equal(2, Assert.Single(approved).ActiveJobsCount);
+    }
+
     // --- dodawanie ---
 
     [Fact]

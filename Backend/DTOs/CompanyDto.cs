@@ -17,7 +17,7 @@ public class CompanyDto
 
     public DateTime CreatedAt { get; set; }
 
-    // liczba ofert aktywnych i niewygasłych (dla firmy zatwierdzonej = widocznych publicznie)
+    // liczba ofert widocznych publicznie (aktywnych i niewygasłych); 0 dla firmy niezatwierdzonej
     public int ActiveJobsCount { get; set; }
 
     // liczba kont pracodawców firmy - tylko w odpowiedziach /api/admin/companies

@@ -119,14 +119,15 @@ public class CompanyRepository : ICompanyRepository
             (c.Location != null && c.Location.ToLower().Contains(term)));
     }
 
-    // Projekcja z licznikami w jednym zapytaniu SQL (podzapytania COUNT)
+    // Projekcja z licznikami w jednym zapytaniu SQL (podzapytania COUNT).
+    // Oferty firmy niezatwierdzonej nie są widoczne publicznie, więc licznik wynosi wtedy 0 (zgodnie z listą ofert)
     private static IQueryable<CompanySummary> Summaries(IQueryable<Company> query, DateTime now)
     {
         var published = JobOffer.PublishedAt(now);
         return query.Select(c => new CompanySummary
         {
             Company = c,
-            ActiveJobsCount = c.JobOffers.AsQueryable().Count(published),
+            ActiveJobsCount = c.Status == CompanyStatus.Approved ? c.JobOffers.AsQueryable().Count(published) : 0,
             MembersCount = c.Members.Count
         });
     }

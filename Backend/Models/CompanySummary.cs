@@ -5,7 +5,7 @@ public class CompanySummary
 {
     public Company Company { get; init; } = null!;
 
-    // oferty aktywne i niewygasłe
+    // oferty widoczne publicznie: aktywne i niewygasłe, tylko w firmie zatwierdzonej (inaczej 0)
     public int ActiveJobsCount { get; init; }
 
     // konta pracodawców przypisane do firmy
