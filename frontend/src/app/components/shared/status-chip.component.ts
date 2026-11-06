@@ -1,4 +1,4 @@
-import { Component, input } from '@angular/core';
+import { Component, input, ChangeDetectionStrategy } from '@angular/core';
 import { StatusTone } from '../../utils/status-labels';
 
 /** Kolorowa etykieta statusu oferty lub aplikacji. */
@@ -6,6 +6,7 @@ import { StatusTone } from '../../utils/status-labels';
   selector: 'app-status-chip',
   standalone: true,
   template: `<span [class]="'status-chip tone-' + tone()">{{ label() }}</span>`,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     :host { display: inline-flex; }
 

@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, signal, viewChild } from '@angular/core';
+import { Component, computed, inject, input, signal, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -62,6 +62,7 @@ const DEFAULT_SORT: Sort = { active: 'createdAt', direction: 'desc' };
     CompanyAutocompleteComponent
   ],
   templateUrl: './admin-jobs-tab.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './admin-jobs-tab.component.scss'
 })
 export class AdminJobsTabComponent {

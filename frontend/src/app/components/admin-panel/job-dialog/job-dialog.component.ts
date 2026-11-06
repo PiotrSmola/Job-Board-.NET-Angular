@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, signal, ChangeDetectorRef } from '@angular/core';
+import { Component, DestroyRef, inject, signal, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { AbstractControl, ReactiveFormsModule, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
@@ -273,6 +273,7 @@ function isSameLocalDay(a: Date, b: Date): boolean {
       </button>
     </mat-dialog-actions>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     mat-dialog-content {
       min-width: 500px;
@@ -421,7 +422,7 @@ export class JobDialogComponent {
     salaryCurrency: [Currency.PLN],
     salaryPeriod: [SalaryPeriod.Month],
     skills: [[] as string[], [skillsValidator]]
-  }, { validators: [this.salaryRangeValidator, group => this.expiresAtValidator(group as FormGroup)] });
+  }, { validators: [this.salaryRangeValidator, (group: AbstractControl) => this.expiresAtValidator(group as FormGroup)] });
 
   constructor() {
     this.categoryService.getCategories().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({

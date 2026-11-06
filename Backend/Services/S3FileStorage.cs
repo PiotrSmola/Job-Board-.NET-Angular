@@ -64,14 +64,14 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
         await _client.PutObjectAsync(request, cancellationToken);
     }
 
-    public async Task<Stream?> OpenReadAsync(string key, CancellationToken cancellationToken = default)
+    public async Task<StoredFile?> OpenReadAsync(string key, CancellationToken cancellationToken = default)
     {
         try
         {
             var response = await _client.GetObjectAsync(_bucket, key, cancellationToken);
             // zwolnienie zwróconego strumienia (FileStreamResult robi to po wysłaniu) zwalnia całą odpowiedź
-            // i połączenie HTTP
-            return new ResponseOwningStream(response);
+            // i połączenie HTTP; rozmiar z nagłówka Content-Length odpowiedzi magazynu
+            return new StoredFile(new ResponseOwningStream(response), response.ContentLength >= 0 ? response.ContentLength : null);
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
@@ -95,6 +95,7 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
 
             // pojedyncze DeleteObject zamiast DeleteObjects - to drugie wymaga sumy kontrolnej (Content-MD5 albo
             // CRC), którą magazyny zgodne z S3 obsługują różnie; reset danych demo usuwa niewiele plików
+            // (najwyżej 10 załączników na aplikację)
             foreach (var s3Object in response.S3Objects ?? [])
             {
                 await _client.DeleteObjectAsync(_bucket, s3Object.Key, cancellationToken);

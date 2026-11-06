@@ -71,14 +71,21 @@ if (-not $jwtSecret) {
     $jwtSecret = New-RandomSecret 64
     Write-Host 'Wygenerowano nowy JWT_SECRET (zapisany w .env).'
 }
-# klucze magazynu plików CV (SeaweedFS) - zmiana kluczy przy istniejącym wolumenie storage-data jest bezpieczna,
+# klucze magazynu plików załączników (SeaweedFS) - tylko litery i cyfry, min. 16 znaków; zmiana kluczy przy istniejącym wolumenie storage-data jest bezpieczna,
 # bo konfiguracja S3 jest generowana przy każdym starcie kontenera
+$s3KeyPattern = '^[A-Za-z0-9]{16,}$'
 $s3AccessKey = Get-EnvValue 'S3_ACCESS_KEY' ''
 $s3SecretKey = Get-EnvValue 'S3_SECRET_KEY' ''
 if (-not $s3AccessKey -or -not $s3SecretKey) {
     $s3AccessKey = New-RandomSecret 20
     $s3SecretKey = New-RandomSecret 40
     Write-Host 'Wygenerowano nowe klucze S3_ACCESS_KEY i S3_SECRET_KEY (zapisane w .env).'
+} elseif ($s3AccessKey -notmatch $s3KeyPattern -or $s3SecretKey -notmatch $s3KeyPattern) {
+    # klucze trafiają bez escapowania do pliku JSON konfiguracji S3 SeaweedFS - inne znaki mogłyby go zepsuć
+    # albo dopisać do niego własną treść
+    $s3AccessKey = New-RandomSecret 20
+    $s3SecretKey = New-RandomSecret 40
+    Write-Warning 'S3_ACCESS_KEY lub S3_SECRET_KEY w .env nie jest ciągiem co najmniej 16 liter i cyfr - wygenerowano nowe klucze (zapisane w .env).'
 }
 $allowSeedRefresh = Get-EnvValue 'ALLOW_SEED_REFRESH' ''
 $seedDemoAccounts = Get-EnvValue 'SEED_DEMO_ACCOUNTS' ''

@@ -32,34 +32,18 @@ public class JobApplication
     // w międzyczasie inne żądanie) kończy się DbUpdateConcurrencyException; notatka tokenu nie zmienia
     public DateTime StatusChangedAt { get; set; } = DateTime.UtcNow;
 
-    // CV kandydata (wszystkie pola null, gdy brak): klucz pliku w magazynie (IFileStorage) - nigdy w DTO,
-    // oryginalna nazwa po sanityzacji, typ i rozmiar ustalone przez serwer, data wgrania (UTC)
-    [MaxLength(300)]
-    public string? CvFileKey { get; set; }
-
-    [MaxLength(255)]
-    public string? CvFileName { get; set; }
-
-    [MaxLength(100)]
-    public string? CvContentType { get; set; }
-
-    public long? CvSize { get; set; }
-
-    public DateTime? CvUploadedAt { get; set; }
-
     // Navigation properties
     public JobOffer JobOffer { get; set; } = null!;
     public ApplicationUser User { get; set; } = null!;
     public ICollection<ApplicationStatusHistory> StatusHistory { get; set; } = new List<ApplicationStatusHistory>();
+    public ICollection<ApplicationAttachment> Attachments { get; set; } = new List<ApplicationAttachment>();
 
-    // statusy, w których kandydat może dodać, zamienić albo usunąć CV (te same co przy wycofaniu)
-    public static readonly IReadOnlySet<ApplicationStatus> CvEditableStatuses = WithdrawableStatuses;
+    // statusy, w których kandydat może dodawać załączniki (te same co przy wycofaniu); usuwać może w każdym statusie
+    public static readonly IReadOnlySet<ApplicationStatus> AttachmentUploadStatuses = WithdrawableStatuses;
 
     public bool CanBeWithdrawn => WithdrawableStatuses.Contains(Status);
 
-    public bool CanChangeCv => CvEditableStatuses.Contains(Status);
-
-    public bool HasCv => CvFileKey != null;
+    public bool CanAddAttachments => AttachmentUploadStatuses.Contains(Status);
 
     // Nowa aplikacja ze statusem Submitted i pierwszym wpisem w historii (autor = kandydat)
     public static JobApplication Submit(int jobOfferId, string userId, string? note, DateTime now)

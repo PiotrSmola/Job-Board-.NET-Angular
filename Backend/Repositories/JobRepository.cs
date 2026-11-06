@@ -153,10 +153,10 @@ public class JobRepository : IJobRepository
         return jobOffer;
     }
 
-    public async Task<(bool Deleted, IReadOnlyList<string> CvFileKeys)> DeleteJobAsync(int id)
+    public async Task<(bool Deleted, IReadOnlyList<string> FileKeys)> DeleteJobAsync(int id)
     {
-        // Blokady przed odczytem kluczy CV (jak przy usuwaniu aplikacji): równoległa zamiana CV czeka do końca
-        // transakcji i trafia już na usuniętą aplikację, więc żaden plik nie zostanie osierocony. Najpierw wiersz
+        // Blokady przed odczytem kluczy plików (jak przy usuwaniu aplikacji): równoległy upload załączników czeka do
+        // końca transakcji i trafia już na usuniętą aplikację, więc żaden plik nie zostanie osierocony. Najpierw wiersz
         // oferty (jak sam DELETE oferty) - równoległe aplikowanie czeka na nim przy kontroli klucza obcego, zanim
         // zablokuje cokolwiek w aplikacjach, więc kolejność blokad nie prowadzi do deadlocka.
         await using var transaction = await _context.Database.BeginTransactionAsync();
@@ -173,16 +173,16 @@ public class JobRepository : IJobRepository
             .Where(a => a.JobOfferId == id)
             .ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, a => a.Status));
 
-        var cvFileKeys = await _context.JobApplications
-            .Where(a => a.JobOfferId == id && a.CvFileKey != null)
-            .Select(a => a.CvFileKey!)
+        var fileKeys = await _context.ApplicationAttachments
+            .Where(a => a.JobApplication.JobOfferId == id)
+            .Select(a => a.FileKey)
             .ToListAsync();
 
-        // aplikacje i ich historia usuwane kaskadowo przez bazę
+        // aplikacje, ich historia i załączniki usuwane kaskadowo przez bazę
         await _context.JobOffers.Where(j => j.Id == id).ExecuteDeleteAsync();
 
         await transaction.CommitAsync();
-        return (true, cvFileKeys);
+        return (true, fileKeys);
     }
 
     public async Task<bool> DeleteJobWithoutApplicationsAsync(int id)

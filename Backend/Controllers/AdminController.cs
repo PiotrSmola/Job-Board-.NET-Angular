@@ -73,7 +73,7 @@ public class AdminController : ControllerBase
 
             _logger.LogInformation("Database seed refresh completed successfully");
 
-            await DeleteAllCvFilesAsync();
+            await DeleteAllAttachmentFilesAsync();
 
             return Ok(new
             {
@@ -91,16 +91,19 @@ public class AdminController : ControllerBase
         }
     }
 
-    // Po zatwierdzonym resecie żadna aplikacja nie ma CV - usuwane są wszystkie pliki CV; błąd jest tylko logowany
-    private async Task DeleteAllCvFilesAsync()
+    // Po zatwierdzonym resecie żadna aplikacja nie ma załączników - usuwane są wszystkie ich pliki (także osierocone);
+    // błąd jest tylko logowany. Bez tokenu żądania (przerwane żądanie nie przerywa sprzątania po zatwierdzonym resecie),
+    // ale z limitem czasu, żeby zawieszony magazyn nie blokował odpowiedzi w nieskończoność
+    private async Task DeleteAllAttachmentFilesAsync()
     {
         try
         {
-            await _fileStorage.DeleteByPrefixAsync(CvFiles.StorageKeyPrefix, CancellationToken.None);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await _fileStorage.DeleteByPrefixAsync(AttachmentFiles.StorageKeyPrefix, timeout.Token);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete CV files from storage after the seed refresh");
+            _logger.LogError(ex, "Failed to delete attachment files from storage after the seed refresh");
         }
     }
 }
