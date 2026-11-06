@@ -17,6 +17,7 @@ describe('LoginComponent', () => {
   let fixture: ComponentFixture<LoginComponent>;
   let component: LoginComponent;
   let login: ReturnType<typeof vi.fn>;
+  let isEmployer: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.spyOn>;
   let navigateByUrl: ReturnType<typeof vi.spyOn>;
 
@@ -25,7 +26,7 @@ describe('LoginComponent', () => {
       imports: [LoginComponent],
       providers: [
         provideRouter([]),
-        { provide: AuthService, useValue: { login } },
+        { provide: AuthService, useValue: { login, isEmployer } },
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { queryParamMap: convertToParamMap(returnUrl === null ? {} : { returnUrl }) } }
@@ -58,6 +59,7 @@ describe('LoginComponent', () => {
 
   beforeEach(() => {
     login = vi.fn();
+    isEmployer = vi.fn().mockReturnValue(false);
   });
 
   it('does not call the API when the form is invalid', () => {
@@ -87,6 +89,39 @@ describe('LoginComponent', () => {
 
       expect(navigate).toHaveBeenCalledWith(['/jobs']);
       expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('navigates an employer to /employer when there is no returnUrl', () => {
+      login.mockReturnValue(of(USER));
+      isEmployer.mockReturnValue(true);
+      create();
+
+      fillAndSubmit();
+
+      expect(navigate).toHaveBeenCalledWith(['/employer']);
+      expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('navigates an employer to a safe returnUrl when present', () => {
+      login.mockReturnValue(of(USER));
+      isEmployer.mockReturnValue(true);
+      create('/companies/3');
+
+      fillAndSubmit();
+
+      expect(navigateByUrl).toHaveBeenCalledWith('/companies/3');
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('falls back to /employer for an employer with an unsafe returnUrl', () => {
+      login.mockReturnValue(of(USER));
+      isEmployer.mockReturnValue(true);
+      create('//evil.com');
+
+      fillAndSubmit();
+
+      expect(navigateByUrl).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith(['/employer']);
     });
 
     it('navigates to a safe returnUrl including its query string', () => {

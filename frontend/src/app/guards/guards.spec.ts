@@ -4,6 +4,7 @@ import { ActivatedRouteSnapshot, Router, RouterStateSnapshot, UrlTree, provideRo
 import { adminGuard } from './admin.guard';
 import { authGuard } from './auth.guard';
 import { employerGuard } from './employer.guard';
+import { candidateGuard } from './candidate.guard';
 import { AuthService } from '../services/auth.service';
 import { makeJwtExpiringIn } from '../../testing/jwt-helper';
 
@@ -88,6 +89,29 @@ describe('route guards', () => {
       authenticated = true;
       admin = true;
       expect(serialize(run(employerGuard, '/employer'))).toBe('/');
+    });
+  });
+
+  describe('candidateGuard', () => {
+    it('allows an authenticated candidate', () => {
+      authenticated = true;
+      expect(run(candidateGuard, '/my-applications')).toBe(true);
+    });
+
+    it('redirects an anonymous user to /login with returnUrl', () => {
+      expect(serialize(run(candidateGuard, '/my-applications'))).toBe('/login?returnUrl=%2Fmy-applications');
+    });
+
+    it('redirects an employer to the employer panel', () => {
+      authenticated = true;
+      employer = true;
+      expect(serialize(run(candidateGuard, '/my-applications'))).toBe('/employer');
+    });
+
+    it('redirects an admin to the admin panel', () => {
+      authenticated = true;
+      admin = true;
+      expect(serialize(run(candidateGuard, '/my-applications'))).toBe('/admin');
     });
   });
 

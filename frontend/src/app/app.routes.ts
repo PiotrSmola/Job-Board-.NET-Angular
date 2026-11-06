@@ -1,7 +1,7 @@
 import { Routes } from '@angular/router';
-import { authGuard } from './guards/auth.guard';
 import { adminGuard } from './guards/admin.guard';
 import { employerGuard } from './guards/employer.guard';
+import { candidateGuard } from './guards/candidate.guard';
 
 export const routes: Routes = [
   {
@@ -36,7 +36,7 @@ export const routes: Routes = [
   {
     path: 'my-applications',
     loadComponent: () => import('./components/my-applications/my-applications.component').then(m => m.MyApplicationsComponent),
-    canActivate: [authGuard]
+    canActivate: [candidateGuard]
   },
   {
     path: 'employer',
