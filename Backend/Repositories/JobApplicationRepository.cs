@@ -15,7 +15,7 @@ public class JobApplicationRepository : IJobApplicationRepository
         _context = context;
     }
 
-    public async Task<JobApplication?> GetApplicationByIdAsync(int id, bool includeHistory = false)
+    public async Task<JobApplication?> GetApplicationByIdAsync(int id, bool includeHistory = false, CancellationToken cancellationToken = default)
     {
         var query = _context.JobApplications
             .Include(a => a.JobOffer).ThenInclude(j => j.Company)
@@ -27,7 +27,7 @@ public class JobApplicationRepository : IJobApplicationRepository
             query = query.Include(a => a.StatusHistory).ThenInclude(h => h.ChangedByUser);
         }
 
-        return await query.FirstOrDefaultAsync(a => a.Id == id);
+        return await query.FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
     }
 
     public async Task<JobApplication?> GetApplicationForUpdateAsync(int id)
@@ -154,17 +154,52 @@ public class JobApplicationRepository : IJobApplicationRepository
         await transaction.CommitAsync();
     }
 
-    public async Task<bool> DeleteApplicationAsync(int id)
+    public async Task<bool> UpdateCvAsync(int id, string userId, string? expectedFileKey, CvFile? cv, CancellationToken cancellationToken = default)
     {
-        var application = await _context.JobApplications.FindAsync(id);
-        if (application == null) return false;
+        var statuses = JobApplication.CvEditableStatuses.ToArray();
+        var key = cv?.Key;
+        var fileName = cv?.FileName;
+        var contentType = cv?.ContentType;
+        var size = cv?.Size;
+        var uploadedAt = cv?.UploadedAt;
 
-        _context.JobApplications.Remove(application);
-        return await SaveAllAsync();
+        // pojedyncza instrukcja jest atomowa - nie potrzeba osobnej transakcji ani blokady; StatusChangedAt
+        // (token zmian statusu) nie jest zmieniany, więc CV nie koliduje z równoległą zmianą statusu na dozwolony
+        var matched = await _context.JobApplications
+            .Where(a => a.Id == id && a.UserId == userId && a.CvFileKey == expectedFileKey && statuses.Contains(a.Status))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(a => a.CvFileKey, key)
+                .SetProperty(a => a.CvFileName, fileName)
+                .SetProperty(a => a.CvContentType, contentType)
+                .SetProperty(a => a.CvSize, size)
+                .SetProperty(a => a.CvUploadedAt, uploadedAt), cancellationToken);
+
+        return matched > 0;
     }
 
-    private async Task<bool> SaveAllAsync()
+    public async Task<(bool Deleted, string? CvFileKey)> DeleteApplicationAsync(int id)
     {
-        return await _context.SaveChangesAsync() > 0;
+        // Blokada wiersza przed odczytem klucza CV: równoległa zamiana CV (UpdateCvAsync) czeka do końca transakcji
+        // i trafia już na usuniętą aplikację, więc odczytany klucz jest ostatnim zapisanym (plik nie zostanie osierocony)
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+
+        var matched = await _context.JobApplications
+            .Where(a => a.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, a => a.Status));
+        if (matched == 0)
+        {
+            return (false, null);
+        }
+
+        var cvFileKey = await _context.JobApplications
+            .Where(a => a.Id == id)
+            .Select(a => a.CvFileKey)
+            .FirstOrDefaultAsync();
+
+        // historia statusów usuwana kaskadowo przez bazę
+        await _context.JobApplications.Where(a => a.Id == id).ExecuteDeleteAsync();
+
+        await transaction.CommitAsync();
+        return (true, cvFileKey);
     }
 }

@@ -217,6 +217,26 @@ public class AdminSeedRefreshEnabledTests : IClassFixture<ProductionRefreshEnabl
         using var anonymous = _api.CreateClient();
         Assert.Equal(20, (await anonymous.GetAsync("/api/jobs")).ReadPagination().TotalItems);
     }
+
+    [Fact]
+    public async Task RefreshSeed_DeletesAllCvFiles()
+    {
+        var user = await _api.RegisterUserAsync("cvwipe");
+        var job = await _api.CreateJobAsync();
+        var application = await _api.ApplyAsync(user, job.Id);
+        using (var candidate = _api.CreateClient(user))
+        {
+            Assert.Equal(HttpStatusCode.OK, (await candidate.UploadCvAsync(application.Id, CvTestFiles.Pdf())).StatusCode);
+        }
+
+        var cvDirectory = Path.Combine(_api.Factory.StoragePath, "cv");
+        Assert.NotEmpty(Directory.GetFiles(cvDirectory, "*", SearchOption.AllDirectories));
+
+        using var admin = await _api.AdminClientAsync();
+        Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync("/api/admin/refresh-seed", null)).StatusCode);
+
+        Assert.False(Directory.Exists(cvDirectory) && Directory.EnumerateFiles(cvDirectory, "*", SearchOption.AllDirectories).Any());
+    }
 }
 
 // Seed:DemoAccounts=false: ani start, ani reset danych nie tworzą kont demo (admin zawsze jest tworzony)

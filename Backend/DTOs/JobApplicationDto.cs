@@ -20,6 +20,12 @@ public class JobApplicationDto
     public int CompanyId { get; set; }
     public JobOfferDto? JobOffer { get; set; }
 
+    // CV (bez klucza pliku w magazynie); pozostałe pola null, gdy hasCv = false
+    public bool HasCv { get; set; }
+    public string? CvFileName { get; set; }
+    public long? CvSize { get; set; }
+    public DateTime? CvUploadedAt { get; set; }
+
     // historia chronologicznie - tylko w GET /api/jobapplications/{id} i odpowiedziach na zmianę statusu (w listach null)
     public List<ApplicationStatusHistoryDto>? History { get; set; }
 }

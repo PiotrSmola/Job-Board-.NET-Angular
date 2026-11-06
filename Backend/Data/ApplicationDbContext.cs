@@ -85,6 +85,11 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.Status).HasConversion<int>();
             entity.Property(e => e.StatusChangedAt).IsConcurrencyToken();
 
+            // CV - kolumny nullable (istniejące aplikacje nie mają CV)
+            entity.Property(e => e.CvFileKey).HasMaxLength(300);
+            entity.Property(e => e.CvFileName).HasMaxLength(255);
+            entity.Property(e => e.CvContentType).HasMaxLength(100);
+
             // jedna aplikacja użytkownika na ofertę (chroni też przed równoległymi żądaniami)
             entity.HasIndex(e => new { e.JobOfferId, e.UserId }).IsUnique();
 

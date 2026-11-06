@@ -22,21 +22,32 @@ public class JobApplicationsController : ControllerBase
 
     private const string JobNotFoundMessage = "Job offer not found";
 
+    private const string CvNotFoundMessage = "CV not found";
+    private const string CvStatusMessage = "CV cannot be changed in the current application status";
+    private const string CvConcurrentChangeMessage = "CV was changed by another request";
+    private const string NoFileMessage = "No file uploaded - send it in the 'file' form field";
+
     private readonly IJobApplicationRepository _applicationRepository;
     private readonly IJobRepository _jobRepository;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ICurrentUserAccess _access;
+    private readonly IFileStorage _fileStorage;
+    private readonly ILogger<JobApplicationsController> _logger;
 
     public JobApplicationsController(
         IJobApplicationRepository applicationRepository,
         IJobRepository jobRepository,
         UserManager<ApplicationUser> userManager,
-        ICurrentUserAccess access)
+        ICurrentUserAccess access,
+        IFileStorage fileStorage,
+        ILogger<JobApplicationsController> logger)
     {
         _applicationRepository = applicationRepository;
         _jobRepository = jobRepository;
         _userManager = userManager;
         _access = access;
+        _fileStorage = fileStorage;
+        _logger = logger;
     }
 
     [HttpGet("my-applications")]
@@ -312,14 +323,187 @@ public class JobApplicationsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> DeleteApplication(int id)
     {
-        var result = await _applicationRepository.DeleteApplicationAsync(id);
+        var (deleted, cvFileKey) = await _applicationRepository.DeleteApplicationAsync(id);
 
-        if (!result)
+        if (!deleted)
         {
             return NotFound(new { message = ApplicationNotFoundMessage });
         }
 
+        // plik CV dopiero po zatwierdzeniu usunięcia w bazie
+        await _fileStorage.DeleteQuietlyAsync(cvFileKey, _logger);
+
         return NoContent();
+    }
+
+    // Dodanie albo zamiana CV przez kandydata (multipart/form-data, pole "file"; PDF lub DOCX do 5 MB, typ
+    // rozpoznawany po zawartości). Kolejność: zapis nowego pliku -> warunkowy zapis w bazie -> usunięcie starego
+    // pliku; gdy zapis w bazie się nie uda, nowy plik jest usuwany.
+    [HttpPut("{id:int}/cv")]
+    [CvUploadForm]
+    [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<JobApplicationDto>> UploadCv(int id, IFormFile? file)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        var application = await _applicationRepository.GetApplicationByIdAsync(id, cancellationToken: HttpContext.RequestAborted);
+
+        // tylko właściciel - cudza aplikacja wygląda jak nieistniejąca
+        if (application == null || application.UserId != userId)
+        {
+            return NotFound(new { message = ApplicationNotFoundMessage });
+        }
+
+        if (!application.CanChangeCv)
+        {
+            return BadRequest(new { message = CvStatusMessage });
+        }
+
+        if (file == null)
+        {
+            return BadRequest(new { message = NoFileMessage });
+        }
+
+        if (file.Length == 0)
+        {
+            return BadRequest(new { message = CvFiles.EmptyFileMessage });
+        }
+
+        if (file.Length > CvFiles.MaxFileSize)
+        {
+            return BadRequest(new { message = CvFiles.TooLargeMessage });
+        }
+
+        // strumień pliku z formularza jest przewijalny (bufor ASP.NET Core) - po sprawdzeniu typu wraca na początek
+        await using var content = file.OpenReadStream();
+        var type = await CvFiles.DetectTypeAsync(content, HttpContext.RequestAborted);
+        if (type == null)
+        {
+            return BadRequest(new { message = CvFiles.UnsupportedTypeMessage });
+        }
+
+        var cv = new CvFile(
+            CvFiles.NewStorageKey(id, type),
+            CvFiles.SanitizeFileName(file.FileName, type),
+            type.ContentType,
+            file.Length,
+            DateTime.UtcNow);
+
+        await _fileStorage.SaveAsync(cv.Key, content, cv.ContentType, HttpContext.RequestAborted);
+
+        bool updated;
+        try
+        {
+            // bez tokenu żądania: przerwanie w trakcie zapisu mogłoby zostawić niepewny stan (zapis wykonany,
+            // a nowy plik usunięty poniżej) - po zapisaniu pliku operacja jest doprowadzana do końca
+            updated = await _applicationRepository.UpdateCvAsync(id, userId, application.CvFileKey, cv, CancellationToken.None);
+        }
+        catch
+        {
+            await _fileStorage.DeleteQuietlyAsync(cv.Key, _logger);
+            throw;
+        }
+
+        if (!updated)
+        {
+            await _fileStorage.DeleteQuietlyAsync(cv.Key, _logger);
+            return await CvChangeRejectedAsync(id, userId, requireCv: false);
+        }
+
+        await _fileStorage.DeleteQuietlyAsync(application.CvFileKey, _logger);
+
+        // zmienia tylko kandydat - nie widzi autorów zmian
+        return await ApplicationWithHistoryAsync(id, includeChangedBy: false);
+    }
+
+    // Usunięcie CV przez kandydata (te same statusy co przy wgrywaniu)
+    [HttpDelete("{id:int}/cv")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> DeleteCv(int id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        var application = await _applicationRepository.GetApplicationByIdAsync(id, cancellationToken: HttpContext.RequestAborted);
+        if (application == null || application.UserId != userId)
+        {
+            return NotFound(new { message = ApplicationNotFoundMessage });
+        }
+
+        if (!application.HasCv)
+        {
+            return NotFound(new { message = CvNotFoundMessage });
+        }
+
+        if (!application.CanChangeCv)
+        {
+            return BadRequest(new { message = CvStatusMessage });
+        }
+
+        // przerwanie w trakcie zapisu najwyżej osieroci plik (bez odwołania w bazie do nieistniejącego pliku)
+        if (!await _applicationRepository.UpdateCvAsync(id, userId, application.CvFileKey, null, HttpContext.RequestAborted))
+        {
+            return await CvChangeRejectedAsync(id, userId, requireCv: true);
+        }
+
+        await _fileStorage.DeleteQuietlyAsync(application.CvFileKey, _logger);
+
+        return NoContent();
+    }
+
+    // Pobranie CV: kandydat (własna aplikacja), admin, pracodawca firmy oferty; pozostali - 404
+    [HttpGet("{id:int}/cv")]
+    [ProducesResponseType(typeof(FileStreamResult), StatusCodes.Status200OK, "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> DownloadCv(int id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized();
+        }
+
+        var application = await _applicationRepository.GetApplicationByIdAsync(id, cancellationToken: HttpContext.RequestAborted);
+        if (application == null || (application.UserId != userId && !await _access.CanManageApplicationAsync(application)))
+        {
+            return NotFound(new { message = ApplicationNotFoundMessage });
+        }
+
+        if (!application.HasCv)
+        {
+            return NotFound(new { message = CvNotFoundMessage });
+        }
+
+        var content = await _fileStorage.OpenReadAsync(application.CvFileKey!, HttpContext.RequestAborted);
+        if (content == null)
+        {
+            _logger.LogWarning("CV file {FileKey} of application {ApplicationId} is missing in storage",
+                application.CvFileKey, application.Id);
+            return NotFound(new { message = CvNotFoundMessage });
+        }
+
+        Response.Headers.ContentDisposition = CvFiles.ContentDisposition(application.CvFileName ?? "cv");
+        Response.Headers.XContentTypeOptions = "nosniff";
+        Response.Headers.CacheControl = "no-store";
+
+        return File(content, application.CvContentType ?? "application/octet-stream");
     }
 
     [HttpGet("check/{jobId}")]
@@ -363,6 +547,29 @@ public class JobApplicationsController : ControllerBase
         Response.AddPaginationHeader(applications);
 
         return Ok(applications.Select(a => a.ToDto()));
+    }
+
+    // Warunkowy zapis CV nie trafił w żaden wiersz - powód ustalany na aktualnym stanie aplikacji
+    private async Task<ObjectResult> CvChangeRejectedAsync(int id, string userId, bool requireCv)
+    {
+        var current = await _applicationRepository.GetApplicationByIdAsync(id, cancellationToken: HttpContext.RequestAborted);
+        if (current == null || current.UserId != userId)
+        {
+            return NotFound(new { message = ApplicationNotFoundMessage });
+        }
+
+        if (requireCv && !current.HasCv)
+        {
+            return NotFound(new { message = CvNotFoundMessage });
+        }
+
+        if (!current.CanChangeCv)
+        {
+            return BadRequest(new { message = CvStatusMessage });
+        }
+
+        // równoległe żądanie zmieniło CV w międzyczasie
+        return Conflict(new { message = CvConcurrentChangeMessage });
     }
 
     private async Task<ActionResult<JobApplicationDto>> ApplicationWithHistoryAsync(int id, bool includeChangedBy)

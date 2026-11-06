@@ -199,6 +199,24 @@ namespace Backend.Migrations
                     b.Property<DateTime>("AppliedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<string>("CvContentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("CvFileKey")
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<string>("CvFileName")
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<long?>("CvSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("CvUploadedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<int>("JobOfferId")
                         .HasColumnType("int");
 

@@ -88,6 +88,10 @@ public static class MappingExtensions
         Company = application.JobOffer?.Company?.Name ?? string.Empty,
         CompanyId = application.JobOffer?.CompanyId ?? 0,
         JobOffer = application.JobOffer?.ToDto(),
+        HasCv = application.HasCv,
+        CvFileName = application.HasCv ? application.CvFileName : null,
+        CvSize = application.HasCv ? application.CvSize : null,
+        CvUploadedAt = application.HasCv ? application.CvUploadedAt : null,
         History = includeHistory
             ? (application.StatusHistory ?? [])
                 .OrderBy(h => h.ChangedAt)

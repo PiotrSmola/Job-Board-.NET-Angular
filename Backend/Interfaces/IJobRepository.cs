@@ -13,7 +13,8 @@ public interface IJobRepository
     Task<JobOffer?> GetJobByIdAsync(int id);
     Task<JobOffer> AddJobAsync(JobOffer jobOffer);
     Task<JobOffer> UpdateJobAsync(JobOffer jobOffer);
-    Task<bool> DeleteJobAsync(int id);
+    // admin: usuwa ofertę z aplikacjami; CvFileKeys - klucze plików CV usuniętych aplikacji do usunięcia z magazynu
+    Task<(bool Deleted, IReadOnlyList<string> CvFileKeys)> DeleteJobAsync(int id);
     // usuwa ofertę tylko, gdy nie ma żadnych aplikacji (jedno zapytanie DELETE ... NOT EXISTS - bez wyścigu z aplikowaniem)
     Task<bool> DeleteJobWithoutApplicationsAsync(int id);
     Task<bool> JobExistsAsync(int id);
