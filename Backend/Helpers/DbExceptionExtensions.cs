@@ -29,4 +29,11 @@ public static class DbExceptionExtensions
         {
             ErrorCode: MySqlErrorCode.RowIsReferenced2 or MySqlErrorCode.RowIsReferenced
         };
+
+    // zapis wiersza z kluczem obcym wskazującym nieistniejący wiersz (np. oferta usunięta w międzyczasie)
+    public static bool IsMissingReference(this Exception exception) =>
+        (exception as DbUpdateException)?.InnerException is MySqlException
+        {
+            ErrorCode: MySqlErrorCode.NoReferencedRow2 or MySqlErrorCode.NoReferencedRow
+        };
 }
