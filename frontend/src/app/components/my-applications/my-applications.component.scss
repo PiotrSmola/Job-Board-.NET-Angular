@@ -110,6 +110,35 @@
     font-size: 0.875rem;
   }
 
+  .cv-cell {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .cv-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .cv-file {
+    max-width: 200px;
+    justify-content: flex-start;
+  }
+
+  .cv-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cv-meta {
+    color: #757575;
+    font-size: 0.8rem;
+    padding-left: 12px;
+  }
+
   .actions-cell {
     display: flex;
     gap: 8px;

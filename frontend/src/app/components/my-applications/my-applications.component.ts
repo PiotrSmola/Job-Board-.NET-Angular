@@ -8,12 +8,15 @@ import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatDialog } from '@angular/material/dialog';
 import { JobApplicationService } from '../../services/job-application.service';
 import { ApplicationStatus, ApplicationStatusHistoryEntry, JobApplication } from '../../models/job-application.model';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
-import { canWithdraw, getApplicationStatusPresentation, StatusPresentation } from '../../utils/status-labels';
+import { canChangeCv, canWithdraw, getApplicationStatusPresentation, StatusPresentation } from '../../utils/status-labels';
+import { formatFileSize } from '../../utils/cv-file';
 import { StatusChipComponent } from '../shared/status-chip.component';
 import { StatusTimelineComponent } from '../shared/status-timeline.component';
+import { CvDialogComponent } from './cv-dialog.component';
 
 @Component({
   selector: 'app-my-applications',
@@ -38,11 +41,14 @@ export class MyApplicationsComponent implements OnInit {
   private router = inject(Router);
   private cdr = inject(ChangeDetectorRef);
   private snackBar = inject(MatSnackBar);
+  private dialog = inject(MatDialog);
 
   applications: JobApplication[] = [];
-  displayedColumns: string[] = ['jobTitle', 'company', 'location', 'status', 'appliedAt', 'note', 'actions'];
+  displayedColumns: string[] = ['jobTitle', 'company', 'location', 'status', 'appliedAt', 'note', 'cv', 'actions'];
   loading = false;
   withdrawingId: number | null = null;
+  downloadingCvId: number | null = null;
+  deletingCvId: number | null = null;
 
   /** Aplikacja z rozwiniętą historią (null = żadna). */
   expandedId: number | null = null;
@@ -79,6 +85,73 @@ export class MyApplicationsComponent implements OnInit {
 
   canWithdraw(application: JobApplication): boolean {
     return canWithdraw(application.status);
+  }
+
+  canChangeCv(application: JobApplication): boolean {
+    return canChangeCv(application.status);
+  }
+
+  formatFileSize(bytes: number | null): string {
+    return formatFileSize(bytes);
+  }
+
+  /** Dodanie lub zmiana CV w dialogu z paskiem postępu. */
+  openCvDialog(application: JobApplication): void {
+    const hadCv = application.hasCv;
+    const dialogRef = this.dialog.open(CvDialogComponent, { width: '520px', data: application });
+
+    dialogRef.afterClosed().subscribe((updated: JobApplication | undefined) => {
+      if (!updated) return;
+      this.replaceApplication(updated);
+      this.cdr.detectChanges();
+      this.notify(hadCv ? 'CV zostało zastąpione' : 'CV zostało dołączone do aplikacji');
+    });
+  }
+
+  downloadCv(application: JobApplication): void {
+    this.downloadingCvId = application.id;
+    this.applicationService.downloadCv(application.id, application.cvFileName).subscribe({
+      next: () => {
+        this.downloadingCvId = null;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        console.error('Error downloading CV:', error);
+        this.downloadingCvId = null;
+        this.cdr.detectChanges();
+        if (!isHandledByInterceptor(error)) {
+          this.notify(getApiErrorMessage(error, 'Nie udało się pobrać CV'));
+        }
+      }
+    });
+  }
+
+  deleteCv(application: JobApplication): void {
+    if (!confirm(`Czy na pewno chcesz usunąć CV „${application.cvFileName}” z aplikacji na stanowisko „${application.jobTitle}”?`)) {
+      return;
+    }
+
+    this.deletingCvId = application.id;
+    this.applicationService.deleteCv(application.id).subscribe({
+      next: () => {
+        this.replaceApplication({ ...application, hasCv: false, cvFileName: null, cvSize: null, cvUploadedAt: null });
+        this.deletingCvId = null;
+        this.cdr.detectChanges();
+        this.notify('CV zostało usunięte');
+      },
+      error: (error) => {
+        console.error('Error deleting CV:', error);
+        this.deletingCvId = null;
+        this.cdr.detectChanges();
+        if (!isHandledByInterceptor(error)) {
+          this.notify(getApiErrorMessage(error, 'Nie udało się usunąć CV'));
+        }
+      }
+    });
+  }
+
+  private replaceApplication(updated: JobApplication): void {
+    this.applications = this.applications.map(app => app.id === updated.id ? { ...app, ...updated } : app);
   }
 
   /** Rozwija/zwija historię; przy pierwszym rozwinięciu pobiera ją z API. */

@@ -67,6 +67,63 @@
             </td>
           </ng-container>
 
+          <ng-container matColumnDef="cv">
+            <th mat-header-cell *matHeaderCellDef>CV</th>
+            <td mat-cell *matCellDef="let application">
+              <div class="cv-cell">
+                @if (application.hasCv) {
+                  <div class="cv-info">
+                    <button
+                      mat-button
+                      class="cv-file"
+                      (click)="downloadCv(application)"
+                      [disabled]="downloadingCvId === application.id"
+                      [matTooltip]="'Pobierz ' + application.cvFileName">
+                      @if (downloadingCvId === application.id) {
+                        <mat-spinner diameter="18"></mat-spinner>
+                      } @else {
+                        <mat-icon>download</mat-icon>
+                      }
+                      <span class="cv-name">{{ application.cvFileName }}</span>
+                    </button>
+                    <span class="cv-meta">
+                      {{ formatFileSize(application.cvSize) }}
+                      @if (application.cvUploadedAt) {
+                        · {{ application.cvUploadedAt | date: 'dd.MM.yyyy' }}
+                      }
+                    </span>
+                  </div>
+                } @else {
+                  <span class="no-note">Brak</span>
+                }
+                @if (canChangeCv(application)) {
+                  <button
+                    mat-icon-button
+                    (click)="openCvDialog(application)"
+                    [matTooltip]="application.hasCv ? 'Zmień CV' : 'Dodaj CV'"
+                    [attr.aria-label]="application.hasCv ? 'Zmień CV' : 'Dodaj CV'">
+                    <mat-icon>{{ application.hasCv ? 'sync' : 'upload_file' }}</mat-icon>
+                  </button>
+                  @if (application.hasCv) {
+                    <button
+                      mat-icon-button
+                      color="warn"
+                      (click)="deleteCv(application)"
+                      [disabled]="deletingCvId === application.id"
+                      matTooltip="Usuń CV"
+                      aria-label="Usuń CV">
+                      @if (deletingCvId === application.id) {
+                        <mat-spinner diameter="24"></mat-spinner>
+                      } @else {
+                        <mat-icon>delete_outline</mat-icon>
+                      }
+                    </button>
+                  }
+                }
+              </div>
+            </td>
+          </ng-container>
+
           <ng-container matColumnDef="actions">
             <th mat-header-cell *matHeaderCellDef>Akcje</th>
             <td mat-cell *matCellDef="let application">
