@@ -19,6 +19,7 @@ public class DockerUpScriptTests
         "DB_PASSWORD=$(Get-EnvValue 'DB_PASSWORD' 'jobboard')"
         "JWT_SECRET=$(Get-EnvValue 'JWT_SECRET' '')"
         "ALLOW_SEED_REFRESH=$(Get-EnvValue 'ALLOW_SEED_REFRESH' 'default')"
+        "SEED_DEMO_ACCOUNTS=$(Get-EnvValue 'SEED_DEMO_ACCOUNTS' 'default')"
         "MISSING=$(Get-EnvValue 'MISSING' 'fallback')"
         """;
 
@@ -76,22 +77,34 @@ public class DockerUpScriptTests
     [Fact]
     public void GetEnvValue_WithEmptyValues_FallsBackToDefaults()
     {
-        var values = RunGetEnvValue("DB_PASSWORD=\nJWT_SECRET=\nALLOW_SEED_REFRESH=  \n");
+        var values = RunGetEnvValue("DB_PASSWORD=\nJWT_SECRET=\nALLOW_SEED_REFRESH=  \nSEED_DEMO_ACCOUNTS=\n");
 
         Assert.Equal("jobboard", values["DB_PASSWORD"]);
         Assert.Equal(string.Empty, values["JWT_SECRET"]);
         Assert.Equal("default", values["ALLOW_SEED_REFRESH"]);
+        Assert.Equal("default", values["SEED_DEMO_ACCOUNTS"]);
         Assert.Equal("fallback", values["MISSING"]);
     }
 
     [Fact]
     public void GetEnvValue_WithValues_KeepsThem()
     {
-        var values = RunGetEnvValue("DB_PASSWORD=s3cret\r\nJWT_SECRET=abc=def\r\nALLOW_SEED_REFRESH=false\r\n");
+        var values = RunGetEnvValue("DB_PASSWORD=s3cret\r\nJWT_SECRET=abc=def\r\nALLOW_SEED_REFRESH=false\r\nSEED_DEMO_ACCOUNTS=false\r\n");
 
         Assert.Equal("s3cret", values["DB_PASSWORD"]);
         Assert.Equal("abc=def", values["JWT_SECRET"]);
         Assert.Equal("false", values["ALLOW_SEED_REFRESH"]);
+        Assert.Equal("false", values["SEED_DEMO_ACCOUNTS"]);
+    }
+
+    [Fact]
+    public void Script_KeepsSeedDemoAccountsFromPreviousEnvFile()
+    {
+        // .env jest przepisywany przy każdym uruchomieniu - wartość ustawiona przez użytkownika nie może zginąć
+        var script = File.ReadAllText(RepositoryFiles.Find("docker-up.ps1"));
+
+        Assert.Contains("Get-EnvValue 'SEED_DEMO_ACCOUNTS'", script);
+        Assert.Contains("\"SEED_DEMO_ACCOUNTS=$seedDemoAccounts\"", script);
     }
 
     [Fact]

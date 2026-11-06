@@ -26,10 +26,11 @@ public class ApiFixture : IAsyncLifetime
 
     // cacheTokens: false - każde AdminClientAsync/UserClientAsync loguje się od nowa (potrzebne, gdy testy
     // resetują dane: konta z seeda dostają nowe id i security stamp, więc wcześniejsze tokeny tracą ważność)
-    protected ApiFixture(string environment, string? jwtSecret, bool allowSeedRefresh, bool cacheTokens = true)
+    // demoAccounts: jawna wartość Seed:DemoAccounts (null - domyślnie: konta demo tylko w Development)
+    protected ApiFixture(string environment, string? jwtSecret, bool allowSeedRefresh, bool cacheTokens = true, bool? demoAccounts = null)
     {
         _cacheTokens = cacheTokens;
-        Factory = new JobBoardFactory(environment, jwtSecret, allowSeedRefresh);
+        Factory = new JobBoardFactory(environment, jwtSecret, allowSeedRefresh, demoAccounts);
         _adminToken = new Lazy<Task<string>>(() => LoginAsync(TestUsers.AdminEmail, TestUsers.AdminPassword));
         _userToken = new Lazy<Task<string>>(() => LoginAsync(TestUsers.UserEmail, TestUsers.UserPassword));
     }

@@ -14,21 +14,34 @@ public static class DatabaseSeeder
     public const string PendingEmployerCompany = "Nowa Firma Sp. z o.o.";
     public const string EmployerPassword = "Employer123!";
 
+    // Konta demo (kandydaci i pracodawcy ze znanymi hasłami) tylko lokalnie: domyślnie w Development,
+    // poza nim po jawnym włączeniu Seed:DemoAccounts=true (lokalny stack Dockera); jawna wartość ma pierwszeństwo.
+    // Konta adminów są tworzone zawsze.
+    public static bool DemoAccountsEnabled(IHostEnvironment environment, IConfiguration configuration) =>
+        configuration.GetValue<bool?>("Seed:DemoAccounts") ?? environment.IsDevelopment();
+
     public static async Task SeedAsync(IServiceProvider serviceProvider)
     {
         var context = serviceProvider.GetRequiredService<ApplicationDbContext>();
         var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = serviceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+        var includeDemoAccounts = DemoAccountsEnabled(
+            serviceProvider.GetRequiredService<IHostEnvironment>(),
+            serviceProvider.GetRequiredService<IConfiguration>());
 
         await context.Database.MigrateAsync();
 
         await SeedRoles(roleManager);
 
-        await SeedUsers(userManager);
+        await SeedAdmins(userManager);
 
         await SeedJobOffers(context);
 
-        await SeedEmployers(context, userManager);
+        if (includeDemoAccounts)
+        {
+            await SeedCandidates(userManager);
+            await SeedEmployers(context, userManager);
+        }
     }
 
     // Usuwa WSZYSTKIE aplikacje, oferty, użytkowników i firmy, po czym odtwarza dane demo.
@@ -36,7 +49,8 @@ public static class DatabaseSeeder
     public static async Task RefreshSeedAsync(
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
-        RoleManager<IdentityRole> roleManager)
+        RoleManager<IdentityRole> roleManager,
+        bool includeDemoAccounts)
     {
         await using var transaction = await context.Database.BeginTransactionAsync();
 
@@ -54,11 +68,15 @@ public static class DatabaseSeeder
 
         await SeedRoles(roleManager);
 
-        await SeedUsers(userManager);
+        await SeedAdmins(userManager);
 
         await SeedJobOffers(context, forceReseed: true);
 
-        await SeedEmployers(context, userManager);
+        if (includeDemoAccounts)
+        {
+            await SeedCandidates(userManager);
+            await SeedEmployers(context, userManager);
+        }
 
         await transaction.CommitAsync();
     }
@@ -74,7 +92,7 @@ public static class DatabaseSeeder
         }
     }
 
-    private static async Task SeedUsers(UserManager<ApplicationUser> userManager)
+    private static async Task SeedAdmins(UserManager<ApplicationUser> userManager)
     {
         var admins = new[]
         {
@@ -103,7 +121,11 @@ public static class DatabaseSeeder
                 }
             }
         }
+    }
 
+    // Konta demo kandydatów (rola User)
+    private static async Task SeedCandidates(UserManager<ApplicationUser> userManager)
+    {
         var regularUsers = new[]
         {
             new { Email = "jan.kowalski@example.com", FirstName = "Jan", LastName = "Kowalski", Password = "User123!" },

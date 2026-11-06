@@ -42,4 +42,14 @@ public class DockerComposeTests
         Assert.Equal(3, mappings.Count);
         Assert.All(mappings, mapping => Assert.Matches(new Regex(@"^127\.0\.0\.1:\$\{[A-Z_]+:-\d+\}:\d+$"), mapping));
     }
+
+    [Fact]
+    public void Backend_EnablesDemoAccountsByDefaultWithOverride()
+    {
+        // lokalne demo w środowisku Production: konta demo tylko dzięki Seed:DemoAccounts, SEED_DEMO_ACCOUNTS=false je wyłącza
+        var compose = File.ReadAllText(RepositoryFiles.Find("docker-compose.yml"));
+
+        Assert.Contains("Seed__DemoAccounts: ${SEED_DEMO_ACCOUNTS:-true}", compose);
+        Assert.Contains("SEED_DEMO_ACCOUNTS=true", File.ReadAllText(RepositoryFiles.Find(".env.example")));
+    }
 }

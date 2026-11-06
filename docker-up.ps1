@@ -64,7 +64,7 @@ function New-RandomSecret([int]$Length) {
     return $sb.ToString()
 }
 
-# hasło do bazy, sekret JWT i ALLOW_SEED_REFRESH zachowujemy z poprzedniego .env
+# hasło do bazy, sekret JWT, ALLOW_SEED_REFRESH i SEED_DEMO_ACCOUNTS zachowujemy z poprzedniego .env
 $dbPassword = Get-EnvValue 'DB_PASSWORD' 'jobboard'
 $jwtSecret = Get-EnvValue 'JWT_SECRET' ''
 if (-not $jwtSecret) {
@@ -72,6 +72,7 @@ if (-not $jwtSecret) {
     Write-Host 'Wygenerowano nowy JWT_SECRET (zapisany w .env).'
 }
 $allowSeedRefresh = Get-EnvValue 'ALLOW_SEED_REFRESH' ''
+$seedDemoAccounts = Get-EnvValue 'SEED_DEMO_ACCOUNTS' ''
 
 # docker compose wymaga JWT_SECRET już przy "down" (interpolacja całego pliku), a .env może go jeszcze nie mieć
 $env:JWT_SECRET = $jwtSecret
@@ -88,6 +89,7 @@ try {
 
     $envLines = @($ports.Keys | ForEach-Object { "$_=$($ports[$_])" }) + "DB_PASSWORD=$dbPassword" + "JWT_SECRET=$jwtSecret"
     if ($allowSeedRefresh) { $envLines += "ALLOW_SEED_REFRESH=$allowSeedRefresh" }
+    if ($seedDemoAccounts) { $envLines += "SEED_DEMO_ACCOUNTS=$seedDemoAccounts" }
     [System.IO.File]::WriteAllLines((Join-Path $PSScriptRoot '.env'), $envLines, [System.Text.UTF8Encoding]::new($false))
 
     docker compose up -d --build
