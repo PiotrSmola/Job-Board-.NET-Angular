@@ -1,7 +1,11 @@
+# Wszystkie usługi z no-new-privileges: procesy w kontenerach nie mogą zyskać uprawnień (np. przez binarki setuid);
+# entrypointy obrazów (MySQL, SeaweedFS, nginx) tylko je porzucają, przechodząc z roota na swojego użytkownika.
 services:
   db:
     image: mysql:8.4.13
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-jobboard}
       MYSQL_DATABASE: JobBoardDb
@@ -22,6 +26,8 @@ services:
   storage:
     image: chrislusf/seaweedfs:4.50
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       S3_ACCESS_KEY: "${S3_ACCESS_KEY:?S3_ACCESS_KEY is not set - run docker-up.ps1 or set it in .env}"
       S3_SECRET_KEY: "${S3_SECRET_KEY:?S3_SECRET_KEY is not set - run docker-up.ps1 or set it in .env}"
@@ -49,6 +55,8 @@ services:
   backend:
     build: ./Backend
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       db:
         condition: service_healthy
@@ -79,6 +87,8 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - backend
     ports:
