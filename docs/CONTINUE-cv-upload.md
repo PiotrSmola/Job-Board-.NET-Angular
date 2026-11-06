@@ -61,7 +61,7 @@ Kolejność: przebudowa v2 (backend + frontend) → testy → review → poprawk
 
 ## Frontend – stan v2
 
-Zrobione (tylko `frontend/src/`, testy 1279/1279, `ng build` bez nowych ostrzeżeń budżetu):
+Zrobione (tylko `frontend/src/`, testy 1280/1280, `ng build` bez nowych ostrzeżeń budżetu):
 - Model: `attachments: ApplicationAttachment[]` + `attachmentsTotalSize` zamiast pól `Cv*`; `AttachmentKind` (0–3), `AttachmentUploadItem { file, kind }`, `AttachmentUploadEvent`.
 - Serwis: `uploadAttachments(id, items)` – jeden POST multipart (`files` + równoległe `kinds` jako liczby), `reportProgress`; `deleteAttachment(id, attachmentId)`; `downloadAttachment(id, { id, fileName })` (Blob, nazwa z `Content-Disposition` → `fileName` → `zalacznik`, treść błędu z Bloba parsowana do `{ message }`). API `/cv` usunięte.
 - `utils/attachments.ts` (zamiast `cv-file.ts`): limity (5 MB / 25 MB / 10), `ATTACHMENT_ACCEPT` (.pdf,.docx,.png,.jpg,.jpeg), etykiety rodzajów (CV / List motywacyjny / Portfolio / Inny), `validateAttachmentFile`, `selectAttachmentFiles` (po kolei: typ, pusty, 5 MB, duplikat, liczba z istniejącymi, suma z istniejącymi; przyjmuje te, które się mieszczą, reszta z powodem i nazwą pliku), `defaultAttachmentKind` (CV, dopóki aplikacja go nie ma), `formatAttachmentsUsage`. `canAddAttachments` w `status-labels.ts` (Submitted–Offered). `file-download.ts`: `revokeObjectURL` po 30 s.
