@@ -9,7 +9,7 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { Subject, catchError, of, switchMap, tap } from 'rxjs';
+import { EMPTY, Observable, Subject, catchError, map, of, switchMap, tap } from 'rxjs';
 import { Company, CompanyStatus } from '../../models/company.model';
 import { JobOffer, WorkType } from '../../models/job-offer.model';
 import { JobParams } from '../../models/job-params.model';
@@ -71,55 +71,68 @@ export class CompanyDetailComponent {
   });
 
   private companyId = 0;
-  private readonly jobsLoad$ = new Subject<void>();
+  /** Kolejne wczytania profilu – switchMap anuluje poprzednie żądanie (szybka zmiana :id, ponowna próba). */
+  private readonly companyLoad$ = new Subject<number>();
+  /** true – wczytaj oferty bieżącej firmy, false – anuluj trwające wczytywanie (zmiana firmy). */
+  private readonly jobsLoad$ = new Subject<boolean>();
 
   constructor() {
     this.jobsLoad$.pipe(
-      tap(() => this.jobsLoading.set(true)),
-      switchMap(() => this.jobService.getJobs(this.buildJobParams()).pipe(
-        catchError(error => {
-          console.error('Error loading company jobs:', error);
-          return of(null);
-        })
-      )),
+      switchMap(load => load ? this.fetchJobs() : EMPTY),
       takeUntilDestroyed()
     ).subscribe(result => this.onJobsLoaded(result));
 
+    this.companyLoad$.pipe(
+      tap(() => this.startCompanyLoad()),
+      switchMap(id => this.companyService.getCompany(id).pipe(
+        map(company => ({ company, error: null as unknown })),
+        catchError(error => of({ company: null, error }))
+      )),
+      takeUntilDestroyed()
+    ).subscribe(({ company, error }) => company ? this.onCompanyLoaded(company) : this.onCompanyError(error));
+
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(params => {
-      const id = Number(params.get('id'));
-      this.companyId = id;
+      this.companyId = Number(params.get('id'));
       this.jobsPageIndex.set(0);
       this.loadCompany();
     });
   }
 
   loadCompany(): void {
+    this.companyLoad$.next(this.companyId);
+  }
+
+  private startCompanyLoad(): void {
     this.loading.set(true);
     this.notFound.set(false);
     this.loadError.set(null);
     this.company.set(null);
+    // oferty poprzedniej firmy nie mogą nadpisać listy
+    this.jobsLoad$.next(false);
+    this.jobs.set([]);
+    this.jobsTotal.set(0);
+    this.jobsLoading.set(false);
+  }
 
-    this.companyService.getCompany(this.companyId).subscribe({
-      next: company => {
-        this.company.set(company);
-        this.loading.set(false);
-        this.jobsLoad$.next();
-      },
-      error: error => {
-        console.error('Error loading company:', error);
-        this.loading.set(false);
-        if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 400)) {
-          this.notFound.set(true);
-        } else {
-          this.loadError.set(getApiErrorMessage(error, 'Nie udało się wczytać profilu firmy'));
-        }
-      }
-    });
+  private onCompanyLoaded(company: Company): void {
+    this.company.set(company);
+    this.loading.set(false);
+    this.jobsLoad$.next(true);
+  }
+
+  private onCompanyError(error: unknown): void {
+    console.error('Error loading company:', error);
+    this.loading.set(false);
+    if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 400)) {
+      this.notFound.set(true);
+    } else {
+      this.loadError.set(getApiErrorMessage(error, 'Nie udało się wczytać profilu firmy'));
+    }
   }
 
   onJobsPageChange(event: PageEvent): void {
     this.jobsPageIndex.set(event.pageIndex);
-    this.jobsLoad$.next();
+    this.jobsLoad$.next(true);
   }
 
   workTypeLabel(workType: WorkType): string {
@@ -132,6 +145,16 @@ export class CompanyDetailComponent {
     if (salaryMin) return `Od ${salaryMin} PLN`;
     if (salaryMax) return `Do ${salaryMax} PLN`;
     return 'Nieokreślona';
+  }
+
+  private fetchJobs(): Observable<PaginatedResult<JobOffer> | null> {
+    this.jobsLoading.set(true);
+    return this.jobService.getJobs(this.buildJobParams()).pipe(
+      catchError(error => {
+        console.error('Error loading company jobs:', error);
+        return of(null);
+      })
+    );
   }
 
   private buildJobParams(): JobParams {

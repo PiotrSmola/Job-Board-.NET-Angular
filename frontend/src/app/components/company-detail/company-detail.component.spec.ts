@@ -309,19 +309,49 @@ describe('CompanyDetailComponent', () => {
   });
 
   describe('route changes', () => {
-    // Bug: company-detail.component.ts loadCompany() subscribes without switchMap/unsubscribe, so a late response for the
-    // previous :id overwrites the profile of the current one (and triggers loading its offers) after a quick route change.
-    it.skip('ignores a late response for the previous company when the id changes quickly', async () => {
+    // switchMap na kolejnych wczytaniach: spóźniona odpowiedź dla poprzedniego :id jest anulowana
+    it('ignores a late response for the previous company when the id changes quickly', async () => {
       const first = new Subject<Company>();
       getCompany.mockReturnValueOnce(first);
       await open(5);
       getCompany.mockReturnValue(of(makeCompany(6, { name: 'Beta' })));
       await open(6);
       expect(component.company()?.name).toBe('Beta');
+      const jobsCalls = getJobs.mock.calls.length;
 
       first.next(makeCompany(5, { name: 'Acme' })); // spóźniona odpowiedź dla poprzedniego id
 
       expect(component.company()?.name).toBe('Beta');
+      expect(first.observed).toBe(false);
+      expect(getJobs.mock.calls.length).toBe(jobsCalls);
+      expect(lastJobParams().companyId).toBe(6);
+    });
+
+    it('ignores late offers of the previous company when the id changes', async () => {
+      const firstJobs = new Subject<PaginatedResult<JobOffer>>();
+      getJobs.mockReturnValueOnce(firstJobs);
+      await open(5);
+      getCompany.mockReturnValue(of(makeCompany(6, { name: 'Beta' })));
+      getJobs.mockReturnValue(withJobs([makeJob(60)]));
+      await open(6);
+
+      firstJobs.next({ ...jobPage(0, 1), result: [makeJob(50)] });
+
+      expect(component.jobs().map(j => j.id)).toEqual([60]);
+      expect(component.jobsLoading()).toBe(false);
+    });
+
+    it('a retry cancels the previous pending request', async () => {
+      const pending = new Subject<Company>();
+      getCompany.mockReturnValueOnce(pending);
+      await open(5);
+      getCompany.mockReturnValue(of(makeCompany(5, { name: 'Ponownie' })));
+
+      component.loadCompany();
+      pending.next(makeCompany(5, { name: 'Stara' }));
+
+      expect(component.company()?.name).toBe('Ponownie');
+      expect(component.loading()).toBe(false);
     });
 
     it('reloads the profile and the offers (from page 1) when the id changes', async () => {
