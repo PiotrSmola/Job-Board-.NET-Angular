@@ -162,6 +162,13 @@ public class JobRepository : IJobRepository
         return await SaveAllAsync();
     }
 
+    public async Task<bool> DeleteJobWithoutApplicationsAsync(int id)
+    {
+        return await _context.JobOffers
+            .Where(j => j.Id == id && !j.Applications.Any())
+            .ExecuteDeleteAsync() > 0;
+    }
+
     public async Task<bool> JobExistsAsync(int id)
     {
         return await _context.JobOffers.AnyAsync(j => j.Id == id);

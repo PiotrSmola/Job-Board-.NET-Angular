@@ -37,7 +37,8 @@ describe('http-errors', () => {
       ['Email is already taken', 'Ten adres email jest już zajęty'],
       ['Company name is already taken', 'Ta nazwa firmy jest już zajęta'],
       ['Company must be approved before publishing offers', 'Firma musi zostać zatwierdzona, zanim opublikujesz ofertę'],
-      ['Company has job offers or members', 'Nie można usunąć firmy, która ma oferty lub członków zespołu']
+      ['Company has job offers or members', 'Nie można usunąć firmy, która ma oferty lub członków zespołu'],
+      ['Job offer has applications - close it instead', 'Oferta ma aplikacje – zamiast usuwać, zamknij ją.']
     ])('translates the known API message "%s"', (message, expected) => {
       expect(getApiErrorMessage(httpError(400, { message }), FALLBACK)).toBe(expected);
     });

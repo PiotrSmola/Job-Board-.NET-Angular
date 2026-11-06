@@ -15,6 +15,7 @@ public class JobsController : ControllerBase
     private const string JobNotFoundMessage = "Job offer not found";
     private const string CompanyNotApprovedMessage = "Company must be approved before publishing offers";
     private const string NoCompanyMessage = "Employer account is not linked to a company";
+    private const string JobHasApplicationsMessage = "Job offer has applications - close it instead";
 
     private readonly IJobRepository _jobRepository;
     private readonly ICompanyRepository _companyRepository;
@@ -189,21 +190,37 @@ public class JobsController : ControllerBase
         return Ok(job.ToDto(now));
     }
 
+    // Admin usuwa ofertę razem z aplikacjami (kaskadowo); pracodawca tylko ofertę bez aplikacji -
+    // ofertę z aplikacjami kandydatów może zamknąć, ale nie usunąć ich danych
     [HttpDelete("{id}")]
     [Authorize(Roles = Roles.AdminOrEmployer)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> DeleteJob(int id)
     {
         var job = await _jobRepository.GetJobByIdAsync(id);
-        if (job == null || !await _access.CanManageJobAsync(job) || !await _jobRepository.DeleteJobAsync(id))
+        if (job == null || !await _access.CanManageJobAsync(job))
         {
             return NotFound(new { message = JobNotFoundMessage });
         }
 
-        return NoContent();
+        if (_access.IsAdmin)
+        {
+            return await _jobRepository.DeleteJobAsync(id) ? NoContent() : NotFound(new { message = JobNotFoundMessage });
+        }
+
+        if (await _jobRepository.DeleteJobWithoutApplicationsAsync(id))
+        {
+            return NoContent();
+        }
+
+        // nic nie usunięto: oferta ma aplikacje albo w międzyczasie zniknęła
+        return await _jobRepository.JobExistsAsync(id)
+            ? BadRequest(new { message = JobHasApplicationsMessage })
+            : NotFound(new { message = JobNotFoundMessage });
     }
 
     // Firma oferty: admin wskazuje ją w żądaniu (companyId wymagane), pracodawca - zawsze własna firma

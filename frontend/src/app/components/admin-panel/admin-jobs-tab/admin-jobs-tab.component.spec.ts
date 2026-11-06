@@ -343,6 +343,43 @@ describe('AdminJobsTabComponent', () => {
       expect(getManagedJobs).toHaveBeenCalledTimes(1);
     });
 
+    it('admin: warns that applications are deleted together with the offer', () => {
+      create();
+
+      component.deleteJob(1);
+
+      expect(confirmSpy).toHaveBeenCalledWith(
+        'Czy na pewno chcesz usunąć tę ofertę? Wszystkie aplikacje na to stanowisko również zostaną usunięte.');
+    });
+
+    it('employer: explains that an offer with applications can only be closed', () => {
+      getManagedJobs.mockReturnValue(of(page(10, 35)));
+      fixture = TestBed.createComponent(AdminJobsTabComponent);
+      fixture.componentRef.setInput('mode', 'employer');
+      fixture.componentRef.setInput('company', makeCompany(1, { status: CompanyStatus.Approved }));
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+
+      component.deleteJob(1);
+
+      expect(confirmSpy).toHaveBeenCalledWith(
+        'Czy na pewno chcesz usunąć tę ofertę? Ofertę, na którą wpłynęły aplikacje, można tylko zamknąć.');
+      expect(deleteJob).toHaveBeenCalledWith(1);
+    });
+
+    it('translates the "has applications" rejection and keeps the page', () => {
+      create();
+      deleteJob.mockReturnValue(throwError(() => new HttpErrorResponse({
+        status: 400, error: { message: 'Job offer has applications - close it instead' }
+      })));
+
+      component.deleteJob(1);
+
+      expect(alertSpy).toHaveBeenCalledWith('Oferta ma aplikacje – zamiast usuwać, zamknij ją.');
+      expect(component.deletingId()).toBeNull();
+      expect(getManagedJobs).toHaveBeenCalledTimes(1);
+    });
+
     it.each([401, 403])('does not show its own alert when the interceptor handles %i', status => {
       create();
       deleteJob.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));

@@ -23,6 +23,7 @@ const KNOWN_API_MESSAGES: Record<string, string> = {
   'Company name is already taken': 'Ta nazwa firmy jest już zajęta',
   'Company has job offers or members': 'Nie można usunąć firmy, która ma oferty lub członków zespołu',
   'Company not found': 'Firma nie została znaleziona',
+  'Job offer has applications - close it instead': 'Oferta ma aplikacje – zamiast usuwać, zamknij ją.',
   // m.in. 'Company must be approved before publishing offers'
   ...FORBIDDEN_API_MESSAGES
 };

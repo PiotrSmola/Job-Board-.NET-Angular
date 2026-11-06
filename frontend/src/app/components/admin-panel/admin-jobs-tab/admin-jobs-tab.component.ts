@@ -244,7 +244,11 @@ export class AdminJobsTabComponent {
   }
 
   deleteJob(id: number): void {
-    if (!confirm('Czy na pewno chcesz usunąć tę ofertę? Wszystkie aplikacje na to stanowisko również zostaną usunięte.')) {
+    // admin usuwa ofertę razem z aplikacjami; pracodawca tylko ofertę bez aplikacji (API zwraca 400 – trzeba ją zamknąć)
+    const question = this.isAdmin()
+      ? 'Czy na pewno chcesz usunąć tę ofertę? Wszystkie aplikacje na to stanowisko również zostaną usunięte.'
+      : 'Czy na pewno chcesz usunąć tę ofertę? Ofertę, na którą wpłynęły aplikacje, można tylko zamknąć.';
+    if (!confirm(question)) {
       return;
     }
 
@@ -263,7 +267,7 @@ export class AdminJobsTabComponent {
         console.error('Error deleting job:', error);
         this.deletingId.set(null);
         if (!isHandledByInterceptor(error)) {
-          alert('Błąd podczas usuwania oferty');
+          alert(getApiErrorMessage(error, 'Błąd podczas usuwania oferty'));
         }
       }
     });

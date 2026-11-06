@@ -14,5 +14,7 @@ public interface IJobRepository
     Task<JobOffer> AddJobAsync(JobOffer jobOffer);
     Task<JobOffer> UpdateJobAsync(JobOffer jobOffer);
     Task<bool> DeleteJobAsync(int id);
+    // usuwa ofertę tylko, gdy nie ma żadnych aplikacji (jedno zapytanie DELETE ... NOT EXISTS - bez wyścigu z aplikowaniem)
+    Task<bool> DeleteJobWithoutApplicationsAsync(int id);
     Task<bool> JobExistsAsync(int id);
 }

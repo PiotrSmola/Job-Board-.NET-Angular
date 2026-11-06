@@ -704,8 +704,9 @@ public class EmployerJobsTests
         Assert.Equal(foreign.Id, Assert.Single(await ManageAsync(other)).Id);
     }
 
+    // pracodawca nie może skasować danych kandydatów - ofertę z aplikacjami może tylko zamknąć
     [Fact]
-    public async Task Delete_OfferWithApplications_RemovesApplicationsToo()
+    public async Task Delete_OfferWithApplications_ReturnsBadRequestAndKeepsOfferAndApplications()
     {
         var employer = await _api.RegisterApprovedEmployerAsync();
         var job = await _api.CreateEmployerJobAsync(employer);
@@ -715,9 +716,62 @@ public class EmployerJobsTests
 
         var response = await client.DeleteAsync($"/api/jobs/{job.Id}");
 
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("Job offer has applications - close it instead", await response.ReadMessageAsync());
+        Assert.Equal(job.Id, Assert.Single(await ManageAsync(employer)).Id);
+        using var candidateClient = _api.CreateClient(candidate);
+        Assert.Equal(HttpStatusCode.OK, (await candidateClient.GetAsync($"/api/jobapplications/{application.Id}")).StatusCode);
+
+        // zamknięcie oferty jest dozwolone
+        Assert.Equal(HttpStatusCode.OK, (await PatchStatusAsync(client, job.Id, JobOfferStatus.Closed)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_ClosedOfferWithOnlyWithdrawnApplication_StillReturnsBadRequest()
+    {
+        var employer = await _api.RegisterApprovedEmployerAsync();
+        var job = await _api.CreateEmployerJobAsync(employer);
+        var candidate = await _api.RegisterUserAsync();
+        var application = await _api.ApplyAsync(candidate, job.Id);
+        Assert.Equal(HttpStatusCode.OK, (await _api.WithdrawAsync(candidate, application.Id)).StatusCode);
+        using var client = _api.CreateClient(employer);
+        await PatchStatusAsync(client, job.Id, JobOfferStatus.Closed);
+
+        var response = await client.DeleteAsync($"/api/jobs/{job.Id}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_OfferWithApplications_AsAdmin_RemovesApplicationsToo()
+    {
+        var employer = await _api.RegisterApprovedEmployerAsync();
+        var job = await _api.CreateEmployerJobAsync(employer);
+        var candidate = await _api.RegisterUserAsync();
+        var application = await _api.ApplyAsync(candidate, job.Id);
+        using var admin = await _api.AdminClientAsync();
+
+        var response = await admin.DeleteAsync($"/api/jobs/{job.Id}");
+
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Empty(await ManageAsync(employer));
         using var candidateClient = _api.CreateClient(candidate);
         Assert.Equal(HttpStatusCode.NotFound, (await candidateClient.GetAsync($"/api/jobapplications/{application.Id}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_OfferWithApplicationOfAnotherCompany_ReturnsNotFoundNotBadRequest()
+    {
+        // cudza oferta z aplikacjami - 404 jak każda cudza oferta (bez ujawniania, że ma aplikacje)
+        var employer = await _api.RegisterApprovedEmployerAsync();
+        var other = await _api.RegisterApprovedEmployerAsync();
+        var foreign = await _api.CreateEmployerJobAsync(other);
+        await _api.ApplyAsync(await _api.RegisterUserAsync(), foreign.Id);
+        using var client = _api.CreateClient(employer);
+
+        var response = await client.DeleteAsync($"/api/jobs/{foreign.Id}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
