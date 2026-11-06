@@ -40,9 +40,10 @@ public class CompaniesPublicTests
     [Fact]
     public async Task List_IsPubliclyAccessible_AndIncludesSeededCompanies()
     {
-        var (response, items) = await ListAsync("?pageSize=50");
+        var (totalResponse, _) = await ListAsync("?pageSize=1");
+        var (_, items) = await ListAsync("?pageSize=50&searchTerm=techcorp");
 
-        Assert.True(response.ReadPagination().TotalItems >= 20, "Seed contains 20 approved companies");
+        Assert.True(totalResponse.ReadPagination().TotalItems >= 20, "Seed contains at least 20 approved companies");
         Assert.Contains(items, c => c.Name == "TechCorp Solutions");
     }
 

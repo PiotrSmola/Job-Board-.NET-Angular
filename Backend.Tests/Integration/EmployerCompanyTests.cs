@@ -374,6 +374,18 @@ public class EmployerCompanyTests
     }
 
     [Fact]
+    public async Task Put_TrimsWhitespaceAroundWebsite()
+    {
+        var employer = await _api.RegisterEmployerAsync();
+        using var client = _api.CreateClient(employer);
+
+        var response = await client.PutJsonAsync(Url, Form(employer.CompanyName, d => d.Website = "  https://example.com/x  "));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("https://example.com/x", (await response.ReadJsonAsync<CompanyDto>()).Website);
+    }
+
+    [Fact]
     public async Task Put_WithTooLongFields_ReturnsValidationError()
     {
         var employer = await _api.RegisterEmployerAsync();

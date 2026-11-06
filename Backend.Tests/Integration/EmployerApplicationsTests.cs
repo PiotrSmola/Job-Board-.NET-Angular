@@ -162,6 +162,34 @@ public class EmployerApplicationsTests
         Assert.Empty(await AllAsync(client));
     }
 
+
+    [Fact]
+    public async Task All_SearchTerm_MatchesCompanyName()
+    {
+        var setup = await NewSetupAsync();
+        await NewSetupAsync();
+        using var admin = await _api.AdminClientAsync();
+        using var employerClient = _api.CreateClient(setup.Employer);
+
+        var asAdmin = await AllAsync(admin, $"?searchTerm={Uri.EscapeDataString(setup.Employer.CompanyName)}");
+        var asEmployer = await AllAsync(employerClient, $"?searchTerm={Uri.EscapeDataString(setup.Employer.CompanyName.ToUpperInvariant())}");
+
+        Assert.Equal(setup.Application.Id, Assert.Single(asAdmin).Id);
+        Assert.Equal(setup.Application.Id, Assert.Single(asEmployer).Id);
+    }
+
+    [Fact]
+    public async Task All_EmbeddedJobOffer_CarriesCompanyNameAndId()
+    {
+        var setup = await NewSetupAsync();
+        using var client = _api.CreateClient(setup.Employer);
+
+        var item = Assert.Single(await AllAsync(client));
+
+        Assert.Equal(setup.Employer.CompanyId, item.JobOffer!.CompanyId);
+        Assert.Equal(setup.Employer.CompanyName, item.JobOffer.Company);
+    }
+
     // --- /job/{id} ---
 
     [Fact]
