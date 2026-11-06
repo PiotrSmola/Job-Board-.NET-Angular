@@ -29,9 +29,10 @@ public static class AttachmentUploadForm
         MultipartBoundaryLengthLimit = 100,
         MultipartHeadersCountLimit = 8,
         MultipartHeadersLengthLimit = 4 * 1024,
-        // liczona osobno dla plików i dla pól tekstowych: o jeden więcej niż limit załączników, żeby 11. plik
-        // dostał komunikat o limicie, a nie błąd formularza
-        ValueCountLimit = AttachmentFiles.MaxAttachments + 1,
+        // limit części formularza obejmuje pliki i pola tekstowe razem - frontend wysyła dla każdego pliku pole
+        // "files" i pole "kinds", więc mieści się 11 par (o jedną więcej niż limit załączników, żeby 11. plik dostał
+        // komunikat o limicie, a nie błąd formularza)
+        ValueCountLimit = 2 * (AttachmentFiles.MaxAttachments + 1),
         // pola tekstowe (kinds) to krótkie liczby; treść plików ogranicza MultipartBodyLengthLimit
         ValueLengthLimit = 64,
         KeyLengthLimit = 64

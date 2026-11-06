@@ -89,10 +89,8 @@ public class AttachmentFrontendContractTests
         Assert.Equal(count, (await _attachments.RecordsAsync(setup.Application.Id)).Count);
     }
 
-    // Bug: pola "kinds" liczą się do tego samego limitu części formularza co pliki (AttachmentUploadForm.Options.ValueCountLimit
-    // = 11), więc żądanie w kształcie frontendu (plik + kind dla każdego) z 6-10 plikami kończy się 400 "Invalid multipart form data",
-    // choć interfejs pozwala wybrać 10 plików. Poprawka: ValueCountLimit = 2 * MaxAttachments + 2.
-    [Theory(Skip = "Bug: ValueCountLimit=11 dla plików i pól kinds razem - żądanie frontendu z 6-10 plikami daje 400 Invalid multipart form data")]
+    // pola "kinds" liczą się do limitu części formularza razem z plikami - 10 par plik + rodzaj musi się zmieścić
+    [Theory]
     [InlineData(6)]
     [InlineData(10)]
     public async Task Upload_FrontendShapeWithSixToTenFiles_IsAccepted(int count)
@@ -106,8 +104,8 @@ public class AttachmentFrontendContractTests
         Assert.Equal(count, (await _attachments.RecordsAsync(setup.Application.Id)).Count);
     }
 
-    // Bug: ta sama przyczyna - 11. plik z polami kinds nie dostaje komunikatu o limicie 10 załączników
-    [Fact(Skip = "Bug: ValueCountLimit=11 - 11 plików z kinds daje Invalid multipart form data zamiast komunikatu o limicie 10 załączników")]
+    // 11. plik z polem kinds dostaje komunikat o limicie 10 załączników, a nie błąd formularza
+    [Fact]
     public async Task Upload_FrontendShapeWithElevenFiles_ReturnsTooManyAttachmentsMessage()
     {
         var setup = await _attachments.NewSetupAsync();
@@ -117,6 +115,20 @@ public class AttachmentFrontendContractTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(AttachmentFiles.TooManyMessage, await response.ReadMessageAsync());
+    }
+
+    // limit części nadal ciasny: 12 par plik + rodzaj przekracza go, zanim formularz zostanie zbuforowany do końca
+    [Fact]
+    public async Task Upload_FrontendShapeWithTwelveFiles_IsRejectedAsInvalidForm()
+    {
+        var setup = await _attachments.NewSetupAsync();
+
+        var response = await PostFrontendFormAsync(setup,
+            Enumerable.Range(0, AttachmentFiles.MaxAttachments + 2).Select(i => Pdf(i, AttachmentKind.Other)).ToArray());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(AttachmentFiles.InvalidFormMessage, await response.ReadMessageAsync());
+        Assert.Empty(_attachments.StoredFilesOf(setup.Application.Id));
     }
 
     // --- kształt odpowiedzi ---
