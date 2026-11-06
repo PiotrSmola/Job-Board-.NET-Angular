@@ -5,6 +5,7 @@ import { JobApplicationService } from './job-application.service';
 import { ApplicationStatus, CvUploadEvent, JobApplication } from '../models/job-application.model';
 import { ApplicationParams } from '../models/application-params.model';
 import { PaginatedResult } from '../models/pagination.model';
+import { getApiErrorMessage } from '../utils/http-errors';
 
 const APPLICATION = {
   id: 1,
@@ -210,6 +211,42 @@ describe('JobApplicationService', () => {
       expect(error?.error).toEqual({ message: 'File is too large - maximum size is 5 MB' });
     });
 
+    it('uploadCv cancels the HTTP request when the subscriber unsubscribes (page or dialog closed)', () => {
+      const subscription = service.uploadCv(6, new File(['x'], 'cv.pdf')).subscribe();
+      const req = http.expectOne('/api/jobapplications/6/cv');
+      expect(req.cancelled).toBe(false);
+
+      subscription.unsubscribe();
+
+      expect(req.cancelled).toBe(true);
+    });
+
+    it.each([
+      [413, 'Payload Too Large', null],
+      [409, 'Conflict', { message: 'CV was changed by another request' }],
+      [400, 'Bad Request', { message: 'File is empty' }]
+    ])('uploadCv passes the %i error through without emitting a done event', (status, statusText, body) => {
+      const events: CvUploadEvent[] = [];
+      let error: HttpErrorResponse | undefined;
+      service.uploadCv(6, new File(['x'], 'cv.pdf')).subscribe({ next: e => events.push(e), error: e => (error = e) });
+
+      http.expectOne('/api/jobapplications/6/cv').flush(body, { status, statusText });
+
+      expect(error?.status).toBe(status);
+      expect(error?.error).toEqual(body);
+      expect(events).toEqual([]);
+    });
+
+    it('uploadCv sends a file name with markup only as a multipart value, never into the page', () => {
+      service.uploadCv(6, new File(['x'], '<script>alert(1)</script>../../x.pdf')).subscribe();
+
+      const req = http.expectOne('/api/jobapplications/6/cv');
+      expect(req.request.url).toBe('/api/jobapplications/6/cv');
+      expect(req.request.body).toBeInstanceOf(FormData);
+      expect(document.querySelector('script')).toBeNull();
+      req.flush(APPLICATION);
+    });
+
     it('deleteCv sends DELETE to /:id/cv', () => {
       service.deleteCv(6).subscribe();
       const req = http.expectOne('/api/jobapplications/6/cv');
@@ -312,6 +349,114 @@ describe('JobApplicationService', () => {
 
         expect(downloads[0].download).toBe('evil.pdf');
         expect(downloads[0].href).toBe('blob:cv');
+      });
+
+      it('cancels the HTTP request and saves nothing when the subscriber unsubscribes', () => {
+        const subscription = service.downloadCv(6, 'cv.pdf').subscribe();
+        const req = http.expectOne('/api/jobapplications/6/cv');
+
+        subscription.unsubscribe();
+
+        expect(req.cancelled).toBe(true);
+        expect(createObjectURL).not.toHaveBeenCalled();
+      });
+
+      it('revokes every object URL it creates and leaves no pending timers', () => {
+        const revokeObjectURL = vi.fn();
+        let counter = 0;
+        createObjectURL.mockImplementation(() => `blob:cv-${++counter}`);
+        Object.assign(URL, { revokeObjectURL });
+
+        service.downloadCv(6, 'a.pdf').subscribe();
+        http.expectOne('/api/jobapplications/6/cv').flush(new Blob(['a']));
+        service.downloadCv(7, 'b.pdf').subscribe();
+        http.expectOne('/api/jobapplications/7/cv').flush(new Blob(['b']));
+
+        vi.runAllTimers();
+
+        expect(createObjectURL).toHaveBeenCalledTimes(2);
+        expect(revokeObjectURL.mock.calls.map(call => call[0])).toEqual(['blob:cv-1', 'blob:cv-2']);
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it('revokes the object URL and reports the error when the browser refuses to start the download', () => {
+        const revokeObjectURL = vi.fn();
+        Object.assign(URL, { revokeObjectURL });
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {
+          throw new Error('download blocked');
+        });
+        let error: unknown;
+        service.downloadCv(6, 'cv.pdf').subscribe({ error: e => (error = e) });
+
+        http.expectOne('/api/jobapplications/6/cv').flush(new Blob(['x']));
+        vi.runAllTimers();
+
+        expect(error).toBeInstanceOf(Error);
+        expect(revokeObjectURL).toHaveBeenCalledWith('blob:cv');
+        expect(document.querySelector('a[download]')).toBeNull();
+      });
+
+      it.each([
+        [413, 'Payload Too Large', null, 'Plik jest za duży – maksymalny rozmiar to 5 MB'],
+        [409, 'Conflict', { message: 'CV was changed by another request' }, 'CV zostało w międzyczasie zmienione – odśwież dane'],
+        [404, 'Not Found', { message: 'CV not found' }, 'Nie znaleziono CV tej aplikacji']
+      ])('turns a %i error with a Blob body into a translatable API error', async (status, statusText, body, expected) => {
+        vi.useRealTimers();
+        let error: unknown;
+        service.downloadCv(6, 'cv.pdf').subscribe({ error: e => (error = e) });
+
+        http.expectOne('/api/jobapplications/6/cv').flush(
+          new Blob(body ? [JSON.stringify(body)] : [], { type: 'application/json' }),
+          { status, statusText }
+        );
+
+        await waitFor(() => error !== undefined);
+        expect(getApiErrorMessage(error, 'Nie udało się pobrać CV')).toBe(expected);
+        expect(createObjectURL).not.toHaveBeenCalled();
+      });
+
+      it('keeps the original error when the error Blob is not valid JSON', async () => {
+        vi.useRealTimers();
+        let error: HttpErrorResponse | undefined;
+        service.downloadCv(6, 'cv.pdf').subscribe({ error: e => (error = e) });
+
+        http.expectOne('/api/jobapplications/6/cv').flush(
+          new Blob(['{"message": "unterminated'], { type: 'application/json' }),
+          { status: 400, statusText: 'Bad Request' }
+        );
+
+        await waitFor(() => error !== undefined);
+        expect(error?.status).toBe(400);
+        expect(error?.error).toBeInstanceOf(Blob);
+        expect(getApiErrorMessage(error, 'Nie udało się pobrać CV')).toBe('Nie udało się pobrać CV');
+      });
+
+      it('does not leak raw server details from a non-JSON error Blob', async () => {
+        vi.useRealTimers();
+        let error: HttpErrorResponse | undefined;
+        service.downloadCv(6, 'cv.pdf').subscribe({ error: e => (error = e) });
+
+        http.expectOne('/api/jobapplications/6/cv').flush(
+          new Blob(['System.NullReferenceException at Backend.Controllers'], { type: 'text/plain' }),
+          { status: 400, statusText: 'Bad Request' }
+        );
+
+        await waitFor(() => error !== undefined);
+        expect(getApiErrorMessage(error, 'Nie udało się pobrać CV')).toBe('Nie udało się pobrać CV');
+      });
+
+      it('saves a markup-laden file name from the header as plain, harmless text', () => {
+        service.downloadCv(6).subscribe();
+
+        http.expectOne('/api/jobapplications/6/cv').flush(new Blob(['x']), {
+          headers: { 'Content-Disposition': "attachment; filename*=UTF-8''%3Cscript%3Ealert(1)%3C%2Fscript%3E%0D%0Aevil%00.pdf" }
+        });
+
+        const name = downloads[0].download;
+        expect(name).not.toMatch(/[<>/\\]/);
+        expect(name).not.toMatch(/[\u0000-\u001f]/);
+        expect(name.endsWith('.pdf')).toBe(true);
+        expect(document.querySelector('script')).toBeNull();
       });
     });
   });
