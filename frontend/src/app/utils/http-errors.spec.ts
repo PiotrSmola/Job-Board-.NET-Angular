@@ -69,6 +69,20 @@ describe('http-errors', () => {
       expect(getApiErrorMessage(httpError(400, body), FALLBACK)).toBe('Przesłane dane są nieprawidłowe');
     });
 
+    it.each([
+      [413, 'Request body too large', 'Przesyłane dane są za duże'],
+      [408, 'Request timed out', 'Przekroczono czas wysyłania danych – spróbuj ponownie'],
+      [400, 'Invalid request', 'Nieprawidłowe żądanie']
+    ])('translates the %i client request error {"message":"%s"} from the backend', (status, message, expected) => {
+      expect(getApiErrorMessage(httpError(status, { message }), FALLBACK)).toBe(expected);
+    });
+
+    it('does not treat inherited object keys as known messages', () => {
+      expect(getApiErrorMessage(httpError(400, { message: 'constructor' }), FALLBACK)).toBe('constructor');
+      expect(getApiErrorMessage(httpError(413, { message: 'toString' }), FALLBACK))
+        .toBe('Przesyłane pliki są za duże – maksymalnie 5 MB na plik i 25 MB łącznie');
+    });
+
     it('returns the request size message for 413 Payload Too Large without a body (e.g. from nginx)', () => {
       expect(getApiErrorMessage(httpError(413), FALLBACK)).toBe('Przesyłane pliki są za duże – maksymalnie 5 MB na plik i 25 MB łącznie');
       expect(getApiErrorMessage(httpError(413, '<html>413 Request Entity Too Large</html>'), FALLBACK))

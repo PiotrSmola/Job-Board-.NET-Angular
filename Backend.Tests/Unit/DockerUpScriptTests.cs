@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 using Backend.Tests.Infrastructure;
 
 namespace Backend.Tests.Unit;
@@ -121,6 +122,27 @@ public class DockerUpScriptTests
         Assert.Contains("\"S3_SECRET_KEY=$s3SecretKey\"", script);
         Assert.Contains("$env:S3_ACCESS_KEY = $s3AccessKey", script);
         Assert.Contains("Env:S3_SECRET_KEY", script);
+    }
+
+    [Fact]
+    public void Script_ReplacesExistingS3KeysThatAreNotLongAlphanumericStrings()
+    {
+        // klucze trafiają bez escapowania do JSON-a konfiguracji SeaweedFS - inne niż [A-Za-z0-9]{16,} są wymieniane
+        var script = File.ReadAllText(RepositoryFiles.Find("docker-up.ps1"));
+        var match = Regex.Match(script, @"\$s3KeyPattern = '([^']+)'");
+        Assert.True(match.Success, "docker-up.ps1 should define $s3KeyPattern");
+        Assert.Equal("^[A-Za-z0-9]{16,}$", match.Groups[1].Value);
+        Assert.Contains("-notmatch $s3KeyPattern", script);
+        Assert.Contains("Write-Warning", script);
+
+        // PowerShell -match używa wyrażeń .NET bez rozróżniania wielkości liter
+        var pattern = new Regex(match.Groups[1].Value, RegexOptions.IgnoreCase);
+        Assert.Matches(pattern, "AbCdEfGh12345678");
+        Assert.Matches(pattern, new string('x', 40));
+        foreach (var invalid in new[] { "short1234", "with space 123456", "quote\"injection12345", "ąćęłńóśźż12345678", "abc-def-ghi-jkl-mno" })
+        {
+            Assert.DoesNotMatch(pattern, invalid);
+        }
     }
 
     [Fact]

@@ -5,7 +5,17 @@ namespace Backend.Services;
 // Pliki na dysku w katalogu z konfiguracji (Storage:LocalPath) - development i testy
 public class LocalFileStorage : IFileStorage
 {
+    // pliki tymczasowe starsze niż ten wiek są przy starcie uznawane za pozostałość po przerwanym zapisie
+    public static readonly TimeSpan OrphanedTemporaryFileAge = TimeSpan.FromHours(1);
+
+    private const string TemporaryExtension = ".tmp";
+
     private readonly string _root;
+
+    // katalogi, do których trwa zapis (licznik zapisów) - usuwanie pustych katalogów je pomija, więc równoległe
+    // usunięcie ostatniego pliku aplikacji nie usuwa katalogu, w którym właśnie powstaje nowy plik
+    private readonly Dictionary<string, int> _activeWrites = new(StringComparer.Ordinal);
+    private readonly object _directoryLock = new();
 
     public LocalFileStorage(string rootPath)
     {
@@ -15,20 +25,27 @@ public class LocalFileStorage : IFileStorage
     public Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(_root);
+        DeleteOrphanedTemporaryFiles(DateTime.UtcNow - OrphanedTemporaryFileAge, cancellationToken);
         return Task.CompletedTask;
     }
 
     public async Task SaveAsync(string key, Stream content, string contentType, CancellationToken cancellationToken = default)
     {
         var path = ResolvePath(key);
+        var directory = Path.GetDirectoryName(path)!;
 
-        // zapis do pliku tymczasowego i podmiana - przerwany zapis nie zostawia częściowego pliku pod kluczem
-        var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        // zapis do pliku tymczasowego w tym samym katalogu (unikalna nazwa) i podmiana - przerwany zapis nie
+        // zostawia częściowego pliku pod kluczem
+        var temporaryPath = $"{path}.{Guid.NewGuid():N}{TemporaryExtension}";
+        BeginWrite(directory);
         try
         {
             await using (var file = CreateFile(temporaryPath))
             {
                 await content.CopyToAsync(file, cancellationToken);
+                await file.FlushAsync(cancellationToken);
+                // dane na dysku przed podmianą - po awarii zasilania pod kluczem nie zostanie pusty plik
+                file.Flush(flushToDisk: true);
             }
 
             File.Move(temporaryPath, path, overwrite: true);
@@ -36,22 +53,27 @@ public class LocalFileStorage : IFileStorage
         catch
         {
             TryDeleteFile(temporaryPath);
+            EndWrite(directory);
+            // katalog utworzony tylko dla tego zapisu nie zostaje pusty
+            RemoveEmptyDirectories(directory);
             throw;
         }
+
+        EndWrite(directory);
     }
 
-    public Task<Stream?> OpenReadAsync(string key, CancellationToken cancellationToken = default)
+    public Task<StoredFile?> OpenReadAsync(string key, CancellationToken cancellationToken = default)
     {
         var path = ResolvePath(key);
         try
         {
-            Stream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
+            var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
                 bufferSize: 81920, useAsync: true);
-            return Task.FromResult<Stream?>(stream);
+            return Task.FromResult<StoredFile?>(new StoredFile(stream, stream.Length));
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            return Task.FromResult<Stream?>(null);
+            return Task.FromResult<StoredFile?>(null);
         }
     }
 
@@ -118,42 +140,98 @@ public class LocalFileStorage : IFileStorage
         return path;
     }
 
-    // usuwa puste katalogi (np. cv/{applicationId}) aż do katalogu głównego magazynu
-    private void RemoveEmptyDirectories(string? directory)
+    private void BeginWrite(string directory)
     {
-        while (directory != null
-               && directory.StartsWith(_root + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-               && Directory.Exists(directory)
-               && !Directory.EnumerateFileSystemEntries(directory).Any())
+        lock (_directoryLock)
         {
-            try
-            {
-                Directory.Delete(directory);
-            }
-            catch (IOException)
-            {
-                // równoległy zapis dodał plik - katalog zostaje
-                return;
-            }
-
-            directory = Path.GetDirectoryName(directory);
+            // najpierw katalog - błąd jego utworzenia nie zostawia zarejestrowanego zapisu
+            Directory.CreateDirectory(directory);
+            _activeWrites[directory] = _activeWrites.GetValueOrDefault(directory) + 1;
         }
     }
 
-    // katalog może zniknąć między utworzeniem a otwarciem pliku (równoległe usunięcie ostatniego pliku
-    // z RemoveEmptyDirectories) - wtedy kolejna próba
+    private void EndWrite(string directory)
+    {
+        lock (_directoryLock)
+        {
+            var count = _activeWrites[directory] - 1;
+            if (count == 0)
+            {
+                _activeWrites.Remove(directory);
+            }
+            else
+            {
+                _activeWrites[directory] = count;
+            }
+        }
+    }
+
+    // usuwa puste katalogi (np. attachments/{applicationId}) aż do katalogu głównego magazynu, z pominięciem
+    // katalogów, w których (lub pod którymi) trwa zapis
+    private void RemoveEmptyDirectories(string? directory)
+    {
+        lock (_directoryLock)
+        {
+            while (directory != null
+                   && directory.StartsWith(_root + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                   && !HasActiveWrite(directory)
+                   && Directory.Exists(directory)
+                   && !Directory.EnumerateFileSystemEntries(directory).Any())
+            {
+                try
+                {
+                    Directory.Delete(directory);
+                }
+                catch (IOException)
+                {
+                    // plik dodał inny proces - katalog zostaje
+                    return;
+                }
+
+                directory = Path.GetDirectoryName(directory);
+            }
+        }
+    }
+
+    private bool HasActiveWrite(string directory) =>
+        _activeWrites.Keys.Any(active =>
+            active == directory || active.StartsWith(directory + Path.DirectorySeparatorChar, StringComparison.Ordinal));
+
+    // Pliki *.tmp po zapisach przerwanych awarią procesu (zwykły błąd zapisu usuwa plik tymczasowy od razu)
+    private void DeleteOrphanedTemporaryFiles(DateTime olderThanUtc, CancellationToken cancellationToken)
+    {
+        foreach (var path in Directory.EnumerateFiles(_root, "*" + TemporaryExtension, SearchOption.AllDirectories).ToList())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (File.GetLastWriteTimeUtc(path) < olderThanUtc)
+                {
+                    File.Delete(path);
+                    RemoveEmptyDirectories(Path.GetDirectoryName(path));
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // plik w użyciu albo bez uprawnień - spróbujemy przy następnym starcie
+            }
+        }
+    }
+
+    // Katalog może zniknąć między utworzeniem a otwarciem pliku, gdy pusty katalog usuwa inny proces
+    // korzystający z tego samego katalogu magazynu - wtedy kolejna próba
     private static FileStream CreateFile(string path)
     {
         for (var attempt = 1; ; attempt++)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             try
             {
                 return new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                     bufferSize: 81920, useAsync: true);
             }
-            catch (DirectoryNotFoundException) when (attempt < 3)
+            catch (DirectoryNotFoundException) when (attempt < 5)
             {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             }
         }
     }
@@ -164,7 +242,7 @@ public class LocalFileStorage : IFileStorage
         {
             File.Delete(path);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
         }
     }

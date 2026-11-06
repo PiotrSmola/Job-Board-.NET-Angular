@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, computed, inject, signal, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -35,6 +35,7 @@ const LOAD_ERROR = 'Nie udało się wczytać danych firmy';
     StatsDashboardComponent
   ],
   templateUrl: './employer-panel.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrls: ['../admin-panel/admin-panel.component.scss', './employer-panel.component.scss']
 })
 export class EmployerPanelComponent {

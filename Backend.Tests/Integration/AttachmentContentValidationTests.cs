@@ -8,20 +8,18 @@ using Backend.Tests.Infrastructure;
 
 namespace Backend.Tests.Integration;
 
-// Walidacja zawartości CV przez API: prawdziwy DOCX, podróbki ZIP (inne formaty OOXML, brak części Word,
-// uszkodzone archiwa) i nagłówki innych formatów
+// Walidacja zawartości załączników przez API: prawdziwy DOCX, podróbki ZIP (inne formaty OOXML, brak części Word,
+// uszkodzone archiwa, katalog centralny z niebezpiecznymi wartościami w EOCD), obrazy PNG / JPEG i nagłówki innych formatów
 [Collection(ApiCollection.Name)]
-public class CvDocxValidationTests
+public class AttachmentContentValidationTests
 {
-    private const string Url = "/api/jobapplications";
-
     private readonly ApiFixture _api;
-    private readonly CvScenario _cv;
+    private readonly AttachmentScenario _attachments;
 
-    public CvDocxValidationTests(ApiFixture api)
+    public AttachmentContentValidationTests(ApiFixture api)
     {
         _api = api;
-        _cv = new CvScenario(api);
+        _attachments = new AttachmentScenario(api);
     }
 
     private const string ContentTypesXml =
@@ -63,25 +61,33 @@ public class CvDocxValidationTests
         return buffer.ToArray();
     }
 
-    private async Task<HttpResponseMessage> UploadAsync(byte[] content, string fileName, CvSetup? setup = null)
+    private async Task<HttpResponseMessage> UploadAsync(byte[] content, string fileName, AttachmentSetup? setup = null)
     {
-        setup ??= await _cv.NewSetupAsync();
+        setup ??= await _attachments.NewSetupAsync();
         using var client = _api.CreateClient(setup.Candidate);
-        var response = await client.UploadCvAsync(setup.Application.Id, content, fileName);
+        var response = await client.UploadAttachmentAsync(setup.Application.Id, content, fileName);
         _lastSetup = setup;
         return response;
     }
 
-    private CvSetup? _lastSetup;
+    private AttachmentSetup? _lastSetup;
 
     private async Task AssertRejectedAsync(byte[] content, string fileName = "cv.docx")
     {
         var response = await UploadAsync(content, fileName);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(CvFiles.UnsupportedTypeMessage, await response.ReadMessageAsync());
-        Assert.Null(await _cv.StoredKeyAsync(_lastSetup!.Application.Id));
-        Assert.Empty(_cv.StoredFilesOf(_lastSetup.Application.Id));
+        Assert.Equal(AttachmentFiles.UnsupportedTypeMessage, await response.ReadMessageAsync());
+        Assert.Empty(await _attachments.RecordsAsync(_lastSetup!.Application.Id));
+        Assert.Empty(_attachments.StoredFilesOf(_lastSetup.Application.Id));
+    }
+
+    private async Task AssertAcceptedAsync(byte[] content, string fileName, string expectedContentType)
+    {
+        var response = await UploadAsync(content, fileName);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(expectedContentType, Assert.Single(await _attachments.RecordsAsync(_lastSetup!.Application.Id)).ContentType);
     }
 
     // --- poprawny DOCX ---
@@ -90,18 +96,18 @@ public class CvDocxValidationTests
     public async Task RealisticDocx_IsAcceptedStoredAndServedByteForByte()
     {
         var docx = RealisticDocx();
-        var setup = await _cv.NewSetupAsync();
+        var setup = await _attachments.NewSetupAsync();
 
         var response = await UploadAsync(docx, "Życiorys.docx", setup);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var dto = await response.ReadJsonAsync<JobApplicationDto>();
-        Assert.Equal("Życiorys.docx", dto.CvFileName);
-        Assert.Equal(docx.Length, dto.CvSize);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var attachment = Assert.Single((await response.ReadJsonAsync<JobApplicationDto>()).Attachments);
+        Assert.Equal("Życiorys.docx", attachment.FileName);
+        Assert.Equal(docx.Length, attachment.Size);
 
         using var owner = _api.CreateClient(setup.Candidate);
-        var download = await owner.GetAsync($"{Url}/{setup.Application.Id}/cv");
-        Assert.Equal(CvTestFiles.DocxContentType, download.Content.Headers.ContentType?.MediaType);
+        var download = await owner.DownloadAttachmentAsync(setup.Application.Id, attachment.Id);
+        Assert.Equal(AttachmentTestFiles.DocxContentType, download.Content.Headers.ContentType?.MediaType);
         Assert.Equal(docx, await download.Content.ReadAsByteArrayAsync());
     }
 
@@ -113,9 +119,7 @@ public class CvDocxValidationTests
             ("word/styles.xml", "<w:styles/>"), ("word/_rels/document.xml.rels", "<Relationships/>"),
             ("word/media/image1.png", "not really a png"), ("customXml/item1.xml", "<x/>"));
 
-        var response = await UploadAsync(docx, "cv.docx");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await AssertAcceptedAsync(docx, "cv.docx", AttachmentTestFiles.DocxContentType);
     }
 
     [Fact]
@@ -136,13 +140,14 @@ public class CvDocxValidationTests
 
         var docx = buffer.ToArray();
         Assert.True(docx.Length > 300 * 1024);
-        var setup = await _cv.NewSetupAsync();
+        var setup = await _attachments.NewSetupAsync();
 
         var response = await UploadAsync(docx, "big.docx", setup);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var attachment = Assert.Single((await response.ReadJsonAsync<JobApplicationDto>()).Attachments);
         using var owner = _api.CreateClient(setup.Candidate);
-        Assert.Equal(docx, await (await owner.GetAsync($"{Url}/{setup.Application.Id}/cv")).Content.ReadAsByteArrayAsync());
+        Assert.Equal(docx, await (await owner.DownloadAttachmentAsync(setup.Application.Id, attachment.Id)).Content.ReadAsByteArrayAsync());
     }
 
     // --- ZIP, który nie jest dokumentem Word ---
@@ -201,8 +206,8 @@ public class CvDocxValidationTests
     public async Task ZipWithTooManyEntries_IsRejected()
     {
         var entries = new List<(string, string)> { ("[Content_Types].xml", ContentTypesXml), ("word/document.xml", DocumentXml) };
-        entries.AddRange(Enumerable.Range(0, CvFiles.MaxDocxEntries - 1).Select(i => ($"word/media/{i}.txt", "x")));
-        Assert.Equal(CvFiles.MaxDocxEntries + 1, entries.Count);
+        entries.AddRange(Enumerable.Range(0, AttachmentFiles.MaxDocxEntries - 1).Select(i => ($"word/media/{i}.txt", "x")));
+        Assert.Equal(AttachmentFiles.MaxDocxEntries + 1, entries.Count);
 
         await AssertRejectedAsync(ZipWith(CompressionLevel.NoCompression, entries.ToArray()));
     }
@@ -211,15 +216,26 @@ public class CvDocxValidationTests
     public async Task ZipWithExactlyMaxEntries_IsAccepted()
     {
         var entries = new List<(string, string)> { ("[Content_Types].xml", ContentTypesXml), ("word/document.xml", DocumentXml) };
-        entries.AddRange(Enumerable.Range(0, CvFiles.MaxDocxEntries - 2).Select(i => ($"word/media/{i}.txt", "x")));
-        Assert.Equal(CvFiles.MaxDocxEntries, entries.Count);
+        entries.AddRange(Enumerable.Range(0, AttachmentFiles.MaxDocxEntries - 2).Select(i => ($"word/media/{i}.txt", "x")));
+        Assert.Equal(AttachmentFiles.MaxDocxEntries, entries.Count);
 
-        var response = await UploadAsync(ZipWith(CompressionLevel.NoCompression, entries.ToArray()), "many.docx");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await AssertAcceptedAsync(ZipWith(CompressionLevel.NoCompression, entries.ToArray()), "many.docx", AttachmentTestFiles.DocxContentType);
     }
 
-    // --- uszkodzone archiwa ---
+    // --- rekord końca katalogu centralnego (EOCD) - sprawdzany przed otwarciem archiwum ---
+
+    [Fact]
+    public async Task CentralDirectoryLargerThan256Kb_IsRejectedEvenWithFewEntries()
+    {
+        // 900 wpisów (< 1000) o długich nazwach: katalog centralny ~300 KB wczytywany w całości do pamięci
+        var entries = new List<(string, string)> { ("[Content_Types].xml", ContentTypesXml), ("word/document.xml", DocumentXml) };
+        entries.AddRange(Enumerable.Range(0, 898).Select(i => ($"word/media/{i:D4}-{new string('n', 280)}.txt", "")));
+        var docx = ZipWith(CompressionLevel.NoCompression, entries.ToArray());
+        var eocd = LastIndexOf(docx, [0x50, 0x4B, 0x05, 0x06]);
+        Assert.True(BinaryPrimitives.ReadUInt32LittleEndian(docx.AsSpan(eocd + 12, 4)) > AttachmentFiles.MaxDocxCentralDirectorySize);
+
+        await AssertRejectedAsync(docx);
+    }
 
     [Fact]
     public async Task TruncatedDocx_WithoutEndOfCentralDirectory_IsRejected()
@@ -261,13 +277,37 @@ public class CvDocxValidationTests
         await AssertRejectedAsync(docx);
     }
 
-    [Fact]
-    public async Task DocxDeclaringZip64EntryCount_IsRejected()
+    // offset w EOCD: 8 - wpisy na dysku, 10 - wpisy łącznie, 12 - rozmiar katalogu, 16 - offset katalogu, 4/6 - numery dysków
+    public static TheoryData<string, int, int, uint> TamperedEndOfCentralDirectory => new()
+    {
+        { "ZIP64 entry count", 10, 2, 0xFFFF },
+        { "ZIP64 entry count on disk", 8, 2, 0xFFFF },
+        { "ZIP64 directory size", 12, 4, 0xFFFFFFFF },
+        { "ZIP64 directory offset", 16, 4, 0xFFFFFFFF },
+        { "directory size above 256 KB", 12, 4, 256 * 1024 + 1 },
+        { "directory size smaller than its entries", 12, 4, 10 },
+        { "directory size of zero", 12, 4, 0 },
+        { "zero entries", 10, 2, 0 },
+        { "multi-disk archive", 4, 2, 1 },
+        { "directory on another disk", 6, 2, 1 }
+    };
+
+    [Theory]
+    [MemberData(nameof(TamperedEndOfCentralDirectory))]
+    public async Task DocxWithTamperedEndOfCentralDirectory_IsRejected(string description, int offset, int width, uint value)
     {
         var docx = RealisticDocx();
         var eocd = LastIndexOf(docx, [0x50, 0x4B, 0x05, 0x06]);
-        BinaryPrimitives.WriteUInt16LittleEndian(docx.AsSpan(eocd + 10, 2), 0xFFFF);
+        if (width == 2)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(docx.AsSpan(eocd + offset, 2), (ushort)value);
+        }
+        else
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(docx.AsSpan(eocd + offset, 4), value);
+        }
 
+        Assert.False(string.IsNullOrEmpty(description));
         await AssertRejectedAsync(docx);
     }
 
@@ -277,6 +317,18 @@ public class CvDocxValidationTests
         var docx = RealisticDocx();
         var eocd = LastIndexOf(docx, [0x50, 0x4B, 0x05, 0x06]);
         BinaryPrimitives.WriteUInt32LittleEndian(docx.AsSpan(eocd + 16, 4), (uint)docx.Length + 1000);
+
+        await AssertRejectedAsync(docx);
+    }
+
+    [Fact]
+    public async Task DocxWithCentralDirectoryOverlappingTheEndRecord_IsRejected()
+    {
+        // offset + rozmiar w granicach pliku, ale katalog "zachodzi" na rekord EOCD
+        var docx = RealisticDocx();
+        var eocd = LastIndexOf(docx, [0x50, 0x4B, 0x05, 0x06]);
+        var size = BinaryPrimitives.ReadUInt32LittleEndian(docx.AsSpan(eocd + 12, 4));
+        BinaryPrimitives.WriteUInt32LittleEndian(docx.AsSpan(eocd + 16, 4), (uint)eocd - size + 10);
 
         await AssertRejectedAsync(docx);
     }
@@ -301,7 +353,7 @@ public class CvDocxValidationTests
     [Fact]
     public async Task ZipFollowedByAnotherEndOfCentralDirectoryInTrailingComment_DoesNotConfuseTheReader()
     {
-        // rekord EOCD ukryty w komentarzu na końcu pliku wskazuje fałszywą liczbę wpisów - plik bez części Word
+        // rekord EOCD ukryty na końcu pliku wskazuje fałszywą liczbę wpisów - plik bez części Word
         var zip = ZipWith(CompressionLevel.Optimal, ("readme.txt", "hello"));
         var fakeEocd = new byte[22];
         fakeEocd[0] = 0x50; fakeEocd[1] = 0x4B; fakeEocd[2] = 0x05; fakeEocd[3] = 0x06;
@@ -326,24 +378,57 @@ public class CvDocxValidationTests
     [Fact]
     public async Task PdfWithLeadingWhitespaceOrBom_IsRejected()
     {
-        await AssertRejectedAsync([.. " "u8.ToArray(), .. CvTestFiles.Pdf()], "cv.pdf");
-        await AssertRejectedAsync([.. new byte[] { 0xEF, 0xBB, 0xBF }, .. CvTestFiles.Pdf()], "cv.pdf");
+        await AssertRejectedAsync([.. " "u8.ToArray(), .. AttachmentTestFiles.Pdf()], "cv.pdf");
+        await AssertRejectedAsync([.. new byte[] { 0xEF, 0xBB, 0xBF }, .. AttachmentTestFiles.Pdf()], "cv.pdf");
     }
 
     [Fact]
     public async Task PdfHeaderInDifferentCase_IsRejected() =>
         await AssertRejectedAsync("%pdf-1.4\n%%EOF"u8.ToArray(), "cv.pdf");
 
+    // --- PNG i JPEG ---
+
+    [Fact]
+    public async Task PngAndJpeg_AreAcceptedByTheirSignatures()
+    {
+        await AssertAcceptedAsync(AttachmentTestFiles.Png(), "image.png", AttachmentTestFiles.PngContentType);
+        await AssertAcceptedAsync(AttachmentTestFiles.Jpeg(), "image.jpg", AttachmentTestFiles.JpegContentType);
+        // JPEG z innym znacznikiem APP (np. EXIF z aparatu) - liczą się tylko pierwsze trzy bajty
+        await AssertAcceptedAsync([0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x10, 0x45, 0x78, 0x69, 0x66], "camera.jpg", AttachmentTestFiles.JpegContentType);
+    }
+
+    [Fact]
+    public async Task IncompleteOrDamagedImageSignatures_AreRejected()
+    {
+        var samples = new Dictionary<string, byte[]>
+        {
+            // 7 z 8 bajtów sygnatury PNG
+            ["short.png"] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A],
+            // sygnatura PNG uszkodzona przez transfer w trybie tekstowym (CRLF -> LF)
+            ["text-mode.png"] = [0x89, 0x50, 0x4E, 0x47, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00],
+            ["lowercase.png"] = [0x89, 0x70, 0x6E, 0x67, 0x0D, 0x0A, 0x1A, 0x0A, 0x00],
+            ["short.jpg"] = [0xFF, 0xD8],
+            ["no-soi.jpg"] = [0xFF, 0xD9, 0xFF, 0xE0, 0x00]
+        };
+
+        foreach (var (name, content) in samples)
+        {
+            await AssertRejectedAsync(content, name);
+        }
+    }
+
     [Fact]
     public async Task OtherFormats_AreRejectedByContent()
     {
         var samples = new Dictionary<string, byte[]>
         {
-            ["gif.pdf"] = "GIF89a\x01\x00\x01\x00"u8.ToArray(),
-            ["jpg.pdf"] = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46],
+            ["gif.pdf"] = AttachmentTestFiles.Gif(),
+            ["bmp.png"] = "BM\x36\x00\x0C\x00\x00\x00\x00\x00"u8.ToArray(),
+            ["webp.jpg"] = "RIFF\x24\x00\x00\x00WEBPVP8 "u8.ToArray(),
+            ["tiff.jpg"] = [0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00],
             ["exe.pdf"] = "MZ\x90\x00\x03\x00\x00\x00"u8.ToArray(),
             ["html.pdf"] = "<!DOCTYPE html><html><script>alert(1)</script></html>"u8.ToArray(),
-            ["svg.pdf"] = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>"u8.ToArray(),
+            ["svg.png"] = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>"u8.ToArray(),
             ["rtf.docx"] = "{\\rtf1\\ansi Hello}"u8.ToArray(),
             ["gzip.docx"] = [0x1F, 0x8B, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00],
             ["short.pdf"] = "%PDF"u8.ToArray(),
@@ -357,18 +442,17 @@ public class CvDocxValidationTests
     }
 
     [Fact]
-    public async Task RejectedUpload_DoesNotTouchTheExistingCv()
+    public async Task RejectedUpload_DoesNotTouchTheExistingAttachments()
     {
-        var setup = await _cv.NewSetupAsync();
-        await _cv.UploadOkAsync(setup.Candidate, setup.Application.Id, CvTestFiles.Pdf(), "good.pdf");
-        var before = await _cv.CvRecordAsync(setup.Application.Id);
+        var setup = await _attachments.NewSetupAsync();
+        await _attachments.UploadOkAsync(setup.Candidate, setup.Application.Id, AttachmentTestFiles.Pdf(), "good.pdf");
+        var before = await _attachments.RecordsAsync(setup.Application.Id);
 
-        var response = await UploadAsync(CvTestFiles.Png(), "bad.pdf", setup);
+        var response = await UploadAsync(AttachmentTestFiles.Gif(), "bad.png", setup);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(before, await _cv.CvRecordAsync(setup.Application.Id));
-        Assert.True(File.Exists(_cv.StoragePath(before.Key!)));
-        Assert.Single(_cv.StoredFilesOf(setup.Application.Id));
+        Assert.Equal(before, await _attachments.RecordsAsync(setup.Application.Id));
+        await _attachments.AssertStorageMatchesRecordsAsync(setup.Application.Id);
     }
 
     private static int IndexOf(byte[] data, byte[] pattern) => data.AsSpan().IndexOf(pattern);

@@ -2,19 +2,23 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { MatDialog, MatDialogRef } from '@angular/material/dialog';
+import { MAT_DIALOG_DATA, MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { Observable, Subject, of, throwError } from 'rxjs';
-import { APPLY_DIALOG_CONFIG, ApplyDialogComponent, ATTACHMENTS_UPLOAD_FAILED_MESSAGE, JobDetailComponent } from './job-detail.component';
+import { APPLY_DIALOG_CONFIG, ApplyDialogComponent, ApplyDialogData, ATTACHMENTS_UPLOAD_FAILED_MESSAGE, JobDetailComponent } from './job-detail.component';
 import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
-import { ApplicationStatus, AttachmentKind, AttachmentUploadEvent, AttachmentUploadItem } from '../../models/job-application.model';
+import { ApplicationAttachment, ApplicationStatus, AttachmentKind, AttachmentUploadEvent, AttachmentUploadItem } from '../../models/job-application.model';
 
 const JOB: JobOffer = {
   id: 5, title: 'Angular Developer', company: 'Acme', companyId: 1, description: 'Opis', salaryMin: 1000, salaryMax: 2000,
   location: 'Rzeszów', workType: WorkType.Remote, createdAt: new Date('2026-01-01'),
   status: JobOfferStatus.Active, expiresAt: null, isExpired: false
+};
+
+const SAVED_CV: ApplicationAttachment = {
+  id: 11, kind: AttachmentKind.Cv, fileName: 'cv.pdf', size: 4 * 1024 * 1024, uploadedAt: '2026-02-01T10:00:00Z'
 };
 
 // Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
@@ -27,6 +31,7 @@ describe('JobDetailComponent', () => {
   let checkIfApplied: ReturnType<typeof vi.fn>;
   let applyToJob: ReturnType<typeof vi.fn>;
   let uploadAttachments: ReturnType<typeof vi.fn>;
+  let getApplication: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
   let authenticated: boolean;
@@ -52,6 +57,7 @@ describe('JobDetailComponent', () => {
     checkIfApplied = vi.fn().mockReturnValue(of({ hasApplied: false }));
     applyToJob = vi.fn();
     uploadAttachments = vi.fn();
+    getApplication = vi.fn().mockReturnValue(of({ id: 3, attachments: [] }));
     snackBarOpen = vi.fn();
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -62,7 +68,7 @@ describe('JobDetailComponent', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: '5' })) } },
         { provide: JobService, useValue: { getJob } },
-        { provide: JobApplicationService, useValue: { checkIfApplied, applyToJob, uploadAttachments } },
+        { provide: JobApplicationService, useValue: { checkIfApplied, applyToJob, uploadAttachments, getApplication } },
         { provide: AuthService, useValue: { isAuthenticated: () => authenticated, isAdmin: () => admin, isEmployer: () => employer } },
         { provide: MatSnackBar, useValue: { open: snackBarOpen } }
       ]
@@ -508,7 +514,7 @@ describe('JobDetailComponent', () => {
 
       component.openApplyDialog();
 
-      expect(open).toHaveBeenCalledWith(ApplyDialogComponent, APPLY_DIALOG_CONFIG);
+      expect(open).toHaveBeenCalledWith(ApplyDialogComponent, { ...APPLY_DIALOG_CONFIG, data: { existing: [] } });
       expect(APPLY_DIALOG_CONFIG.ariaModal).toBe(true);
       expect(apply).toHaveBeenCalledWith('Cześć', ITEMS);
     });
@@ -524,13 +530,90 @@ describe('JobDetailComponent', () => {
       expect(apply).not.toHaveBeenCalled();
     });
   });
+
+  describe('applying again with the attachments of the withdrawn application', () => {
+    function openDialogSpy(): ReturnType<typeof vi.fn> {
+      const dialog = (component as unknown as { dialog: MatDialog }).dialog;
+      return vi.spyOn(dialog, 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never) as never;
+    }
+
+    function applyButton(): HTMLButtonElement {
+      return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button'))
+        .find(b => b.textContent?.includes('Aplikuj'))!;
+    }
+
+    it('loads the kept attachments and passes them to the dialog as existing', () => {
+      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
+      getApplication.mockReturnValue(of({ id: 3, status: ApplicationStatus.Withdrawn, attachments: [SAVED_CV] }));
+      create();
+      const open = openDialogSpy();
+
+      component.openApplyDialog();
+
+      expect(getApplication).toHaveBeenCalledWith(3);
+      const data = open.mock.calls[0][1].data as ApplyDialogData;
+      expect(data.existing).toEqual([SAVED_CV]);
+      expect(open.mock.calls[0][1]).toMatchObject(APPLY_DIALOG_CONFIG);
+    });
+
+    it('keeps "Aplikuj ponownie" disabled until the kept attachments are loaded', () => {
+      const application = new Subject<unknown>();
+      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
+      getApplication.mockReturnValue(application);
+      create();
+
+      expect(component.checkingApplication).toBe(true);
+      expect(applyButton().disabled).toBe(true);
+
+      application.next({ id: 3, attachments: [SAVED_CV] });
+      application.complete();
+      fixture.detectChanges();
+
+      expect(component.checkingApplication).toBe(false);
+      expect(applyButton().disabled).toBe(false);
+      expect(applyButton().textContent).toContain('Aplikuj ponownie');
+    });
+
+    it('opens the dialog without existing attachments when they cannot be loaded (the server still checks the limits)', () => {
+      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
+      getApplication.mockReturnValue(throwError(() => httpError(500)));
+      create();
+      const open = openDialogSpy();
+
+      expect(component.checkingApplication).toBe(false);
+      component.openApplyDialog();
+
+      expect((open.mock.calls[0][1].data as ApplyDialogData).existing).toEqual([]);
+    });
+
+    it('does not load an application for a first-time applicant', () => {
+      create();
+      const open = openDialogSpy();
+
+      component.openApplyDialog();
+
+      expect(getApplication).not.toHaveBeenCalled();
+      expect((open.mock.calls[0][1].data as ApplyDialogData).existing).toEqual([]);
+    });
+
+    it('cancels loading the kept attachments when the page is left', () => {
+      const application = new Subject<unknown>();
+      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
+      getApplication.mockReturnValue(application);
+      create();
+
+      fixture.destroy();
+
+      expect(application.observed).toBe(false);
+    });
+  });
 });
 
 describe('ApplyDialogComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ApplyDialogComponent],
-      providers: [{ provide: MatDialogRef, useValue: { close: vi.fn() } }]
+      providers: [{ provide: MatDialogRef, useValue: { close: vi.fn() } }, { provide: MAT_DIALOG_DATA, useValue: null }]
     }).compileComponents();
   });
 
@@ -572,5 +655,58 @@ describe('ApplyDialogComponent', () => {
       { file: cv, kind: AttachmentKind.Cv }, { file: portfolio, kind: AttachmentKind.Other }
     ]);
     expect(root.querySelectorAll('.file-name').length).toBe(2);
+  });
+
+  describe('with the attachments kept from the withdrawn application', () => {
+    function createWith(existing: ApplicationAttachment[]) {
+      TestBed.overrideProvider(MAT_DIALOG_DATA, { useValue: { existing } satisfies ApplyDialogData });
+      const fixture = TestBed.createComponent(ApplyDialogComponent);
+      fixture.detectChanges();
+      return fixture;
+    }
+
+    function choose(fixture: ReturnType<typeof createWith>, files: File[]): void {
+      const input = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('input[type="file"]')!;
+      Object.defineProperty(input, 'files', { value: files, configurable: true });
+      input.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    }
+
+    it('does not default new files to CV when the application already has one', () => {
+      const fixture = createWith([SAVED_CV]);
+      const letter = new File(['%PDF-'], 'list.pdf');
+      const photo = new File(['x'], 'zdjecie.png');
+
+      choose(fixture, [letter, photo]);
+
+      expect(fixture.componentInstance.result().attachments).toEqual([
+        { file: letter, kind: AttachmentKind.Other }, { file: photo, kind: AttachmentKind.Other }
+      ]);
+    });
+
+    it('counts the kept attachments towards the 25 MB and 10 files limits', () => {
+      const kept = Array.from({ length: 9 }, (_, i): ApplicationAttachment => ({ ...SAVED_CV, id: 20 + i, fileName: `plik${i}.pdf`, size: 1024 * 1024 }));
+      const fixture = createWith(kept);
+      const root = fixture.nativeElement as HTMLElement;
+
+      expect(root.querySelector('.usage')?.textContent).toContain('plików: 9 z 10');
+
+      const accepted = new File(['%PDF-'], 'a.pdf');
+      choose(fixture, [accepted, new File(['%PDF-'], 'b.pdf')]);
+
+      expect(fixture.componentInstance.result().attachments.map(item => item.file)).toEqual([accepted]);
+      expect(root.querySelector('.error-line')?.textContent).toContain('b.pdf');
+    });
+
+    it('rejects a file that would exceed 25 MB together with the kept attachments', () => {
+      const kept = Array.from({ length: 6 }, (_, i): ApplicationAttachment => ({ ...SAVED_CV, id: 30 + i, fileName: `plik${i}.pdf` }));
+      const fixture = createWith(kept);
+      const big = new File([new Uint8Array(2 * 1024 * 1024)], 'duzy.pdf');
+
+      choose(fixture, [big]);
+
+      expect(fixture.componentInstance.result().attachments).toEqual([]);
+      expect((fixture.nativeElement as HTMLElement).querySelector('.error-line')?.textContent).toContain('duzy.pdf');
+    });
   });
 });

@@ -8,6 +8,8 @@ export function isHandledByInterceptor(error: unknown): boolean {
 
 const TOO_MANY_REQUESTS = 'Too many requests - try again later';
 const TOO_MANY_REQUESTS_PL = 'Zbyt wiele żądań – spróbuj ponownie za kilka minut';
+/** 413 bez komunikatu API – limit nginx dla uploadu załączników (strona HTML). */
+const FILES_TOO_LARGE_PL = 'Przesyłane pliki są za duże – maksymalnie 5 MB na plik i 25 MB łącznie';
 
 // Znane komunikaty API (po angielsku) tłumaczone na polski
 const KNOWN_API_MESSAGES: Record<string, string> = {
@@ -40,10 +42,20 @@ const KNOWN_API_MESSAGES: Record<string, string> = {
   // statystyki
   'Date range cannot exceed 366 days': 'Zakres dat nie może przekraczać 366 dni',
   'Invalid date range': 'Nieprawidłowy zakres dat',
+  'Invalid attachment kind': 'Nieprawidłowy rodzaj załącznika',
+  // błędy odczytu żądania (BadHttpRequestException w backendzie)
+  'Request body too large': 'Przesyłane dane są za duże',
+  'Request timed out': 'Przekroczono czas wysyłania danych – spróbuj ponownie',
+  'Invalid request': 'Nieprawidłowe żądanie',
   [TOO_MANY_REQUESTS]: TOO_MANY_REQUESTS_PL,
   // m.in. 'Company must be approved before publishing offers'
   ...FORBIDDEN_API_MESSAGES
 };
+
+/** Tłumaczenie znanego komunikatu API (tylko własne klucze słownika – nie np. „constructor”). */
+function knownApiMessage(message: unknown): string | undefined {
+  return typeof message === 'string' && Object.hasOwn(KNOWN_API_MESSAGES, message) ? KNOWN_API_MESSAGES[message] : undefined;
+}
 
 /**
  * Komunikat błędu HTTP dla użytkownika: przetłumaczony `message` z API dla błędów 4xx,
@@ -55,15 +67,17 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
 
   if (error.status === 0) return 'Brak połączenia z serwerem';
   if (error.status >= 500) return fallback;
-  // Limit rozmiaru żądania serwera (Kestrel / nginx) – odpowiedź bez treści albo HTML z nginx
-  if (error.status === 413) return 'Przesyłane pliki są za duże – maksymalnie 5 MB na plik i 25 MB łącznie';
   // Rate limiting – treść może być pusta (np. odrzucenie przez proxy)
   if (error.status === 429) return TOO_MANY_REQUESTS_PL;
 
   const body = error.error;
   const message = body?.message;
+  // Limit rozmiaru żądania: backend zwraca JSON ze znanym komunikatem, nginx – stronę HTML (upload załączników)
+  if (error.status === 413) {
+    return knownApiMessage(message) ?? FILES_TOO_LARGE_PL;
+  }
   if (typeof message === 'string' && message.trim()) {
-    return KNOWN_API_MESSAGES[message] ?? message;
+    return knownApiMessage(message) ?? message;
   }
 
   if (error.status === 400 && body?.errors && typeof body.errors === 'object') {

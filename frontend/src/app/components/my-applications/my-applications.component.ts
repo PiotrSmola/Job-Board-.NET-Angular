@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, DestroyRef, inject, OnInit, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
@@ -42,6 +42,7 @@ import {
     AttachmentListComponent
   ],
   templateUrl: './my-applications.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './my-applications.component.scss'
 })
 export class MyApplicationsComponent implements OnInit {
