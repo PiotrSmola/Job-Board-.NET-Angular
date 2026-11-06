@@ -1,4 +1,7 @@
+using System.Globalization;
+using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 using Backend.Data;
 using Backend.Interfaces;
 using Backend.Models;
@@ -7,6 +10,7 @@ using Backend.Services;
 using Backend.Settings;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -82,7 +86,7 @@ builder.Services.AddCors(options =>
         policy.WithOrigins("http://localhost:4200")
               .AllowAnyHeader()
               .AllowAnyMethod()
-              // Content-Disposition - nazwa pobieranego pliku CV
+              // Content-Disposition - nazwa pobieranego załącznika
               .WithExposedHeaders("Pagination", "Content-Disposition");
     });
 });
@@ -93,7 +97,7 @@ builder.Services.AddScoped<IJobApplicationRepository, JobApplicationRepository>(
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 
-// Magazyn plików CV wg Storage:Provider (Local - katalog na dysku, S3 - magazyn zgodny z S3, np. SeaweedFS);
+// Magazyn plików załączników wg Storage:Provider (Local - katalog na dysku, S3 - magazyn zgodny z S3, np. SeaweedFS);
 // konfiguracja walidowana w jednym miejscu (StorageSettings.Validate)
 builder.Services.AddOptions<StorageSettings>()
     .Bind(builder.Configuration.GetSection(StorageSettings.SectionName))
@@ -110,6 +114,50 @@ builder.Services.AddSingleton<IFileStorage>(sp =>
 // Uprawnienia do zasobów (admin - wszystko, pracodawca - zasoby swojej firmy) sprawdzane w jednym miejscu
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserAccess, CurrentUserAccess>();
+
+// Ograniczanie liczby żądań: polityka "uploads" (upload załączników) - osobny limit dla każdego zalogowanego
+// użytkownika (okno stałe, bez kolejki), przekroczenie -> 429 z komunikatem API i Retry-After (czas do końca okna).
+// Limitery nieaktywnych użytkowników są usuwane przez PartitionedRateLimiter (brak nieograniczonego cache'u).
+builder.Services.AddOptions<RateLimitingSettings>()
+    .Bind(builder.Configuration.GetSection(RateLimitingSettings.SectionName))
+    .PostConfigure(settings => settings.Validate());
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy(RateLimitingSettings.UploadsPolicy, httpContext =>
+    {
+        var limit = httpContext.RequestServices.GetRequiredService<IOptions<RateLimitingSettings>>().Value.Uploads;
+        // endpoint wymaga zalogowania - adres IP tylko obronnie, gdyby polityka trafiła na endpoint anonimowy
+        var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                           ?? "ip:" + httpContext.Connection.RemoteIpAddress;
+
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = limit.PermitLimit,
+            Window = TimeSpan.FromSeconds(limit.WindowSeconds),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
+    });
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter =
+                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+        }
+
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new { message = RateLimitingSettings.RejectedMessage }, cancellationToken);
+    };
+});
+
+// Nieobsłużone wyjątki -> 500 {message} bez szczegółów (GlobalExceptionHandler), także w Development
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 // Kontrolery - odpowiedzi to wyłącznie DTO (bez cykli nawigacji encji EF)
 builder.Services.AddControllers();
@@ -167,13 +215,18 @@ var resolvedStorageSettings = app.Services.GetRequiredService<IOptions<StorageSe
 await app.Services.GetRequiredService<IFileStorage>().InitializeAsync();
 app.Logger.LogInformation("File storage: {Provider}", resolvedStorageSettings.Provider);
 
+// wczesna walidacja limitów żądań (zła konfiguracja przerywa start)
+_ = app.Services.GetRequiredService<IOptions<RateLimitingSettings>>().Value;
+
 // seedowanie bazy danych
 using (var scope = app.Services.CreateScope())
 {
     await DatabaseSeeder.SeedAsync(scope.ServiceProvider);
 }
 
-// konfiguracja potoku HTTP
+// konfiguracja potoku HTTP - obsługa wyjątków jako pierwsza (obejmuje cały potok)
+app.UseExceptionHandler();
+
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -187,6 +240,9 @@ app.UseCors("AllowAngularApp");
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// po uwierzytelnieniu - limit liczony per użytkownik; anonim dostaje 401, zanim zostanie policzony
+app.UseRateLimiter();
 
 app.MapControllers();
 
