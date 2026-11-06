@@ -340,6 +340,7 @@ public class JobApplicationsController : ControllerBase
     // w bazie się nie uda albo limit przekroczy równoległe żądanie - zapisane pliki są usuwane.
     [HttpPost("{id:int}/attachments")]
     [EnableRateLimiting(RateLimitingSettings.UploadsPolicy)]
+    [RequestSizeLimit(AttachmentFiles.MaxRequestSize)]
     [DisableFormValueModelBinding]
     [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

@@ -18,6 +18,9 @@ using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Domyślny limit treści żądania: 1 MB (endpointy z plikami podnoszą go [RequestSizeLimit] - RequestBodyLimitMiddleware)
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = RequestBodyLimitMiddleware.DefaultLimit);
+
 // Konfiguracja bazy danych MySQL
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseMySql(
@@ -220,6 +223,9 @@ using (var scope = app.Services.CreateScope())
 // przy odczycie żądania (BadHttpRequestException) - ich kod statusu i log Warning zamiast 500 i Error
 app.UseExceptionHandler();
 app.UseMiddleware<ClientRequestErrorMiddleware>();
+
+// limit treści żądania dopasowanego endpointu (domyślnie 1 MB, upload załączników 26 MB) - przed odczytem treści
+app.UseMiddleware<RequestBodyLimitMiddleware>();
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
