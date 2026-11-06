@@ -47,8 +47,25 @@ public class NginxConfigTests
         Assert.Contains("proxy_pass http://backend:8080;", location.Body);
     }
 
+    // POST /api/account/documents przyjmuje do 26 MB (3 x 5 MB itd.) - nginx z limitem 1 MB odrzuciłby w stosie
+    // Dockera każdy plik profilu większy niż ~1 MB stroną HTML 413, a frontend pokazałby komunikat o limicie 5 MB
+    [Theory(Skip = "Bug: frontend/docker/nginx.conf gives POST /api/account/documents the 1 MB limit of /api/ - only /api/jobapplications/{id}/attachments has 26m, so profile documents over 1 MB get 413 in the Docker stack. Unskip after adding the location (and relax BothApiLocations_ForwardTheSameProxyHeaders, which expects a single regex location).")]
+    [InlineData("/api/account/documents")]
+    [InlineData("/api/Account/Documents")]
+    [InlineData("/api/account/documents/")]
+    public void ProfileDocumentUpload_Allows26Megabytes(string path)
+    {
+        var location = Match(ReadLocations(), path);
+
+        Assert.Equal("26m", BodySizeLimit(location));
+        Assert.Contains("proxy_pass http://backend:8080;", location.Body);
+    }
+
     [Theory]
     [InlineData("/api/auth/login")]
+    [InlineData("/api/account/documents/5")]
+    [InlineData("/api/account/profile")]
+    [InlineData("/api/jobapplications/12/attachments/from-profile")]
     [InlineData("/api/jobapplications")]
     [InlineData("/api/jobapplications/12/attachments/5")]
     [InlineData("/api/jobapplications/12/attachmentsx")]
