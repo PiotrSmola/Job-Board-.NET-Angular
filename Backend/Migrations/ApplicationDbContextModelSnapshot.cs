@@ -180,6 +180,38 @@ namespace Backend.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("Backend.Models.Category", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.ToTable("Categories");
+                });
+
             modelBuilder.Entity("Backend.Models.Company", b =>
                 {
                     b.Property<int>("Id")
@@ -280,7 +312,13 @@ namespace Backend.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("CategoryId")
+                        .HasColumnType("int");
+
                     b.Property<int>("CompanyId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ContractTypes")
                         .HasColumnType("int");
 
                     b.Property<DateTime>("CreatedAt")
@@ -299,6 +337,9 @@ namespace Backend.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)");
 
+                    b.Property<int>("SalaryCurrency")
+                        .HasColumnType("int");
+
                     b.Property<decimal?>("SalaryMax")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -306,6 +347,12 @@ namespace Backend.Migrations
                     b.Property<decimal?>("SalaryMin")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("SalaryPeriod")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Seniority")
+                        .HasColumnType("int");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -320,9 +367,57 @@ namespace Backend.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CategoryId");
+
                     b.HasIndex("CompanyId");
 
+                    b.HasIndex("SalaryCurrency");
+
+                    b.HasIndex("Seniority");
+
                     b.ToTable("JobOffers");
+                });
+
+            modelBuilder.Entity("Backend.Models.Skill", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .UseCollation("utf8mb4_bin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedName")
+                        .IsUnique();
+
+                    b.ToTable("Skills");
+                });
+
+            modelBuilder.Entity("JobOfferSkill", b =>
+                {
+                    b.Property<int>("JobOffersId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SkillsId")
+                        .HasColumnType("int");
+
+                    b.HasKey("JobOffersId", "SkillsId");
+
+                    b.HasIndex("SkillsId");
+
+                    b.ToTable("JobOfferSkills", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -527,13 +622,35 @@ namespace Backend.Migrations
 
             modelBuilder.Entity("Backend.Models.JobOffer", b =>
                 {
+                    b.HasOne("Backend.Models.Category", "Category")
+                        .WithMany("JobOffers")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Backend.Models.Company", "Company")
                         .WithMany("JobOffers")
                         .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("Category");
+
                     b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("JobOfferSkill", b =>
+                {
+                    b.HasOne("Backend.Models.JobOffer", null)
+                        .WithMany()
+                        .HasForeignKey("JobOffersId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Backend.Models.Skill", null)
+                        .WithMany()
+                        .HasForeignKey("SkillsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -590,6 +707,11 @@ namespace Backend.Migrations
             modelBuilder.Entity("Backend.Models.ApplicationUser", b =>
                 {
                     b.Navigation("JobApplications");
+                });
+
+            modelBuilder.Entity("Backend.Models.Category", b =>
+                {
+                    b.Navigation("JobOffers");
                 });
 
             modelBuilder.Entity("Backend.Models.Company", b =>
