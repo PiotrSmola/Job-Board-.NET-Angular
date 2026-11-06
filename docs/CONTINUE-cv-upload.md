@@ -65,3 +65,31 @@ Niejasności i rozstrzygnięcia:
 Kolejne kroki:
 - Smoke test z działającym backendem (CORS `Content-Disposition`, nazwy z polskimi znakami, 5 MB, DOCX).
 - Pełniejsze testy (osobny agent): np. e2e upload/pobranie, kontrast w motywie, nawigacja klawiaturą w dialogach.
+
+## Backend – stan
+
+Zrobione (gałąź `feature/cv-upload`: `Backend/`, `Backend.Tests/`, `docker-compose.yml`, `docker-up.ps1`, `.env.example`, `.gitignore`, `README.md`):
+- `IFileStorage` (+ `InitializeAsync` – katalog / bucket przy starcie, `DeleteByPrefixAsync` – reset seeda), `LocalFileStorage` (zapis przez plik tymczasowy + podmiana; klucze z `..`, `\`, `:`, znakami sterującymi, absolutne i wychodzące poza katalog po `GetFullPath` są odrzucane), `S3FileStorage` (`AWSSDK.S3` 4.x, singleton, `ForcePathStyle`, sumy CRC tylko gdy wymagane, PUT bez aws-chunked, pobieranie zwalnia `GetObjectResponse` razem ze strumieniem). `StorageSettings` walidowane przy starcie (S3 bez URL/kluczy albo nieznany provider → `InvalidOperationException`).
+- Migracja `AddApplicationCv` (5 kolumn nullable). DTO: `hasCv`, `cvFileName`, `cvSize`, `cvUploadedAt` (null bez CV); klucza brak w API.
+- Endpointy dokładnie wg kontraktu; CORS wystawia `Content-Disposition`; sprzątanie plików po usunięciu aplikacji / oferty (admin) i po RefreshSeed (`DeleteByPrefixAsync("cv/")`).
+- docker-compose: usługa `storage` (SeaweedFS 4.50, bez portów, `-s3.config` generowany przy starcie, healthcheck `/healthz`), backend `Storage__*` + `depends_on: storage (healthy)`, wolumen `storage-data`; `docker-up.ps1` generuje/zachowuje `S3_ACCESS_KEY` (20) i `S3_SECRET_KEY` (40).
+
+Dodatki i odstępstwa względem kontraktu (frontend ma już tłumaczenia):
+- `409 {message:"CV was changed by another request"}` – zamiana/usunięcie CV jest warunkowym UPDATE z tokenem „bieżący klucz pliku” (+ właściciel + dozwolony status); równoległa zmiana CV daje 409, równoległa decyzja końcowa – 400 z kontraktu, usunięta aplikacja – 404.
+- `400 {message:"No file uploaded - send it in the 'file' form field"}` – brak pola `file`; `400 {message:"Invalid multipart form data"}` – uszkodzony multipart / przekroczone limity formularza.
+- `404 {message:"CV not found"}` – brak CV albo brak pliku w magazynie (cudza/nieistniejąca aplikacja – `Application not found`).
+- `DELETE .../cv` bez CV → 404 sprawdzane przed statusem (aplikacja odrzucona bez CV → 404, z CV → 400).
+- Żądanie > 6 MB (Content-Length) → od razu 400 „File is too large…” (bez czytania treści); 5 MB = 5 242 880 B.
+- `Content-Disposition` zawiera wyłącznie `filename*=UTF-8''…` (bez `filename=`), budowany przez `ContentDispositionHeaderValue`.
+- DOCX: tylko katalog centralny ZIP, maks. 1000 wpisów (sprawdzane najpierw z rekordu EOCD) i 50 MB zadeklarowanej treści – inaczej „Unsupported file type…”.
+
+Decyzje:
+- Upload przez `IFormFile` wczytany w filtrze `[CvUploadForm]` (limit Kestrel 6 MB, limity `FormOptions` tylko dla tego endpointu); ASP.NET Core buforuje plik > 64 KB na dysku, strumień jest przewijalny – typ sprawdzany na nim i ten sam strumień idzie do magazynu. Bez `MemoryStream` także dla DOCX (ZipArchive czyta tylko katalog centralny z przewijalnego strumienia).
+- Kolejność zamiany: zapis nowego pliku (token żądania) → UPDATE (bez tokenu – po zapisaniu pliku operacja jest doprowadzana do końca) → usunięcie starego pliku; błąd UPDATE → usunięcie nowego pliku. Usunięcie aplikacji/oferty: transakcja z blokadą wierszy (oferta, potem aplikacje) przed odczytem kluczy, pliki po commicie – równoległa zamiana CV nie osieroci pliku.
+- Testy: magazyn `Local` w katalogu tymczasowym per fabryka; `S3FileStorageTests` tylko z `JOBBOARD_TEST_S3_URL` (inaczej Skip).
+
+Ryzyka / do sprawdzenia:
+- Konfiguracja S3 SeaweedFS w compose (format `identities`/`credentials`/`actions`, flaga `-s3.config`, `/healthz`, entrypoint obrazu z `su-exec`) zweryfikowana z dokumentacją i kodem źródłowym 4.50, ale nie uruchomiona (kontener deweloperski działa bez uwierzytelniania) – sprawdzić `.\docker-up.ps1` na czystym wolumenie.
+- Osierocone pliki są możliwe tylko przy awarii magazynu po commicie (błąd usuwania jest logowany) albo przerwaniu procesu między zapisem pliku a UPDATE.
+
+Weryfikacja: `dotnet build` 0 ostrzeżeń; `dotnet test` – 1019 testów (1015 zaliczonych, 4 testy S3 pominięte bez `JOBBOARD_TEST_S3_URL`; z `JOBBOARD_TEST_S3_URL=http://jobboard-dev-seaweedfs:8333` – 4/4 zaliczone). Smoke test (Development, port 5099) dla `Local` i `S3` (jobboard-dev-seaweedfs): upload PDF, PNG jako .pdf → 400, 5 MB + 1 B → 400, 7 MB (także chunked) → 400, pobranie przez pracodawcę firmy (nagłówki i CORS `Content-Disposition`), inny pracodawca → 404, zamiana na DOCX (stary plik usunięty z magazynu), usunięcie CV → 404, usunięcie aplikacji przez admina usuwa plik – wszystko OK.
