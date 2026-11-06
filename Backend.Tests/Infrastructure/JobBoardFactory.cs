@@ -1,3 +1,4 @@
+using Backend.Data;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -55,6 +56,12 @@ public class JobBoardFactory : WebApplicationFactory<Program>
             [AuthConcurrencyLimitKey] = "1000",
             [PublicListsPermitLimitKey] = "100000"
         };
+
+        // poza Development hasło kont adminów z seeda musi być skonfigurowane - testy logują się tym samym co w Development
+        if (environment != "Development")
+        {
+            _settings[DatabaseSeeder.AdminPasswordKey] = TestUsers.AdminPassword;
+        }
 
         // brak wartości = domyślne zachowanie seedera (konta demo tylko w Development)
         if (demoAccounts.HasValue)

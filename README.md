@@ -20,23 +20,24 @@ Preferowane porty można zmienić parametrami:
 
 Zatrzymanie: `docker compose down` (dane bazy zostają w wolumenie `db-data`, pliki załączników w `storage-data`; `docker compose down -v` usuwa je).
 
-Bez skryptu można też użyć bezpośrednio `docker compose up -d --build` - porty brane są wtedy z `.env` (wzór w `.env.example`) lub domyślne. W `.env` muszą wtedy być ustawione `JWT_SECRET`, `S3_ACCESS_KEY` i `S3_SECRET_KEY`.
+Bez skryptu można też użyć bezpośrednio `docker compose up -d --build` - porty brane są wtedy z `.env` (wzór w `.env.example`) lub domyślne. W `.env` muszą wtedy być ustawione `JWT_SECRET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` i `ADMIN_PASSWORD`.
 
 Zmienne w `.env`:
 
 - `JWT_SECRET` - sekret do podpisywania tokenów JWT (min. 32 znaki). Wymagany: bez niego `docker compose` nie wystartuje. `docker-up.ps1` przy pierwszym uruchomieniu generuje losowy 64-znakowy sekret i zapisuje go w `.env`, przy kolejnych zachowuje istniejący (zmiana sekretu unieważnia zalogowane sesje).
 - `S3_ACCESS_KEY`, `S3_SECRET_KEY` - klucze dostępu do magazynu plików załączników (SeaweedFS, usługa `storage`). Wymagane: bez nich `docker compose` nie wystartuje. `docker-up.ps1` generuje losowe (20 i 40 znaków alfanumerycznych) i zachowuje istniejące, jeśli są ciągami co najmniej 16 liter i cyfr - inne zastępuje nowymi z ostrzeżeniem. Własne wartości: tylko litery i cyfry, min. 16 znaków (są wstawiane do pliku konfiguracyjnego S3 generowanego przy starcie kontenera, więc ich zmiana działa po restarcie stacku).
+- `ADMIN_PASSWORD` - hasło kont adminów (`admin@jobboard.com`, `superadmin@jobboard.com`) tworzonych przez seeder (`Seed__AdminPassword`). Wymagane: bez niego `docker compose` nie wystartuje. `docker-up.ps1` przy pierwszym uruchomieniu generuje losowe 20-znakowe hasło i zapisuje je w `.env`, przy kolejnych zachowuje istniejące, a na koniec **wypisuje je** (`Admin: admin@jobboard.com / ...`). Własna wartość: tylko litery i cyfry, min. 16 znaków, w tym mała i wielka litera oraz cyfra - inną skrypt zastępuje nową z ostrzeżeniem. Hasło działa tylko dla kont adminów tworzonych z tym ustawieniem (nowa baza albo reset danych demo): **istniejące konta adminów w istniejących bazach (wolumen `db-data`) zachowują dotychczasowe hasło** (np. `Admin123!` z wcześniejszych wersji) - żeby przejść na hasło z `.env`, zresetuj dane demo z panelu admina albo usuń wolumen (`docker compose down -v`). Poza Dockerem: w Development domyślnie `Admin123!`, w innych środowiskach `Seed:AdminPassword` jest wymagane do utworzenia kont adminów (brak albo hasło niespełniające polityki przerywa start czytelnym błędem).
 - `ALLOW_SEED_REFRESH` - czy admin może z panelu zresetować dane demo (`POST /api/admin/refresh-seed` usuwa **wszystkich** użytkowników, firmy, oferty i aplikacje i odtwarza dane startowe). W lokalnym stacku Dockera domyślnie `true`; ustaw `false`, żeby wyłączyć. Poza Dockerem reset działa tylko w środowisku Development albo po ustawieniu `Admin:AllowSeedRefresh=true`.
 - `SEED_DEMO_ACCOUNTS` - czy seeder tworzy konta demo kandydatów i pracodawców (tabela niżej). W lokalnym stacku Dockera domyślnie `true` (`Seed__DemoAccounts`); ustaw `false`, żeby powstały tylko konta adminów. Poza Dockerem konta demo powstają tylko w środowisku Development, chyba że jawnie ustawiono `Seed:DemoAccounts` (`true`/`false` ma pierwszeństwo). `docker-up.ps1` zachowuje wartość z `.env`.
 - `SWAGGER_ENABLED` - czy backend udostępnia Swagger UI (`http://localhost:<BACKEND_PORT>/swagger`). W lokalnym stacku Dockera domyślnie `true` (`Swagger__Enabled`); ustaw `false`, żeby go wyłączyć. Poza Dockerem Swagger działa zawsze w środowisku Development, w innych tylko przy `Swagger:Enabled=true`. `docker-up.ps1` zachowuje wartość z `.env`.
 
 ## Konta testowe
 
-Tworzone automatycznie przy pierwszym starcie (i po resecie danych demo). Hasła są publicznie znane - konta służą tylko do lokalnego demo. Konta adminów powstają zawsze, konta kandydatów i pracodawców demo tylko w Development albo przy `Seed:DemoAccounts=true` (w stacku Dockera domyślnie włączone, patrz `SEED_DEMO_ACCOUNTS`). Konto demo pracodawcy, które istnieje bez firmy (np. po cofnięciu i ponownym zastosowaniu migracji `AddCompanies`), jest przy starcie dopinane do swojej firmy (brakująca firma jest tworzona):
+Tworzone automatycznie przy pierwszym starcie (i po resecie danych demo). Hasła kont demo są publicznie znane - konta służą tylko do lokalnego demo (hasło adminów w stacku Dockera jest losowe - `ADMIN_PASSWORD`). Konta adminów powstają zawsze, konta kandydatów i pracodawców demo tylko w Development albo przy `Seed:DemoAccounts=true` (w stacku Dockera domyślnie włączone, patrz `SEED_DEMO_ACCOUNTS`). Konto demo pracodawcy, które istnieje bez firmy (np. po cofnięciu i ponownym zastosowaniu migracji `AddCompanies`), jest przy starcie dopinane do swojej firmy (brakująca firma jest tworzona):
 
 | Rola | E-mail | Hasło |
 | --- | --- | --- |
-| Admin | `admin@jobboard.com` | `Admin123!` |
+| Admin | `admin@jobboard.com` | Development: `Admin123!`; Docker: `ADMIN_PASSWORD` z `.env` (wypisywane przez `docker-up.ps1`) |
 | Kandydat | `jan.kowalski@example.com` | `User123!` |
 | Pracodawca (firma zatwierdzona: TechCorp Solutions) | `rekruter@techcorp.pl` | `Employer123!` |
 | Pracodawca (firma oczekująca: Nowa Firma Sp. z o.o.) | `rekruter@nowafirma.pl` | `Employer123!` |

@@ -97,6 +97,16 @@ public class DockerComposeTests
         Assert.Contains("SWAGGER_ENABLED=true", File.ReadAllText(RepositoryFiles.Find(".env.example")));
     }
 
+    [Fact]
+    public void Backend_RequiresTheAdminPasswordFromEnv()
+    {
+        // hasło nowych kont adminów z .env (docker-up.ps1 je generuje) - bez niego compose nie wystartuje
+        var backend = ServiceBlock(File.ReadAllText(RepositoryFiles.Find("docker-compose.yml")), "backend");
+
+        Assert.Contains("Seed__AdminPassword: \"${ADMIN_PASSWORD:?ADMIN_PASSWORD is not set", backend);
+        Assert.Contains("ADMIN_PASSWORD=", File.ReadAllText(RepositoryFiles.Find(".env.example")));
+    }
+
     // Treść usługi (od "  name:" do następnej usługi albo sekcji najwyższego poziomu)
     private static string ServiceBlock(string compose, string service)
     {

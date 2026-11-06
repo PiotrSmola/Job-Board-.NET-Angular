@@ -69,7 +69,8 @@ public class AdminController : ControllerBase
             _logger.LogWarning("Database seed refresh requested - all users, job offers and applications will be replaced");
 
             await DatabaseSeeder.RefreshSeedAsync(_context, _userManager, _roleManager,
-                DatabaseSeeder.DemoAccountsEnabled(_environment, _configuration));
+                DatabaseSeeder.DemoAccountsEnabled(_environment, _configuration),
+                DatabaseSeeder.AdminPassword(_environment, _configuration));
 
             _logger.LogInformation("Database seed refresh completed successfully");
 
