@@ -100,6 +100,7 @@ export class ApplyDialogComponent {
     StatusChipComponent
   ],
   templateUrl: './job-detail.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './job-detail.component.scss'
 })
 export class JobDetailComponent implements OnInit {

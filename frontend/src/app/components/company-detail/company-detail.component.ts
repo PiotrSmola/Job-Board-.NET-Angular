@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -43,6 +43,7 @@ const WORK_TYPE_LABELS: Record<WorkType, string> = {
     StatusChipComponent
   ],
   templateUrl: './company-detail.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './company-detail.component.scss'
 })
 export class CompanyDetailComponent {

@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -57,6 +57,7 @@ const DEFAULT_SORT: Sort = { active: 'createdAt', direction: 'desc' };
     StatusChipComponent
   ],
   templateUrl: './admin-companies-tab.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './admin-companies-tab.component.scss'
 })
 export class AdminCompaniesTabComponent {
