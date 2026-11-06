@@ -17,6 +17,7 @@ import { JobOffer, WorkType } from '../../models/job-offer.model';
 import { JobParams } from '../../models/job-params.model';
 import { getApiErrorMessage } from '../../utils/http-errors';
 import { formatExpiresSoon } from '../../utils/status-labels';
+import { SaveJobButtonComponent } from '../shared/save-job-button.component';
 import { Subject, debounceTime, filter, takeUntil } from 'rxjs';
 
 @Component({
@@ -35,7 +36,8 @@ import { Subject, debounceTime, filter, takeUntil } from 'rxjs';
     MatChipsModule,
     MatProgressSpinnerModule,
     MatButtonToggleModule,
-    RouterLink
+    RouterLink,
+    SaveJobButtonComponent
   ],
   templateUrl: './job-list.component.html',
   styleUrl: './job-list.component.scss'

@@ -41,6 +41,16 @@
           <mat-icon>email</mat-icon>
           {{ authService.currentUser()?.email }}
         </button>
+        <a mat-menu-item routerLink="/account">
+          <mat-icon aria-hidden="true">manage_accounts</mat-icon>
+          Moje konto
+        </a>
+        @if (!authService.isAdmin() && !authService.isEmployer()) {
+          <a mat-menu-item routerLink="/saved-jobs">
+            <mat-icon aria-hidden="true">favorite</mat-icon>
+            Zapisane oferty
+          </a>
+        }
         <button mat-menu-item (click)="logout()">
           <mat-icon>logout</mat-icon>
           Wyloguj

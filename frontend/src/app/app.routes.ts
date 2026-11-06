@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { adminGuard } from './guards/admin.guard';
 import { employerGuard } from './guards/employer.guard';
 import { candidateGuard } from './guards/candidate.guard';
+import { authGuard } from './guards/auth.guard';
 
 export const routes: Routes = [
   {
@@ -32,6 +33,28 @@ export const routes: Routes = [
   {
     path: 'register',
     loadComponent: () => import('./components/register/register.component').then(m => m.RegisterComponent)
+  },
+  {
+    path: 'forgot-password',
+    loadComponent: () => import('./components/forgot-password/forgot-password.component').then(m => m.ForgotPasswordComponent)
+  },
+  {
+    path: 'reset-password',
+    loadComponent: () => import('./components/reset-password/reset-password.component').then(m => m.ResetPasswordComponent)
+  },
+  {
+    path: 'confirm-email',
+    loadComponent: () => import('./components/confirm-email/confirm-email.component').then(m => m.ConfirmEmailComponent)
+  },
+  {
+    path: 'account',
+    loadComponent: () => import('./components/account/account.component').then(m => m.AccountComponent),
+    canActivate: [authGuard]
+  },
+  {
+    path: 'saved-jobs',
+    loadComponent: () => import('./components/saved-jobs/saved-jobs.component').then(m => m.SavedJobsComponent),
+    canActivate: [candidateGuard]
   },
   {
     path: 'my-applications',

@@ -134,6 +134,7 @@
                 <span class="expires-soon">{{ hint }}</span>
               }
             </div>
+            <app-save-job-button class="push-end" [jobId]="job.id" [jobTitle]="job.title" />
             <button mat-button color="primary">
               Szczegóły <mat-icon>arrow_forward</mat-icon>
             </button>
