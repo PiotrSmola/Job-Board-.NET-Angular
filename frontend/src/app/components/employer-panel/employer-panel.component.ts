@@ -15,6 +15,7 @@ import { EmployerCompanyTabComponent } from './employer-company-tab/employer-com
 const JOBS_TAB = 0;
 const APPLICATIONS_TAB = 1;
 const COMPANY_TAB = 2;
+const LOAD_ERROR = 'Nie udało się wczytać danych firmy';
 
 /** Panel pracodawcy: oferty i aplikacje własnej firmy (zakładki admina w trybie employer) oraz profil firmy. */
 @Component({
@@ -69,9 +70,11 @@ export class EmployerPanelComponent {
       error: error => {
         console.error('Error loading employer company:', error);
         this.loading.set(false);
-        if (!isHandledByInterceptor(error)) {
-          this.loadError.set(getApiErrorMessage(error, 'Nie udało się wczytać danych firmy'));
-        }
+        // bez danych firmy panel nie ma czego pokazać – zawsze stan błędu z ponowną próbą; powód 401/403
+        // pokazał już interceptor, więc tu tylko ogólny tekst (bez dublowania komunikatu)
+        this.loadError.set(isHandledByInterceptor(error)
+          ? LOAD_ERROR
+          : getApiErrorMessage(error, LOAD_ERROR));
       }
     });
   }

@@ -138,10 +138,34 @@ describe('EmployerPanelComponent', () => {
       expect(root().querySelector('mat-tab-group')).not.toBeNull();
     });
 
-    it.each([401, 403])('does not show its own error when the interceptor handles %i', async status => {
-      await create(throwError(() => new HttpErrorResponse({ status })));
+    it.each([401, 403])('shows the error state with a retry button but not the reason handled by the interceptor (%i)', async status => {
+      await create(throwError(() => new HttpErrorResponse({
+        status, error: { message: 'Company must be approved before publishing offers' }
+      })));
 
-      expect(component.loadError()).toBeNull();
+      expect(component.loadError()).toBe('Nie udało się wczytać danych firmy');
+      expect(root().textContent).not.toContain('Firma musi zostać zatwierdzona');
+      expect(root().querySelector('mat-tab-group')).toBeNull();
+      const buttons = Array.from(root().querySelectorAll<HTMLButtonElement>('button'));
+      expect(buttons.some(b => b.textContent?.includes('Spróbuj ponownie'))).toBe(true);
+    });
+
+    it('shows the translated API reason for other errors (e.g. 404 without a company)', async () => {
+      await create(throwError(() => new HttpErrorResponse({ status: 404, error: { message: 'Company not found' } })));
+
+      expect(root().textContent).toContain('Firma nie została znaleziona');
+      expect(root().textContent).toContain('Spróbuj ponownie');
+    });
+
+    it('keeps the error state when the retry fails again', async () => {
+      await create(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      component.loadCompany();
+
+      expect(getMyCompany).toHaveBeenCalledTimes(2);
+      expect(component.loading()).toBe(false);
+      expect(root().textContent).toContain('Nie udało się wczytać danych firmy');
+      expect(root().querySelector('mat-spinner')).toBeNull();
     });
   });
 
