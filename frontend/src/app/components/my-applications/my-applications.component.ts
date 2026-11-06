@@ -1,4 +1,5 @@
-import { Component, inject, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, DestroyRef, inject, OnInit, ChangeDetectorRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { MatTableModule } from '@angular/material/table';
@@ -42,6 +43,7 @@ export class MyApplicationsComponent implements OnInit {
   private cdr = inject(ChangeDetectorRef);
   private snackBar = inject(MatSnackBar);
   private dialog = inject(MatDialog);
+  private destroyRef = inject(DestroyRef);
 
   applications: JobApplication[] = [];
   displayedColumns: string[] = ['jobTitle', 'company', 'location', 'status', 'appliedAt', 'note', 'cv', 'actions'];
@@ -100,7 +102,7 @@ export class MyApplicationsComponent implements OnInit {
     const hadCv = application.hasCv;
     const dialogRef = this.dialog.open(CvDialogComponent, { width: '520px', data: application });
 
-    dialogRef.afterClosed().subscribe((updated: JobApplication | undefined) => {
+    dialogRef.afterClosed().pipe(takeUntilDestroyed(this.destroyRef)).subscribe((updated: JobApplication | undefined) => {
       if (!updated) return;
       this.replaceApplication(updated);
       this.cdr.detectChanges();
@@ -110,7 +112,8 @@ export class MyApplicationsComponent implements OnInit {
 
   downloadCv(application: JobApplication): void {
     this.downloadingCvId = application.id;
-    this.applicationService.downloadCv(application.id, application.cvFileName).subscribe({
+    this.cdr.detectChanges();
+    this.applicationService.downloadCv(application.id, application.cvFileName).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.downloadingCvId = null;
         this.cdr.detectChanges();
@@ -132,7 +135,8 @@ export class MyApplicationsComponent implements OnInit {
     }
 
     this.deletingCvId = application.id;
-    this.applicationService.deleteCv(application.id).subscribe({
+    this.cdr.detectChanges();
+    this.applicationService.deleteCv(application.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.replaceApplication({ ...application, hasCv: false, cvFileName: null, cvSize: null, cvUploadedAt: null });
         this.deletingCvId = null;

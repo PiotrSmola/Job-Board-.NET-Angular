@@ -1,4 +1,5 @@
-import { Component, inject, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, DestroyRef, inject, OnInit, ChangeDetectorRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -106,6 +107,7 @@ export class JobDetailComponent implements OnInit {
   private dialog = inject(MatDialog);
   private cdr = inject(ChangeDetectorRef);
   private snackBar = inject(MatSnackBar);
+  private destroyRef = inject(DestroyRef);
 
   job: JobOffer | null = null;
   loading = false;
@@ -266,7 +268,8 @@ export class JobDetailComponent implements OnInit {
 
     this.cvUploadProgress = 0;
     this.cdr.detectChanges();
-    this.applicationService.uploadCv(applicationId, file).subscribe({
+    // opuszczenie strony przerywa wysyłanie CV (aplikacja jest już złożona)
+    this.applicationService.uploadCv(applicationId, file).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (event) => {
         if (event.type === 'progress') {
           this.cvUploadProgress = event.percent;

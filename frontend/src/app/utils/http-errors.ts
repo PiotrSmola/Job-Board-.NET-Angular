@@ -31,6 +31,8 @@ const KNOWN_API_MESSAGES: Record<string, string> = {
   'Invalid multipart form data': 'Nie udało się odczytać przesłanego pliku',
   'CV cannot be changed in the current application status': 'Na tym etapie rekrutacji nie można już zmienić CV',
   'CV not found': 'Nie znaleziono CV tej aplikacji',
+  'CV was changed by another request': 'CV zostało w międzyczasie zmienione – odśwież dane',
+  "No file uploaded - send it in the 'file' form field": 'Nie wybrano pliku do przesłania',
   // m.in. 'Company must be approved before publishing offers'
   ...FORBIDDEN_API_MESSAGES
 };

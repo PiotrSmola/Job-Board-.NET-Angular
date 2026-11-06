@@ -78,13 +78,14 @@
                       class="cv-file"
                       (click)="downloadCv(application)"
                       [disabled]="downloadingCvId === application.id"
-                      [matTooltip]="'Pobierz ' + application.cvFileName">
+                      [matTooltip]="'Pobierz CV: ' + application.cvFileName"
+                      [attr.aria-label]="'Pobierz CV: ' + application.cvFileName">
                       @if (downloadingCvId === application.id) {
                         <mat-spinner diameter="18"></mat-spinner>
                       } @else {
-                        <mat-icon>download</mat-icon>
+                        <mat-icon aria-hidden="true">download</mat-icon>
                       }
-                      <span class="cv-name">{{ application.cvFileName }}</span>
+                      <span class="cv-name" aria-hidden="true">{{ application.cvFileName }}</span>
                     </button>
                     <span class="cv-meta">
                       {{ formatFileSize(application.cvSize) }}
@@ -94,15 +95,15 @@
                     </span>
                   </div>
                 } @else {
-                  <span class="no-note">Brak</span>
+                  <span class="no-cv">Brak</span>
                 }
                 @if (canChangeCv(application)) {
                   <button
                     mat-icon-button
                     (click)="openCvDialog(application)"
                     [matTooltip]="application.hasCv ? 'Zmień CV' : 'Dodaj CV'"
-                    [attr.aria-label]="application.hasCv ? 'Zmień CV' : 'Dodaj CV'">
-                    <mat-icon>{{ application.hasCv ? 'sync' : 'upload_file' }}</mat-icon>
+                    [attr.aria-label]="application.hasCv ? 'Zmień CV: ' + application.cvFileName : 'Dodaj CV do aplikacji: ' + application.jobTitle">
+                    <mat-icon aria-hidden="true">{{ application.hasCv ? 'sync' : 'upload_file' }}</mat-icon>
                   </button>
                   @if (application.hasCv) {
                     <button
@@ -111,11 +112,11 @@
                       (click)="deleteCv(application)"
                       [disabled]="deletingCvId === application.id"
                       matTooltip="Usuń CV"
-                      aria-label="Usuń CV">
+                      [attr.aria-label]="'Usuń CV: ' + application.cvFileName">
                       @if (deletingCvId === application.id) {
                         <mat-spinner diameter="24"></mat-spinner>
                       } @else {
-                        <mat-icon>delete_outline</mat-icon>
+                        <mat-icon aria-hidden="true">delete_outline</mat-icon>
                       }
                     </button>
                   }

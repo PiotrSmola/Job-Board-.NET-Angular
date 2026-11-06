@@ -150,11 +150,11 @@
                     (click)="downloadCv(app)"
                     [disabled]="downloadingCvId() === app.id"
                     [matTooltip]="'Pobierz CV: ' + app.cvFileName"
-                    aria-label="Pobierz CV">
+                    [attr.aria-label]="'Pobierz CV: ' + app.cvFileName">
                     @if (downloadingCvId() === app.id) {
                       <mat-spinner diameter="24"></mat-spinner>
                     } @else {
-                      <mat-icon>description</mat-icon>
+                      <mat-icon aria-hidden="true">description</mat-icon>
                     }
                   </button>
                 }

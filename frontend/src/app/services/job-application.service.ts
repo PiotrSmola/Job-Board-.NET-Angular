@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpEventType, HttpParams } from '@angular/common/http';
-import { Observable, filter, map } from 'rxjs';
+import { HttpClient, HttpErrorResponse, HttpEventType, HttpParams } from '@angular/common/http';
+import { Observable, catchError, filter, from, map, switchMap, throwError } from 'rxjs';
 import {
   ApplicationCheck,
   CreateJobApplication,
@@ -13,6 +13,7 @@ import { PaginatedResult } from '../models/pagination.model';
 import { toPaginatedResult } from '../utils/pagination';
 import { resolveDownloadFileName } from '../utils/content-disposition';
 import { saveBlobAsFile } from '../utils/file-download';
+import { parseBlobErrorBody } from '../utils/blob-error';
 
 @Injectable({
   providedIn: 'root'
@@ -88,13 +89,17 @@ export class JobApplicationService {
   /**
    * Pobiera CV (właściciel, admin, pracodawca firmy oferty) i zapisuje je na dysku.
    * Nazwa pliku z nagłówka Content-Disposition, w drugiej kolejności `fallbackFileName` (np. `cvFileName` z DTO).
+   * Błąd ma treść sparsowaną z JSON (dla responseType 'blob' przychodzi jako Blob), więc działa getApiErrorMessage.
    */
   downloadCv(id: number, fallbackFileName: string | null = null): Observable<void> {
     return this.http.get(`${this.API_URL}/${id}/cv`, { observe: 'response', responseType: 'blob' }).pipe(
       map(response => {
         const fileName = resolveDownloadFileName(response.headers.get('Content-Disposition'), fallbackFileName);
         saveBlobAsFile(response.body ?? new Blob(), fileName);
-      })
+      }),
+      catchError((error: unknown) => error instanceof HttpErrorResponse
+        ? from(parseBlobErrorBody(error)).pipe(switchMap(parsed => throwError(() => parsed)))
+        : throwError(() => error))
     );
   }
 

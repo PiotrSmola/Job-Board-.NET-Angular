@@ -1,4 +1,5 @@
-import { Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
@@ -9,14 +10,18 @@ import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-err
 import { formatFileSize } from '../../utils/cv-file';
 import { CvUploadComponent } from '../shared/cv-upload.component';
 
-/** Dodanie lub zmiana CV aplikacji; zamyka się z zaktualizowaną aplikacją po udanym wysłaniu. */
+/**
+ * Dodanie lub zmiana CV aplikacji; zamyka się z zaktualizowaną aplikacją po udanym wysłaniu.
+ * Zamknięcie dialogu w trakcie wysyłania przerywa żądanie (unsubscribe przy zniszczeniu komponentu).
+ */
 @Component({
   selector: 'app-cv-dialog',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [DatePipe, MatDialogModule, MatButtonModule, MatIconModule, CvUploadComponent],
   template: `
     <h2 mat-dialog-title>
-      <mat-icon>description</mat-icon>
+      <mat-icon aria-hidden="true">description</mat-icon>
       {{ data.hasCv ? 'Zmień CV' : 'Dodaj CV' }}
     </h2>
     <mat-dialog-content>
@@ -30,16 +35,14 @@ import { CvUploadComponent } from '../shared/cv-upload.component';
       }
       <app-cv-upload
         [(file)]="file"
+        (fileChange)="error.set(null)"
         [progress]="progress()"
-        [disabled]="uploading()"
+        [errorMessage]="error()"
         [label]="data.hasCv ? 'Wybierz nowy plik' : 'Wybierz plik CV'" />
-      @if (error(); as message) {
-        <p class="error" role="alert">{{ message }}</p>
-      }
     </mat-dialog-content>
     <mat-dialog-actions align="end">
-      <button mat-button mat-dialog-close [disabled]="uploading()">Anuluj</button>
-      <button mat-raised-button color="primary" (click)="upload()" [disabled]="!file() || uploading()">
+      <button mat-button mat-dialog-close class="cancel-button">{{ uploading() ? 'Przerwij wysyłanie' : 'Anuluj' }}</button>
+      <button mat-raised-button color="primary" class="upload-button" (click)="upload()" [disabled]="!file() || uploading()">
         {{ data.hasCv ? 'Zastąp CV' : 'Prześlij CV' }}
       </button>
     </mat-dialog-actions>
@@ -49,19 +52,19 @@ import { CvUploadComponent } from '../shared/cv-upload.component';
     h2 { display: flex; align-items: center; gap: 12px; }
     .summary { margin: 0 0 12px; }
     .current { margin: 0 0 16px; color: var(--text-secondary); }
-    .error { color: var(--error-color); margin: 12px 0 0; }
     @media (max-width: 600px) { mat-dialog-content { min-width: 0; } }
   `]
 })
 export class CvDialogComponent {
   private applicationService = inject(JobApplicationService);
   private dialogRef = inject<MatDialogRef<CvDialogComponent, JobApplication>>(MatDialogRef);
+  private destroyRef = inject(DestroyRef);
 
   readonly data = inject<JobApplication>(MAT_DIALOG_DATA);
   readonly file = signal<File | null>(null);
   readonly progress = signal<number | null>(null);
-  readonly uploading = signal(false);
   readonly error = signal<string | null>(null);
+  readonly uploading = signal(false);
 
   upload(): void {
     const file = this.file();
@@ -70,14 +73,16 @@ export class CvDialogComponent {
     this.uploading.set(true);
     this.progress.set(0);
     this.error.set(null);
-    // w trakcie wysyłania dialogu nie da się zamknąć kliknięciem obok ani Esc
+    // w trakcie wysyłania dialogu nie zamyka kliknięcie obok ani Esc – tylko „Przerwij wysyłanie”
     this.dialogRef.disableClose = true;
 
-    this.applicationService.uploadCv(this.data.id, file).subscribe({
+    this.applicationService.uploadCv(this.data.id, file).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (event) => {
         if (event.type === 'progress') {
           this.progress.set(event.percent);
         } else {
+          // nie trzymamy referencji do pliku dłużej niż trzeba
+          this.file.set(null);
           this.dialogRef.close(event.application);
         }
       },

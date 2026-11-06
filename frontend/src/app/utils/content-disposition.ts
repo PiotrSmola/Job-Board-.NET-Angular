@@ -2,7 +2,9 @@
 
 const EXTENDED_FILENAME = /(?:^|;)\s*filename\*\s*=\s*([^;]*)/i;
 const PLAIN_FILENAME = /(?:^|;)\s*filename\s*=\s*(?:"((?:\\.|[^"\\])*)"|([^;]*))/i;
-const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
+// znaki niedozwolone w nazwach plików Windows (m.in. ':' – strumienie NTFS)
+const RESERVED_CHARS = /[<>:"|?*]/g;
 
 /**
  * Nazwa pliku z nagłówka: najpierw `filename*=` (np. `UTF-8''%C5%BC.pdf`), potem `filename=`.
@@ -55,10 +57,10 @@ function decodeExtendedValue(value: string): string | null {
   return null;
 }
 
-/** Bez ścieżek i znaków sterujących; null dla pustej nazwy. */
+/** Bez ścieżek, znaków sterujących i zarezerwowanych (zamieniane na '_'); null dla pustej nazwy. */
 function sanitizeFileName(name: string | null): string | null {
   if (!name) return null;
   const baseName = name.split(/[/\\]/).pop() ?? '';
-  const cleaned = baseName.replace(CONTROL_CHARS, '').trim();
+  const cleaned = baseName.replace(CONTROL_CHARS, '').replace(RESERVED_CHARS, '_').trim();
   return cleaned && cleaned !== '.' && cleaned !== '..' ? cleaned : null;
 }

@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -56,6 +56,7 @@ const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt',
 export class AdminApplicationsTabComponent {
   private applicationService = inject(JobApplicationService);
   private dialog = inject(MatDialog);
+  private destroyRef = inject(DestroyRef);
 
   /** admin – wszystkie aplikacje (z usuwaniem); employer – aplikacje do ofert własnej firmy, bez usuwania. */
   readonly mode = input<PanelMode>('admin');
@@ -155,7 +156,7 @@ export class AdminApplicationsTabComponent {
 
   downloadCv(application: JobApplication): void {
     this.downloadingCvId.set(application.id);
-    this.applicationService.downloadCv(application.id, application.cvFileName).subscribe({
+    this.applicationService.downloadCv(application.id, application.cvFileName).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => this.downloadingCvId.set(null),
       error: (error) => {
         console.error('Error downloading CV:', error);
