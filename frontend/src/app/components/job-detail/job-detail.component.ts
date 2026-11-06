@@ -20,10 +20,21 @@ import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model
 import { ApplicationStatus, JobApplication } from '../../models/job-application.model';
 import { getApplicationStatusPresentation, getJobState, StatusPresentation } from '../../utils/status-labels';
 import { StatusChipComponent } from '../shared/status-chip.component';
+import { CvUploadComponent } from '../shared/cv-upload.component';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
 
 const ALREADY_APPLIED_MESSAGE = 'You have already applied to this job';
 const NOT_ACCEPTING_MESSAGE = 'This job offer is not accepting applications';
+
+export const CV_UPLOAD_FAILED_MESSAGE =
+  'Aplikacja złożona, ale nie udało się dołączyć CV – możesz dodać je w Moich aplikacjach';
+
+/** Wynik dialogu aplikowania (undefined = anulowano). */
+export interface ApplyDialogResult {
+  confirmed: boolean;
+  note: string;
+  cvFile: File | null;
+}
 
 @Component({
   selector: 'app-apply-dialog',
@@ -34,7 +45,8 @@ const NOT_ACCEPTING_MESSAGE = 'This job offer is not accepting applications';
     MatDialogModule,
     MatFormFieldModule,
     MatInputModule,
-    MatButtonModule
+    MatButtonModule,
+    CvUploadComponent
   ],
   template: `
     <h2 mat-dialog-title>Aplikuj na stanowisko</h2>
@@ -44,19 +56,27 @@ const NOT_ACCEPTING_MESSAGE = 'This job offer is not accepting applications';
         <mat-label>Notatka</mat-label>
         <textarea matInput [(ngModel)]="note" rows="4" placeholder="Dlaczego jesteś idealnym kandydatem..."></textarea>
       </mat-form-field>
+      <p>Dołącz CV (opcjonalnie):</p>
+      <app-cv-upload [(file)]="cvFile" />
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close>Anuluj</button>
-      <button mat-raised-button color="primary" [mat-dialog-close]="{ confirmed: true, note: note }">Aplikuj</button>
+      <button mat-raised-button color="primary" [mat-dialog-close]="result()">Aplikuj</button>
     </mat-dialog-actions>
   `,
   styles: [`
     .full-width { width: 100%; }
     mat-dialog-content { min-width: 400px; padding: 20px; }
+    @media (max-width: 600px) { mat-dialog-content { min-width: 0; } }
   `]
 })
 export class ApplyDialogComponent {
   note = '';
+  cvFile: File | null = null;
+
+  result(): ApplyDialogResult {
+    return { confirmed: true, note: this.note, cvFile: this.cvFile };
+  }
 }
 
 @Component({
@@ -94,6 +114,8 @@ export class JobDetailComponent implements OnInit {
   applicationStatus: ApplicationStatus | null = null;
   checkingApplication = false;
   applying = false;
+  /** Postęp wysyłania CV po złożeniu aplikacji (null = CV nie jest wysyłane). */
+  cvUploadProgress: number | null = null;
 
   WorkType = WorkType;
 
@@ -183,14 +205,15 @@ export class JobDetailComponent implements OnInit {
 
     const dialogRef = this.dialog.open(ApplyDialogComponent);
 
-    dialogRef.afterClosed().subscribe((result: { confirmed: boolean, note: string } | undefined) => {
+    dialogRef.afterClosed().subscribe((result: ApplyDialogResult | undefined) => {
       if (result?.confirmed && this.job) {
-        this.applyToJob(result.note);
+        this.applyToJob(result.note, result.cvFile);
       }
     });
   }
 
-  applyToJob(note: string): void {
+  /** Najpierw składa aplikację, potem (opcjonalnie) dołącza CV – błąd CV nie cofa złożonej aplikacji. */
+  applyToJob(note: string, cvFile: File | null = null): void {
     if (!this.job) return;
 
     this.applying = true;
@@ -202,9 +225,16 @@ export class JobDetailComponent implements OnInit {
         const reapplied = this.hasWithdrawn;
         this.hasApplied = true;
         this.applicationStatus = application?.status ?? ApplicationStatus.Submitted;
+        const successMessage = reapplied ? 'Aplikacja została złożona ponownie!' : 'Aplikacja wysłana pomyślnie!';
+
+        if (cvFile) {
+          this.uploadCv(application?.id ?? null, cvFile, successMessage);
+          return;
+        }
+
         this.applying = false;
         this.cdr.detectChanges();
-        this.notify(reapplied ? 'Aplikacja została złożona ponownie!' : 'Aplikacja wysłana pomyślnie!');
+        this.notify(successMessage);
       },
       error: (error) => {
         this.applying = false;
@@ -228,8 +258,40 @@ export class JobDetailComponent implements OnInit {
     });
   }
 
-  private notify(message: string): void {
-    this.snackBar.open(message, 'OK', { duration: 5000 });
+  private uploadCv(applicationId: number | null, file: File, successMessage: string): void {
+    if (applicationId === null) {
+      this.finishCvUpload(CV_UPLOAD_FAILED_MESSAGE, 8000);
+      return;
+    }
+
+    this.cvUploadProgress = 0;
+    this.cdr.detectChanges();
+    this.applicationService.uploadCv(applicationId, file).subscribe({
+      next: (event) => {
+        if (event.type === 'progress') {
+          this.cvUploadProgress = event.percent;
+          this.cdr.detectChanges();
+        } else {
+          this.finishCvUpload(`${successMessage} CV zostało dołączone.`);
+        }
+      },
+      error: (error) => {
+        console.error('Error uploading CV:', error);
+        // Aplikacja jest już złożona – informujemy o tym zawsze, także przy 401/403
+        this.finishCvUpload(CV_UPLOAD_FAILED_MESSAGE, 8000);
+      }
+    });
+  }
+
+  private finishCvUpload(message: string, duration?: number): void {
+    this.applying = false;
+    this.cvUploadProgress = null;
+    this.cdr.detectChanges();
+    this.notify(message, duration);
+  }
+
+  private notify(message: string, duration = 5000): void {
+    this.snackBar.open(message, 'OK', { duration });
   }
 
   getWorkTypeLabel(): string {

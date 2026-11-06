@@ -91,7 +91,13 @@
             </div>
           }
 
-          @if (hasApplied) {
+          @if (hasApplied && cvUploadProgress !== null) {
+            <!-- aplikacja złożona, trwa dołączanie CV -->
+            <button mat-raised-button color="accent" disabled class="cv-upload-progress">
+              <mat-spinner diameter="20"></mat-spinner>
+              {{ cvUploadProgress >= 100 ? 'Przetwarzanie CV…' : 'Wysyłanie CV… ' + cvUploadProgress + '%' }}
+            </button>
+          } @else if (hasApplied) {
             <button mat-raised-button color="accent" disabled>
               <mat-icon>check_circle</mat-icon>
               Już aplikowałeś
