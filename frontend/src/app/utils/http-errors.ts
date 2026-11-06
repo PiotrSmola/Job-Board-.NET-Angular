@@ -37,6 +37,9 @@ const KNOWN_API_MESSAGES: Record<string, string> = {
   'Invalid multipart form data': 'Nie udało się odczytać przesłanych plików',
   'Attachments cannot be added in the current application status': 'Na tym etapie rekrutacji nie można już dodawać załączników',
   'Attachment not found': 'Nie znaleziono załącznika',
+  // statystyki
+  'Date range cannot exceed 366 days': 'Zakres dat nie może przekraczać 366 dni',
+  'Invalid date range': 'Nieprawidłowy zakres dat',
   [TOO_MANY_REQUESTS]: TOO_MANY_REQUESTS_PL,
   // m.in. 'Company must be approved before publishing offers'
   ...FORBIDDEN_API_MESSAGES
