@@ -19,6 +19,7 @@
         <mat-card-subtitle>
           <a class="company-link" [routerLink]="['/companies', job.companyId]">{{ job.company }}</a>
         </mat-card-subtitle>
+        <app-save-job-button class="push-end" [jobId]="job.id" [jobTitle]="job.title" />
       </mat-card-header>
 
       <mat-card-content>

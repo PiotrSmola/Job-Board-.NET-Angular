@@ -27,7 +27,7 @@ public class JwtSettingsTests
         Assert.Equal(string.Empty, settings.Secret);
         Assert.Equal("JobBoardAPI", settings.Issuer);
         Assert.Equal("JobBoardClient", settings.Audience);
-        Assert.Equal(1440, settings.ExpirationInMinutes);
+        Assert.Equal(120, settings.ExpirationInMinutes);
         Assert.False(settings.UsesDevelopmentSecret);
     }
 

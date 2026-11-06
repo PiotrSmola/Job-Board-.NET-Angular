@@ -1,10 +1,12 @@
-import { DestroyRef, Injectable, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, tap } from 'rxjs';
 import { ActivatedRouteSnapshot, Router } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { UserDto, LoginDto, RegisterDto, RegisterEmployerDto } from '../models/user.model';
-import { getJwtExpiration, getJwtRoles, isJwtExpired } from '../utils/jwt';
+import {
+  ConfirmEmailDto, LoginDto, RegisterDto, RegisterEmployerDto, ResetPasswordDto, UserDto
+} from '../models/user.model';
+import { getJwtExpiration, getJwtRoles, getJwtUserId, isJwtExpired } from '../utils/jwt';
 
 // setTimeout przyjmuje maksymalnie ~24,8 dnia
 const MAX_TIMER_DELAY = 2_147_483_647;
@@ -26,6 +28,9 @@ export class AuthService {
 
   /** Zalogowany użytkownik – tylko z ważnym tokenem (sesja czyszczona przy starcie i w chwili wygaśnięcia). */
   readonly currentUser = this.session.asReadonly();
+
+  /** Zalogowany użytkownik z niepotwierdzonym e-mailem – baner „Potwierdź adres e-mail” (nie blokuje aplikacji). */
+  readonly emailConfirmationPending = computed(() => this.session()?.emailConfirmed === false);
 
   constructor() {
     this.scheduleExpiry(this.session()?.token ?? null);
@@ -54,6 +59,65 @@ export class AuthService {
   logout(): void {
     this.clearSession();
     this.router.navigate(['/login']);
+  }
+
+  /** Zawsze 202 – API nie ujawnia, czy konto istnieje. */
+  forgotPassword(email: string): Observable<void> {
+    return this.http.post<void>(`${this.API_URL}/auth/forgot-password`, { email });
+  }
+
+  /**
+   * Ustawienie nowego hasła z linku z e-maila. Reset unieważnia stare tokeny – jeśli w tej przeglądarce
+   * jest zalogowany ten sam użytkownik, jego sesja jest już nieważna, więc ją czyścimy.
+   */
+  resetPassword(dto: ResetPasswordDto): Observable<void> {
+    return this.http.post<void>(`${this.API_URL}/auth/reset-password`, dto).pipe(
+      tap(() => {
+        const user = this.session();
+        if (user && user.email.toLowerCase() === dto.email.trim().toLowerCase()) {
+          this.clearSession();
+        }
+      })
+    );
+  }
+
+  /** Potwierdzenie adresu e-mail z linku; zalogowany ten sam użytkownik od razu traci baner. */
+  confirmEmail(dto: ConfirmEmailDto): Observable<void> {
+    return this.http.post<void>(`${this.API_URL}/auth/confirm-email`, dto).pipe(
+      tap(() => {
+        if (getJwtUserId(this.session()?.token) === dto.userId) {
+          this.updateCurrentUser({ emailConfirmed: true });
+        }
+      })
+    );
+  }
+
+  /** Ponowne wysłanie linku potwierdzającego (zalogowany; limit żądań po stronie API). */
+  resendConfirmation(): Observable<void> {
+    return this.http.post<void>(`${this.API_URL}/auth/resend-confirmation`, null);
+  }
+
+  /**
+   * Nowy token po zmianie hasła (API unieważnia poprzednie) – sesja trwa dalej.
+   * Gdy odpowiedź nie zawiera `emailConfirmed`, zostaje dotychczasowa wartość.
+   */
+  renewSession(user: UserDto): void {
+    const current = this.session();
+    this.setCurrentUser({ ...user, emailConfirmed: user.emailConfirmed ?? current?.emailConfirmed });
+  }
+
+  /** Aktualizacja danych zalogowanego użytkownika (np. imię po edycji profilu) bez zmiany tokena. */
+  updateCurrentUser(patch: Partial<Pick<UserDto, 'firstName' | 'lastName' | 'emailConfirmed'>>): void {
+    const current = this.session();
+    if (!current) return;
+    this.setCurrentUser({ ...current, ...patch });
+  }
+
+  /** Zakończenie sesji z komunikatem (np. po usunięciu konta) i przejście na listę ofert. */
+  endSession(message: string): void {
+    this.clearSession();
+    this.notify(message);
+    this.router.navigate(['/jobs']);
   }
 
   isAuthenticated(): boolean {

@@ -851,7 +851,7 @@ public class AttachmentUploadTests
         Assert.Equal("cv.pdf", Assert.Single(Assert.Single(mine).Attachments).FileName);
 
         using var employer = _api.CreateClient(setup.Employer);
-        var forJob = await (await employer.GetAsync($"{Url}/job/{setup.Job.Id}")).ReadJsonAsync<JobApplicationDto[]>();
+        var forJob = await (await employer.GetAsync($"{Url}/all?pageSize=50&jobOfferId={setup.Job.Id}")).ReadJsonAsync<JobApplicationDto[]>();
         Assert.Equal(AttachmentKind.Cv, Assert.Single(Assert.Single(forJob).Attachments).Kind);
     }
 

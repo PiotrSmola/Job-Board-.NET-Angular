@@ -5,15 +5,15 @@ namespace Backend.Helpers;
 
 public class JobParams : PaginationParams, IValidatableObject
 {
-    // Filtrowanie (wszystkie opcjonalne, łączone AND)
-    [MaxLength(200)]
+    // Filtrowanie (wszystkie opcjonalne, łączone AND; tekst do 100 znaków - dłuższy to 400, nie kosztowne LIKE)
+    [MaxLength(MaxSearchLength)]
     public string? SearchTerm { get; set; }
     // lista po przecinku (workType=0,1 = OR); pojedyncza liczba lub nazwa nadal działa
     [MaxLength(50)]
     public string? WorkType { get; set; }
     public decimal? MinSalary { get; set; }
     public decimal? MaxSalary { get; set; }
-    [MaxLength(200)]
+    [MaxLength(MaxSearchLength)]
     public string? Location { get; set; }
     public int? CompanyId { get; set; }
 

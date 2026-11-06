@@ -2,7 +2,9 @@ using System.ComponentModel.DataAnnotations;
 using Backend.DTOs;
 using Backend.Helpers;
 using Backend.Interfaces;
+using Backend.Settings;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Backend.Controllers;
 
@@ -21,6 +23,7 @@ public class SkillsController : ControllerBase
     // Umiejętności z ofert widocznych publicznie, których nazwa zawiera frazę (prefiksy przed fragmentami),
     // od najpopularniejszych; limit 1-20 (domyślnie 10)
     [HttpGet]
+    [EnableRateLimiting(RateLimitingSettings.PublicListsPolicy)]
     [ProducesResponseType(typeof(IEnumerable<SkillSuggestionDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IEnumerable<SkillSuggestionDto>>> GetSkills(

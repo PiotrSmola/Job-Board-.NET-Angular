@@ -10,9 +10,10 @@ namespace Backend.Tests.Integration;
 // Migracja AddJobTaxonomy na bazie z danymi: istniejące oferty dostają wartości domyślne (PLN, miesięcznie, bez typów
 // umów, bez kategorii i poziomu) i zachowują dane, nowe tabele mają unikalne klucze i kaskady, a Down wraca do
 // poprzedniego schematu bez utraty ofert. Dane sprzed migracji wstawiane są surowym SQL-em.
+[Trait("Category", "Migrations")]
 public class AddJobTaxonomyMigrationTests
 {
-    private const string PreviousMigration = "20261106103645_AddApplicationAttachments";
+    private const string PreviousMigration = "20261106152754_AddJobOfferListIndex";
     private const string AddJobTaxonomy = "20261106160558_AddJobTaxonomy";
 
     private static ApplicationDbContext CreateContext(string connectionString) =>

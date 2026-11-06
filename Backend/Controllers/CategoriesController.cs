@@ -2,7 +2,9 @@ using Backend.DTOs;
 using Backend.Helpers;
 using Backend.Interfaces;
 using Backend.Mappings;
+using Backend.Settings;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Backend.Controllers;
 
@@ -20,6 +22,7 @@ public class CategoriesController : ControllerBase
 
     // Wszystkie kategorie wg sortOrder i nazwy, z liczbą ofert widocznych publicznie (także 0)
     [HttpGet]
+    [EnableRateLimiting(RateLimitingSettings.PublicListsPolicy)]
     [ProducesResponseType(typeof(IEnumerable<CategoryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<CategoryDto>>> GetCategories(CancellationToken cancellationToken)
     {

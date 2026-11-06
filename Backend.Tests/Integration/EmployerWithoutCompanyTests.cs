@@ -82,7 +82,7 @@ public class EmployerWithoutCompanyTests
         using var client = await OrphanEmployerAsync();
 
         Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync($"/api/jobs/{job.Id}")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/jobapplications/job/{job.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"/api/jobapplications/all?jobOfferId={job.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/jobapplications/{application.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
             (await ApiFixture.ChangeApplicationStatusAsync(client, application.Id, ApplicationStatus.Hired)).StatusCode);

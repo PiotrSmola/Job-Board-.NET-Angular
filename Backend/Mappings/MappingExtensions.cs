@@ -140,6 +140,46 @@ public static class MappingExtensions
         UploadedAt = attachment.UploadedAt
     };
 
+    // Dokument profilu - bez klucza pliku i content type
+    public static ProfileDocumentDto ToDto(this ProfileDocument document) => new()
+    {
+        Id = document.Id,
+        Kind = document.Kind,
+        FileName = document.FileName,
+        Size = document.Size,
+        UploadedAt = document.UploadedAt
+    };
+
+    // Dokumenty profilu w kolejności jak załączniki aplikacji (rodzaj, data dodania)
+    public static List<ProfileDocumentDto> ToDtos(this IEnumerable<ProfileDocument> documents) => documents
+        .OrderBy(d => d.Kind)
+        .ThenBy(d => d.UploadedAt)
+        .ThenBy(d => d.Id)
+        .Select(d => d.ToDto())
+        .ToList();
+
+    public static ProfileDto ToProfileDto(this ApplicationUser user, IEnumerable<string> roles) => new()
+    {
+        Email = user.Email ?? string.Empty,
+        FirstName = user.FirstName ?? string.Empty,
+        LastName = user.LastName ?? string.Empty,
+        PhoneNumber = user.PhoneNumber,
+        Headline = user.Headline,
+        Location = user.Location,
+        LinkedInUrl = user.LinkedInUrl,
+        About = user.About,
+        EmailConfirmed = user.EmailConfirmed,
+        Roles = roles.Order(StringComparer.Ordinal).ToList(),
+        CreatedAt = user.CreatedAt
+    };
+
+    public static NotificationPreferencesDto ToNotificationPreferencesDto(this ApplicationUser user) => new()
+    {
+        ApplicationStatusChanged = user.NotifyApplicationStatusChanged,
+        NewApplication = user.NotifyNewApplication,
+        CompanyReview = user.NotifyCompanyReview
+    };
+
     // includeReview: status, powód odrzucenia i data decyzji (admin i członkowie firmy);
     // membersCount tylko w odpowiedziach panelu admina
     public static CategoryDto ToDto(this CategorySummary summary) => new()

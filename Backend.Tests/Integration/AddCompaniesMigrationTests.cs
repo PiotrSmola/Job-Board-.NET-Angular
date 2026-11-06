@@ -10,6 +10,7 @@ namespace Backend.Tests.Integration;
 // Migracja AddCompanies na bazie z danymi: oferty miały tekstową nazwę firmy (kolumna JobOffers.Company),
 // po migracji wskazują encję Company; Down przywraca kolumnę tekstową.
 // Dane sprzed migracji wstawiane są surowym SQL-em (bieżący model EF zna już nowy schemat).
+[Trait("Category", "Migrations")]
 public class AddCompaniesMigrationTests
 {
     private const string PreviousMigration = "20261104135648_AddRecruitmentWorkflow";

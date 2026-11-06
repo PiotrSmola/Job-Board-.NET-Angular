@@ -1,0 +1,16 @@
+@use '../account-forms';
+
+.preferences {
+  border: 0;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.preference + .preference {
+  margin-top: 12px;
+}
+
+.description {
+  margin: 0 0 0 40px;
+  font-size: 0.85rem;
+}

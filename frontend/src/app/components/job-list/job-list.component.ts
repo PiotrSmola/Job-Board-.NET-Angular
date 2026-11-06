@@ -21,6 +21,7 @@ import { formatExpiresSoon } from '../../utils/status-labels';
 import { JobTaxonomyComponent } from '../shared/job-taxonomy.component';
 import { RemovableChipsComponent } from '../shared/removable-chips.component';
 import { FilterChange, JobFiltersComponent } from './job-filters.component';
+import { SaveJobButtonComponent } from '../shared/save-job-button.component';
 
 /** Liczba szkieletów kart zarezerwowanych na czas pierwszego ładowania (bez przesunięć układu). */
 const SKELETON_COUNT = 6;
@@ -43,7 +44,8 @@ const SKELETON_COUNT = 6;
     RouterLink,
     JobFiltersComponent,
     JobTaxonomyComponent,
-    RemovableChipsComponent
+    RemovableChipsComponent,
+    SaveJobButtonComponent
   ],
   templateUrl: './job-list.component.html',
   styleUrl: './job-list.component.scss'

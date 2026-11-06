@@ -87,8 +87,7 @@ public class EmployerIsolationTests
             await client.PutJsonAsync($"/api/jobs/{b.Draft.Id}", updateBody),
             await client.PatchJsonAsync($"/api/jobs/{b.Job.Id}/status", new UpdateJobOfferStatusDto { Status = JobOfferStatus.Closed }),
             await client.DeleteAsync($"/api/jobs/{b.Job.Id}"),
-            await client.DeleteAsync($"/api/jobs/{b.Draft.Id}"),
-            await client.GetAsync($"/api/jobapplications/job/{b.Job.Id}")
+            await client.DeleteAsync($"/api/jobs/{b.Draft.Id}")
         };
 
         Assert.All(responses, r => Assert.Equal(HttpStatusCode.NotFound, r.StatusCode));

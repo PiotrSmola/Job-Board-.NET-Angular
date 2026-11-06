@@ -1,18 +1,2 @@
-import { Component, ChangeDetectionStrategy } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
-import { NavbarComponent } from './components/navbar/navbar.component';
-
-@Component({
-  selector: 'app-root',
-  standalone: true,
-  imports: [RouterOutlet, NavbarComponent],
-  template: `
-    <app-navbar></app-navbar>
-    <router-outlet></router-outlet>
-  `,
-  changeDetection: ChangeDetectionStrategy.Eager,
-  styles: []
-})
-export class AppComponent {
-  title = 'Job Board';
-}
+// Komponent startowy (main.ts) – ta sama powłoka co App (jeden szablon, jedna logika banera)
+export { App as AppComponent } from './app';

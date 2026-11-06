@@ -94,7 +94,6 @@ public class AttachmentConcurrencyTests
         public Task<JobApplication?> GetApplicationForUpdateAsync(int id) => inner.GetApplicationForUpdateAsync(id);
         public Task<JobApplication?> GetUserApplicationForJobAsync(int jobId, string userId) => inner.GetUserApplicationForJobAsync(jobId, userId);
         public Task<IEnumerable<JobApplication>> GetApplicationsByUserIdAsync(string userId) => inner.GetApplicationsByUserIdAsync(userId);
-        public Task<IEnumerable<JobApplication>> GetApplicationsByJobIdAsync(int jobId) => inner.GetApplicationsByJobIdAsync(jobId);
         public Task<PagedList<JobApplication>> GetApplicationsAsync(ApplicationParams applicationParams, ManagementScope scope) => inner.GetApplicationsAsync(applicationParams, scope);
         public Task<JobApplication> AddApplicationAsync(JobApplication application) => inner.AddApplicationAsync(application);
         public Task UpdateApplicationAsync(JobApplication application, Action<DateTime> change) => inner.UpdateApplicationAsync(application, change);

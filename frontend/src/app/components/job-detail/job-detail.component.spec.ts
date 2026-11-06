@@ -10,6 +10,9 @@ import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
 import { ContractTypes, Currency, JobOffer, JobOfferStatus, SalaryPeriod, SeniorityLevel, WorkType } from '../../models/job-offer.model';
 import { ApplicationAttachment, ApplicationStatus, AttachmentKind, AttachmentUploadEvent, AttachmentUploadItem } from '../../models/job-application.model';
+import { SavedJobsService } from '../../services/saved-jobs.service';
+import { AccountService } from '../../services/account.service';
+import { ProfileDocument } from '../../models/account.model';
 
 const JOB: JobOffer = {
   id: 5, title: 'Angular Developer', company: 'Acme', companyId: 1, description: 'Opis', salaryMin: 1000, salaryMax: 2000,
@@ -33,6 +36,8 @@ describe('JobDetailComponent', () => {
   let checkIfApplied: ReturnType<typeof vi.fn>;
   let applyToJob: ReturnType<typeof vi.fn>;
   let uploadAttachments: ReturnType<typeof vi.fn>;
+  let attachFromProfile: ReturnType<typeof vi.fn>;
+  let savedJobsEnabled: boolean;
   let getApplication: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
@@ -59,6 +64,8 @@ describe('JobDetailComponent', () => {
     checkIfApplied = vi.fn().mockReturnValue(of({ hasApplied: false }));
     applyToJob = vi.fn();
     uploadAttachments = vi.fn();
+    attachFromProfile = vi.fn();
+    savedJobsEnabled = false;
     getApplication = vi.fn().mockReturnValue(of({ id: 3, attachments: [] }));
     snackBarOpen = vi.fn();
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
@@ -70,7 +77,17 @@ describe('JobDetailComponent', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: '5' })) } },
         { provide: JobService, useValue: { getJob } },
-        { provide: JobApplicationService, useValue: { checkIfApplied, applyToJob, uploadAttachments, getApplication } },
+        { provide: JobApplicationService, useValue: { checkIfApplied, applyToJob, uploadAttachments, attachFromProfile, getApplication } },
+        {
+          provide: SavedJobsService,
+          useValue: {
+            enabled: () => savedJobsEnabled,
+            isSaved: (id: number) => id === 5,
+            isPending: () => false,
+            ensureLoaded: vi.fn(),
+            toggle: vi.fn()
+          }
+        },
         { provide: AuthService, useValue: { isAuthenticated: () => authenticated, isAdmin: () => admin, isEmployer: () => employer } },
         { provide: MatSnackBar, useValue: { open: snackBarOpen } }
       ]
@@ -301,6 +318,22 @@ describe('JobDetailComponent', () => {
       expect(getJob).toHaveBeenCalledTimes(2);
       expect(component.acceptsApplications).toBe(false);
       expect(snackBarOpen.mock.calls[0][0]).toBe('Ta oferta nie przyjmuje już aplikacji');
+    });
+  });
+
+  describe('saving the offer', () => {
+    it('shows the heart toggle in the header for a candidate', () => {
+      savedJobsEnabled = true;
+      create();
+
+      const button = (fixture.nativeElement as HTMLElement).querySelector('mat-card-header app-save-job-button button');
+      expect(button?.getAttribute('aria-label')).toBe('Usuń z zapisanych: Angular Developer');
+      expect(button?.getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('does not show it when saving is not available (e.g. employer)', () => {
+      create();
+      expect((fixture.nativeElement as HTMLElement).querySelector('app-save-job-button button')).toBeNull();
     });
   });
 
@@ -545,11 +578,79 @@ describe('JobDetailComponent', () => {
       expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja została złożona ponownie! Załączniki zostały dołączone.');
     });
 
+    describe('documents from the profile', () => {
+      it('copies the profile documents first and then uploads the new files', () => {
+        create();
+        applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
+        attachFromProfile.mockReturnValue(of({ id: 42 }));
+        uploadAttachments.mockReturnValue(of<AttachmentUploadEvent>({ type: 'done', application: { id: 42 } as never }));
+
+        component.applyToJob('', ITEMS, [7, 8]);
+
+        expect(attachFromProfile).toHaveBeenCalledWith(42, [7, 8]);
+        expect(uploadAttachments).toHaveBeenCalledWith(42, ITEMS);
+        expect(attachFromProfile.mock.invocationCallOrder[0]).toBeLessThan(uploadAttachments.mock.invocationCallOrder[0]);
+        expect(snackBarOpen).toHaveBeenCalledTimes(1);
+        expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja wysłana pomyślnie! Załączniki zostały dołączone.');
+        expect(liveStatus()).toBe('Załączniki przesłane');
+      });
+
+      it('only copies the profile documents when no new files were chosen', () => {
+        create();
+        applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
+        attachFromProfile.mockReturnValue(of({ id: 42 }));
+
+        component.applyToJob('', [], [7]);
+
+        expect(uploadAttachments).not.toHaveBeenCalled();
+        expect(component.applying).toBe(false);
+        expect(component.attachmentsUploadProgress).toBeNull();
+        expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja wysłana pomyślnie! Załączniki zostały dołączone.');
+      });
+
+      it('shows the processing state and announces the phase while the documents are copied', () => {
+        create();
+        applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
+        attachFromProfile.mockReturnValue(new Subject());
+
+        component.applyToJob('', [], [7]);
+
+        expect(text()).toContain('Przetwarzanie załączników…');
+        expect(liveStatus()).toBe('Dołączanie dokumentów z profilu…');
+      });
+
+      it('keeps the application, skips the upload and explains what to do when copying fails', () => {
+        create();
+        applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
+        attachFromProfile.mockReturnValue(throwError(() => httpError(400, { message: 'An application can have at most 10 attachments' })));
+
+        component.applyToJob('', ITEMS, [7]);
+
+        expect(uploadAttachments).not.toHaveBeenCalled();
+        expect(component.hasApplied).toBe(true);
+        expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
+        expect(liveStatus()).toBe('Przerwano wysyłanie');
+      });
+
+      it('cancels copying when the page is left', () => {
+        create();
+        const copied = new Subject<unknown>();
+        applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
+        attachFromProfile.mockReturnValue(copied);
+
+        component.applyToJob('', [], [7]);
+        fixture.destroy();
+
+        expect(copied.observed).toBe(false);
+        expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
+      });
+    });
+
     it('opens the apply dialog as an ARIA modal and passes the note and the attachments to applyToJob', () => {
       create();
       const dialog = (component as unknown as { dialog: MatDialog }).dialog;
       const open = vi.spyOn(dialog, 'open').mockReturnValue({
-        afterClosed: () => of({ confirmed: true, note: 'Cześć', attachments: ITEMS })
+        afterClosed: () => of({ confirmed: true, note: 'Cześć', attachments: ITEMS, profileDocumentIds: [] })
       } as never);
       const apply = vi.spyOn(component, 'applyToJob').mockImplementation(() => undefined);
 
@@ -557,7 +658,20 @@ describe('JobDetailComponent', () => {
 
       expect(open).toHaveBeenCalledWith(ApplyDialogComponent, { ...APPLY_DIALOG_CONFIG, data: { existing: [] } });
       expect(APPLY_DIALOG_CONFIG.ariaModal).toBe(true);
-      expect(apply).toHaveBeenCalledWith('Cześć', ITEMS);
+      expect(apply).toHaveBeenCalledWith('Cześć', ITEMS, []);
+    });
+
+    it('passes the documents chosen from the profile to applyToJob', () => {
+      create();
+      const dialog = (component as unknown as { dialog: MatDialog }).dialog;
+      vi.spyOn(dialog, 'open').mockReturnValue({
+        afterClosed: () => of({ confirmed: true, note: '', attachments: [], profileDocumentIds: [7, 8] })
+      } as never);
+      const apply = vi.spyOn(component, 'applyToJob').mockImplementation(() => undefined);
+
+      component.openApplyDialog();
+
+      expect(apply).toHaveBeenCalledWith('', [], [7, 8]);
     });
 
     it('does not apply when the dialog is cancelled', () => {
@@ -651,10 +765,18 @@ describe('JobDetailComponent', () => {
 });
 
 describe('ApplyDialogComponent', () => {
+  let profileDocuments: ProfileDocument[];
+
   beforeEach(async () => {
+    profileDocuments = [];
     await TestBed.configureTestingModule({
       imports: [ApplyDialogComponent],
-      providers: [{ provide: MatDialogRef, useValue: { close: vi.fn() } }, { provide: MAT_DIALOG_DATA, useValue: null }]
+      providers: [
+        provideRouter([]),
+        { provide: MatDialogRef, useValue: { close: vi.fn() } },
+        { provide: MAT_DIALOG_DATA, useValue: null },
+        { provide: AccountService, useValue: { getDocuments: () => of(profileDocuments) } }
+      ]
     }).compileComponents();
   });
 
@@ -672,12 +794,12 @@ describe('ApplyDialogComponent', () => {
     const fixture = TestBed.createComponent(ApplyDialogComponent);
     const dialog = fixture.componentInstance;
 
-    expect(dialog.result()).toEqual({ confirmed: true, note: '', attachments: [] });
+    expect(dialog.result()).toEqual({ confirmed: true, note: '', attachments: [], profileDocumentIds: [] });
 
     const items = [{ file: new File(['x'], 'cv.docx'), kind: AttachmentKind.Cv }];
     dialog.note = 'Hej';
     dialog.attachments = items;
-    expect(dialog.result()).toEqual({ confirmed: true, note: 'Hej', attachments: items });
+    expect(dialog.result()).toEqual({ confirmed: true, note: 'Hej', attachments: items, profileDocumentIds: [] });
   });
 
   it('collects the files chosen in the picker with their kinds', () => {
@@ -696,6 +818,24 @@ describe('ApplyDialogComponent', () => {
       { file: cv, kind: AttachmentKind.Cv }, { file: portfolio, kind: AttachmentKind.Other }
     ]);
     expect(root.querySelectorAll('.file-name').length).toBe(2);
+  });
+
+  it('offers the profile documents and counts them into the limits of the picker', () => {
+    profileDocuments = [
+      { id: 7, kind: AttachmentKind.Cv, fileName: 'cv-profil.pdf', size: 2 * 1024 * 1024, uploadedAt: '2026-01-01T10:00:00Z' }
+    ];
+    const fixture = TestBed.createComponent(ApplyDialogComponent);
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+
+    expect(root.querySelector('app-profile-documents-picker legend')?.textContent).toContain('Dołącz z profilu');
+    root.querySelector<HTMLInputElement>('app-profile-documents-picker input[type="checkbox"]')!.click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.result().profileDocumentIds).toEqual([7]);
+    // suma limitów liczona łącznie: dokument z profilu wlicza się do licznika pickera nowych plików
+    expect(root.querySelector('app-attachments-picker .usage')?.textContent).toContain('plików: 1 z 10');
+    expect(root.querySelector('app-attachments-picker .usage')?.textContent).toContain('Wykorzystano 2 MB z 25 MB');
   });
 
   describe('with the attachments kept from the withdrawn application', () => {
@@ -737,6 +877,34 @@ describe('ApplyDialogComponent', () => {
 
       expect(fixture.componentInstance.result().attachments.map(item => item.file)).toEqual([accepted]);
       expect(root.querySelector('.error-line')?.textContent).toContain('b.pdf');
+    });
+
+    it('counts the kept attachments and the chosen profile documents together', () => {
+      profileDocuments = [
+        { id: 7, kind: AttachmentKind.Other, fileName: 'portfolio.pdf', size: 2 * 1024 * 1024, uploadedAt: '2026-01-01T10:00:00Z' }
+      ];
+      const fixture = createWith([SAVED_CV]);
+      const root = fixture.nativeElement as HTMLElement;
+
+      root.querySelector<HTMLInputElement>('app-profile-documents-picker input[type="checkbox"]')!.click();
+      fixture.detectChanges();
+
+      const usage = root.querySelector('app-attachments-picker .usage')?.textContent;
+      expect(usage).toContain('plików: 2 z 10');
+      expect(usage).toContain('Wykorzystano 6 MB z 25 MB');
+    });
+
+    it('blocks a profile document that would exceed the limits together with the kept attachments', () => {
+      profileDocuments = [
+        { id: 7, kind: AttachmentKind.Other, fileName: 'portfolio.pdf', size: 1024, uploadedAt: '2026-01-01T10:00:00Z' }
+      ];
+      const kept = Array.from({ length: 10 }, (_, i): ApplicationAttachment => ({ ...SAVED_CV, id: 40 + i, fileName: `plik${i}.pdf`, size: 1024 }));
+      const fixture = createWith(kept);
+
+      // picker dokumentów profilu też liczy zachowane załączniki – jedenasty plik się nie zmieści
+      const checkbox = (fixture.nativeElement as HTMLElement)
+        .querySelector<HTMLInputElement>('app-profile-documents-picker input[type="checkbox"]')!;
+      expect(checkbox.disabled).toBe(true);
     });
 
     it('rejects a file that would exceed 25 MB together with the kept attachments', () => {

@@ -21,11 +21,13 @@ public static class JwtTestHelper
             .First(c => c.Type == ClaimTypes.NameIdentifier || c.Type == "nameid")
             .Value;
 
+    // wartość claimu security stampu z tokenu (skrót stampu - TokenService.HashSecurityStamp)
     public static string? GetSecurityStamp(string token) =>
         Read(token).Claims.FirstOrDefault(c => c.Type == TokenService.SecurityStampClaimType)?.Value;
 
     // Buduje token podpisany dowolnym kluczem - do testów odrzucania nieprawidłowych tokenów.
-    // Token jest akceptowany tylko dla istniejącego użytkownika z aktualnym security stampem.
+    // Token jest akceptowany tylko dla istniejącego użytkownika ze skrótem aktualnego security stampu (securityStamp
+    // to wartość claimu, np. z GetSecurityStamp albo TokenService.HashSecurityStamp(stamp z bazy)).
     public static string Create(
         string secret,
         string issuer = "JobBoardAPI",

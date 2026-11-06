@@ -1,0 +1,15 @@
+@use '../shared/auth-card';
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+}

@@ -2,11 +2,12 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, TestRequest, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute, ParamMap, Router, UrlTree, convertToParamMap, provideRouter } from '@angular/router';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { JobListComponent } from './job-list.component';
 import { ContractTypes, Currency, JobOffer, SalaryPeriod, SeniorityLevel, WorkType } from '../../models/job-offer.model';
 import { Category, JobFacets } from '../../models/taxonomy.model';
 import { makeJob } from '../../../testing/job-fixtures';
+import { SavedJobsService } from '../../services/saved-jobs.service';
 
 // Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
 vi.setConfig({ testTimeout: 20000 });
@@ -40,6 +41,8 @@ describe('JobListComponent', () => {
   let router: Router;
   let query$: BehaviorSubject<ParamMap>;
   let navigate: ReturnType<typeof vi.spyOn>;
+  let savedJobsEnabled: boolean;
+  let toggle: ReturnType<typeof vi.fn>;
 
   const root = () => fixture.nativeElement as HTMLElement;
   const jobRequests = () => http.match(r => r.url === '/api/jobs');
@@ -80,12 +83,22 @@ describe('JobListComponent', () => {
   }
 
   beforeEach(() => {
+    savedJobsEnabled = false;
+    toggle = vi.fn().mockReturnValue(of(true));
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     TestBed.configureTestingModule({
       imports: [JobListComponent],
-      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()]
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: SavedJobsService,
+          useValue: { enabled: () => savedJobsEnabled, isSaved: (id: number) => id === 2, isPending: () => false, ensureLoaded: vi.fn(), toggle }
+        }
+      ]
     });
     http = TestBed.inject(HttpTestingController);
     router = TestBed.inject(Router);
@@ -746,6 +759,36 @@ describe('JobListComponent', () => {
       root().querySelector<HTMLElement>('mat-card-title')!.click();
 
       expect(viewDetails).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('saving offers', () => {
+    it('shows a heart toggle per card for a candidate, with the offer title in the label and the saved state', () => {
+      savedJobsEnabled = true;
+      create();
+      flushAll(jobs(2), 2);
+
+      const buttons = Array.from(root().querySelectorAll('app-save-job-button button'));
+      expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual(['Zapisz ofertę: Oferta 1', 'Usuń z zapisanych: Oferta 2']);
+      expect(buttons.map(b => b.getAttribute('aria-pressed'))).toEqual(['false', 'true']);
+    });
+
+    it('toggling does not open the offer details', () => {
+      savedJobsEnabled = true;
+      create();
+      flushAll(jobs(1), 1);
+      const viewDetails = vi.spyOn(component, 'viewJobDetails').mockImplementation(() => undefined);
+
+      root().querySelector<HTMLButtonElement>('app-save-job-button button')!.click();
+
+      expect(toggle).toHaveBeenCalledWith(1);
+      expect(viewDetails).not.toHaveBeenCalled();
+    });
+
+    it('shows no hearts for visitors who cannot save offers', () => {
+      create();
+      flushAll(jobs(2), 2);
+      expect(root().querySelector('app-save-job-button button')).toBeNull();
     });
   });
 });

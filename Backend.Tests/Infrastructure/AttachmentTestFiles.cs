@@ -36,6 +36,11 @@ public static class AttachmentTestFiles
     // minimalny pakiet OOXML: [Content_Types].xml i word/document.xml
     public static byte[] Docx() => Zip(("[Content_Types].xml", "<Types/>"), ("word/document.xml", "<w:document/>"));
 
+    // Stała data wpisów ZIP: ta sama treść daje zawsze te same bajty. Domyślnie wpis dostaje bieżący czas zapisany
+    // w nagłówku z dokładnością do 2 s - plik zbudowany ponownie po chwili (np. oczekiwana treść pobranego załącznika)
+    // różnił się wtedy bajtem czasu i porównanie zawodziło losowo.
+    public static readonly DateTimeOffset ZipEntryTime = new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+
     // ZIP bez części dokumentu Word (np. zwykłe archiwum albo XLSX)
     public static byte[] Zip(params (string Name, string Content)[] entries)
     {
@@ -44,7 +49,9 @@ public static class AttachmentTestFiles
         {
             foreach (var (name, content) in entries)
             {
-                using var writer = new StreamWriter(archive.CreateEntry(name).Open());
+                var entry = archive.CreateEntry(name);
+                entry.LastWriteTime = ZipEntryTime;
+                using var writer = new StreamWriter(entry.Open());
                 writer.Write(content);
             }
         }

@@ -3,8 +3,10 @@ using Backend.Helpers;
 using Backend.Interfaces;
 using Backend.Mappings;
 using Backend.Models;
+using Backend.Settings;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Backend.Controllers;
 
@@ -43,6 +45,7 @@ public class JobsController : ControllerBase
     // Publiczna lista - wyłącznie oferty aktywne i niewygasłe firm zatwierdzonych (opcjonalne filtry: companyId,
     // kategoria, poziom, typy umów, tryb pracy, umiejętności, waluta i widełki - łączone AND)
     [HttpGet]
+    [EnableRateLimiting(RateLimitingSettings.PublicListsPolicy)]
     [ProducesResponseType(typeof(IEnumerable<JobOfferDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IEnumerable<JobOfferDto>>> GetJobs([FromQuery] JobParams jobParams)
@@ -58,6 +61,7 @@ public class JobsController : ControllerBase
     // Liczniki faset publicznej listy (te same filtry co GET /api/jobs, bez stronicowania); licznik fasety
     // pomija jej własny filtr, żeby można było rozszerzać wybór w grupie
     [HttpGet("facets")]
+    [EnableRateLimiting(RateLimitingSettings.PublicListsPolicy)]
     [ProducesResponseType(typeof(JobFacetsDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<JobFacetsDto>> GetFacets([FromQuery] JobParams jobParams, CancellationToken cancellationToken)

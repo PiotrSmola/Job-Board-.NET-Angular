@@ -24,14 +24,36 @@ public class DockerUpScriptTests
         "MISSING=$(Get-EnvValue 'MISSING' 'fallback')"
         """;
 
-    private static Dictionary<string, string> RunGetEnvValue(string envFileContent)
+    // Funkcje hasła adminów (z New-RandomSecret): 30 wygenerowanych haseł i ocena przykładowych wartości z .env
+    private const string AdminPasswordHarness = """
+        param([string]$ScriptPath)
+        $tokens = $null; $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$errors)
+        if ($errors.Count -gt 0) { throw "docker-up.ps1 has parse errors: $($errors -join '; ')" }
+        foreach ($name in 'New-RandomSecret', 'Test-AdminPassword', 'New-AdminPassword') {
+            $function = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true) | Select-Object -First 1
+            if (-not $function) { throw "function $name not found" }
+            Invoke-Expression $function.Extent.Text
+        }
+        1..30 | ForEach-Object { "GENERATED=$(New-AdminPassword)" }
+        foreach ($candidate in 'Abcdefgh12345678', 'abcdefgh12345678', 'ABCDEFGH12345678', 'AbcdefghIjklmnop', 'Abc123', 'Abcdefgh 12345678', 'Abcdefgh-12345678') {
+            "CHECK=$candidate=$(Test-AdminPassword $candidate)"
+        }
+        """;
+
+    private static Dictionary<string, string> RunGetEnvValue(string envFileContent) =>
+        RunHarness(Harness, envFileContent)
+            .Select(line => line.Split('=', 2))
+            .ToDictionary(parts => parts[0], parts => parts[1]);
+
+    private static List<string> RunHarness(string harness, string envFileContent = "")
     {
         var directory = Directory.CreateTempSubdirectory("docker-up-test-");
         try
         {
             File.WriteAllText(Path.Combine(directory.FullName, ".env"), envFileContent);
             var harnessPath = Path.Combine(directory.FullName, "harness.ps1");
-            File.WriteAllText(harnessPath, Harness, new UTF8Encoding(true));
+            File.WriteAllText(harnessPath, harness, new UTF8Encoding(true));
 
             var shell = OperatingSystem.IsWindows() && !CanStart("pwsh") ? "powershell" : "pwsh";
             var startInfo = new ProcessStartInfo(shell)
@@ -51,9 +73,7 @@ public class DockerUpScriptTests
             process.WaitForExit();
             Assert.True(process.ExitCode == 0, $"PowerShell failed: {error}");
 
-            return output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(line => line.Split('=', 2))
-                .ToDictionary(parts => parts[0], parts => parts[1]);
+            return output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         }
         finally
         {
@@ -108,6 +128,50 @@ public class DockerUpScriptTests
         Assert.Contains("\"SEED_DEMO_ACCOUNTS=$seedDemoAccounts\"", script);
     }
 
+    // Hasło adminów: 16+ liter i cyfr z małą i wielką literą oraz cyfrą (polityka haseł backendu, bez escapowania w .env)
+    [Fact]
+    public void AdminPassword_IsGeneratedToMatchThePasswordPolicy()
+    {
+        var lines = RunHarness(AdminPasswordHarness);
+
+        var generated = lines.Where(l => l.StartsWith("GENERATED=", StringComparison.Ordinal)).Select(l => l["GENERATED=".Length..]).ToList();
+        Assert.Equal(30, generated.Count);
+        Assert.All(generated, password => Assert.Matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])[A-Za-z0-9]{20}$", password));
+        Assert.Equal(30, generated.Distinct().Count());
+
+        var checks = lines.Where(l => l.StartsWith("CHECK=", StringComparison.Ordinal))
+            .Select(l => l["CHECK=".Length..].Split('='))
+            .ToDictionary(parts => parts[0], parts => parts[1]);
+        Assert.Equal("True", checks["Abcdefgh12345678"]);
+        foreach (var invalid in new[] { "abcdefgh12345678", "ABCDEFGH12345678", "AbcdefghIjklmnop", "Abc123", "Abcdefgh 12345678", "Abcdefgh-12345678" })
+        {
+            Assert.Equal("False", checks[invalid]);
+        }
+    }
+
+    [Fact]
+    public void Script_GeneratesKeepsAndPrintsTheAdminPassword()
+    {
+        var script = File.ReadAllText(RepositoryFiles.Find("docker-up.ps1"));
+
+        Assert.Contains("Get-EnvValue 'ADMIN_PASSWORD'", script);
+        Assert.Contains("Test-AdminPassword $adminPassword", script);
+        Assert.Contains("\"ADMIN_PASSWORD=$adminPassword\"", script);
+        // compose wymaga ADMIN_PASSWORD już przy "down"
+        Assert.Contains("$env:ADMIN_PASSWORD = $adminPassword", script);
+        Assert.Contains("Env:ADMIN_PASSWORD", script);
+        Assert.Matches(new Regex(@"Write-Host ""Admin:\s+admin@jobboard\.com / \$adminPassword"), script);
+    }
+
+    [Fact]
+    public void Script_KeepsSwaggerEnabledFromPreviousEnvFile()
+    {
+        var script = File.ReadAllText(RepositoryFiles.Find("docker-up.ps1"));
+
+        Assert.Contains("Get-EnvValue 'SWAGGER_ENABLED'", script);
+        Assert.Contains("\"SWAGGER_ENABLED=$swaggerEnabled\"", script);
+    }
+
     [Fact]
     public void Script_GeneratesAndKeepsS3Keys()
     {
@@ -143,6 +207,17 @@ public class DockerUpScriptTests
         {
             Assert.DoesNotMatch(pattern, invalid);
         }
+    }
+
+    [Fact]
+    public void Script_PicksAFreeMailpitPortAndPrintsItsUrl()
+    {
+        // port UI Mailpita wybierany jak pozostałe (preferowany 8025, kolejny wolny) i zapisywany w .env
+        var script = File.ReadAllText(RepositoryFiles.Find("docker-up.ps1"));
+
+        Assert.Contains("[int]$MailpitPort = 8025", script);
+        Assert.Contains("MAILPIT_PORT  = Get-FreePort $MailpitPort", script);
+        Assert.Contains("Mailpit:  http://localhost:$($ports.MAILPIT_PORT)", script);
     }
 
     [Fact]

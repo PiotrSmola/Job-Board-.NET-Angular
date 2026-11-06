@@ -1,9 +1,14 @@
 using System.Net;
 using System.Security.Claims;
 using Backend.Models;
+using Backend.Services;
 using Backend.Tests.Infrastructure;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 
 namespace Backend.Tests.Integration;
 
@@ -93,11 +98,50 @@ public class JwtAuthenticationTests
     [Fact]
     public async Task ProtectedEndpoint_WithExpiredToken_ReturnsUnauthorized()
     {
-        // poza domyślnym ClockSkew (5 min)
         var (userId, stamp) = await ValidIdentityAsync();
         var token = JwtTestHelper.Create(JobBoardFactory.TestJwtSecret, expires: DateTime.UtcNow.AddHours(-1), userId: userId, securityStamp: stamp);
 
         Assert.Equal(HttpStatusCode.Unauthorized, await GetStatusAsync(ProtectedUrl, token));
+    }
+
+    // tolerancja zegara to 30 s (domyślne 5 minut przedłużały ważność każdego tokenu)
+    [Theory]
+    [InlineData(-60, HttpStatusCode.Unauthorized)]
+    [InlineData(-10, HttpStatusCode.OK)]
+    public async Task ProtectedEndpoint_TokenExpiredSecondsAgo_IsAcceptedOnlyWithinThirtySecondSkew(int expiredSeconds, HttpStatusCode expected)
+    {
+        var (userId, stamp) = await ValidIdentityAsync();
+        var token = JwtTestHelper.Create(JobBoardFactory.TestJwtSecret, expires: DateTime.UtcNow.AddSeconds(expiredSeconds),
+            userId: userId, role: "User", securityStamp: stamp);
+
+        Assert.Equal(expected, await GetStatusAsync(ProtectedUrl, token));
+    }
+
+    // tylko HS256 (algorytm TokenService) i tolerancja zegara 30 s - token podpisany innym algorytmem jest odrzucany
+    // przed sprawdzeniem podpisu (klucz testowy jest za krótki dla HS384/HS512, więc sprawdzamy konfigurację)
+    [Fact]
+    public void TokenValidation_AllowsOnlyHs256AndThirtySecondsOfClockSkew()
+    {
+        var options = _api.Factory.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(JwtBearerDefaults.AuthenticationScheme);
+
+        Assert.Equal(new[] { SecurityAlgorithms.HmacSha256 }, options.TokenValidationParameters.ValidAlgorithms);
+        Assert.Equal(TimeSpan.FromSeconds(30), options.TokenValidationParameters.ClockSkew);
+        Assert.True(options.TokenValidationParameters.ValidateLifetime);
+    }
+
+    // token nie zawiera samego security stampu, tylko jego skrót - token ze stampem w starym formacie jest odrzucany
+    [Fact]
+    public async Task IssuedToken_ContainsOnlyAHashOfTheSecurityStamp()
+    {
+        var user = await _api.RegisterUserAsync("stamphash");
+        var rawStamp = await _api.QueryDbAsync(db => db.Users.Where(u => u.Id == user.Id).Select(u => u.SecurityStamp).SingleAsync());
+        Assert.False(string.IsNullOrEmpty(rawStamp));
+
+        Assert.Equal(TokenService.HashSecurityStamp(rawStamp!), JwtTestHelper.GetSecurityStamp(user.Token));
+        Assert.DoesNotContain(rawStamp!, JwtTestHelper.Read(user.Token).Claims.Select(c => c.Value));
+        var oldFormat = JwtTestHelper.Create(JobBoardFactory.TestJwtSecret, userId: user.Id, role: "User", securityStamp: rawStamp);
+        Assert.Equal(HttpStatusCode.Unauthorized, await GetStatusAsync(ProtectedUrl, oldFormat));
     }
 
     [Fact]
@@ -182,7 +226,7 @@ public class JwtAuthenticationTests
     }
 
     [Fact]
-    public async Task IssuedToken_ContainsIdentityClaimsSecurityStampAndDayLongExpiry()
+    public async Task IssuedToken_ContainsIdentityClaimsSecurityStampAndTwoHourExpiry()
     {
         var token = await _api.LoginAsync(TestUsers.AdminEmail, TestUsers.AdminPassword);
 
@@ -195,6 +239,6 @@ public class JwtAuthenticationTests
         Assert.False(string.IsNullOrEmpty(JwtTestHelper.GetUserId(token)));
         Assert.False(string.IsNullOrEmpty(JwtTestHelper.GetSecurityStamp(token)));
         var lifetime = jwt.ValidTo - DateTime.UtcNow;
-        Assert.InRange(lifetime.TotalMinutes, 1430, 1441);
+        Assert.InRange(lifetime.TotalMinutes, 115, 121);
     }
 }

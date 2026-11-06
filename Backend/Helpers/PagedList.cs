@@ -24,8 +24,17 @@ public class PagedList<T> : List<T>
 
     public static async Task<PagedList<T>> CreateAsync(IQueryable<T> source, int pageNumber, int pageSize)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageNumber, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+
         var count = await source.CountAsync();
-        var items = await source.Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync();
+
+        // przesunięcie liczone na long - (pageNumber - 1) * pageSize przepełniało int (ujemny OFFSET -> 500);
+        // strona za końcem listy jest pusta bez zapytania o elementy
+        var skip = (long)(pageNumber - 1) * pageSize;
+        var items = skip >= count
+            ? []
+            : await source.Skip((int)skip).Take(pageSize).ToListAsync();
 
         return new PagedList<T>(items, count, pageNumber, pageSize);
     }

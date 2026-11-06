@@ -16,4 +16,8 @@ public static class HttpExtensions
 
         response.Headers.Append("Pagination", JsonSerializer.Serialize(paginationHeader));
     }
+
+    // Klucz partycji limitu żądań per adres klienta (po UseForwardedHeaders - adres z X-Forwarded-For od nginx)
+    public static string ClientIpPartitionKey(this HttpContext context) =>
+        "ip:" + (context.Connection.RemoteIpAddress?.ToString() ?? "unknown");
 }

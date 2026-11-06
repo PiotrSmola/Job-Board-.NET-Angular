@@ -1,7 +1,11 @@
+# Wszystkie usługi z no-new-privileges: procesy w kontenerach nie mogą zyskać uprawnień (np. przez binarki setuid);
+# entrypointy obrazów (MySQL, SeaweedFS, nginx) tylko je porzucają, przechodząc z roota na swojego użytkownika.
 services:
   db:
     image: mysql:8.4.13
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-jobboard}
       MYSQL_DATABASE: JobBoardDb
@@ -22,6 +26,8 @@ services:
   storage:
     image: chrislusf/seaweedfs:4.50
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       S3_ACCESS_KEY: "${S3_ACCESS_KEY:?S3_ACCESS_KEY is not set - run docker-up.ps1 or set it in .env}"
       S3_SECRET_KEY: "${S3_SECRET_KEY:?S3_SECRET_KEY is not set - run docker-up.ps1 or set it in .env}"
@@ -46,14 +52,30 @@ services:
       retries: 30
       start_period: 20s
 
+  # lokalna skrzynka pocztowa (Mailpit) - przechwytuje wszystkie e-maile aplikacji (nic nie wychodzi na zewnątrz);
+  # UI tylko na localhost, SMTP (1025) bez publikowanego portu - dostępny tylko z sieci compose
+  mailpit:
+    image: axllent/mailpit:v1.31.1
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      MP_MAX_MESSAGES: 1000
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+
   backend:
     build: ./Backend
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       db:
         condition: service_healthy
       storage:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__DefaultConnection: "Server=db;Port=3306;Database=JobBoardDb;User=root;Password=${DB_PASSWORD:-jobboard};AllowPublicKeyRetrieval=true;"
@@ -63,18 +85,29 @@ services:
       Admin__AllowSeedRefresh: ${ALLOW_SEED_REFRESH:-true}
       # lokalny stack demo: konta demo kandydatów i pracodawców ze znanymi hasłami (README); false - tylko konta adminów
       Seed__DemoAccounts: ${SEED_DEMO_ACCOUNTS:-true}
+      # hasło nowo tworzonych kont adminów (pierwszy start, reset danych demo) - generowane przez docker-up.ps1 i zapisywane w .env
+      Seed__AdminPassword: "${ADMIN_PASSWORD:?ADMIN_PASSWORD is not set - run docker-up.ps1 or set it in .env}"
+      # lokalny stack demo: Swagger UI pod /swagger (poza Development wyłączony, o ile nie włączono go jawnie)
+      Swagger__Enabled: ${SWAGGER_ENABLED:-true}
       # pliki załączników aplikacji w usłudze storage (SeaweedFS, bucket tworzony przy starcie backendu); klucze z .env
       Storage__Provider: S3
       Storage__S3__ServiceUrl: http://storage:8333
       Storage__S3__Bucket: jobboard
       Storage__S3__AccessKey: "${S3_ACCESS_KEY:?S3_ACCESS_KEY is not set - run docker-up.ps1 or set it in .env}"
       Storage__S3__SecretKey: "${S3_SECRET_KEY:?S3_SECRET_KEY is not set - run docker-up.ps1 or set it in .env}"
+      # e-maile (potwierdzenie adresu, reset hasła, powiadomienia) do Mailpita; linki w nich prowadzą do frontendu
+      Email__Smtp__Host: mailpit
+      Email__Smtp__Port: 1025
+      Email__Smtp__Security: None
+      Frontend__BaseUrl: http://localhost:${FRONTEND_PORT:-4200}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-5285}:8080"
 
   frontend:
     build: ./frontend
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - backend
     ports:

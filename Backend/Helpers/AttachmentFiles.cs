@@ -17,6 +17,12 @@ public sealed record AttachmentFileType(string Extension, string ContentType)
     public static readonly AttachmentFileType Png = new(".png", "image/png");
 
     public static readonly AttachmentFileType Jpeg = new(".jpg", "image/jpeg");
+
+    private static readonly AttachmentFileType[] All = [Pdf, Docx, Png, Jpeg];
+
+    // typ zapisanego pliku (content type ustalony wcześniej przez serwer) - np. kopia dokumentu profilu w aplikacji
+    public static AttachmentFileType? FromContentType(string contentType) =>
+        All.FirstOrDefault(t => string.Equals(t.ContentType, contentType, StringComparison.OrdinalIgnoreCase));
 }
 
 // Walidacja, limity i nazewnictwo plików załączników aplikacji
@@ -40,6 +46,11 @@ public static class AttachmentFiles
     // wspólny prefiks kluczy plików załączników w magazynie
     public const string StorageKeyPrefix = "attachments/";
 
+    // dokumenty profilu kandydata: te same typy i limit pliku, 10 dokumentów i 25 MB łącznie na profil
+    public const string ProfileStorageKeyPrefix = "profile-documents/";
+    public const int MaxProfileDocuments = 10;
+    public const long MaxProfileTotalSize = 25 * 1024 * 1024;
+
     // DOCX: limity z katalogu centralnego ZIP (treść nigdy nie jest rozpakowywana) - ochrona przed zip bombą,
     // plikami z ogromną liczbą wpisów i katalogiem centralnym wczytywanym w całości do pamięci
     public const int MaxDocxEntries = 1000;
@@ -56,6 +67,10 @@ public static class AttachmentFiles
     public const string InvalidKindMessage = "Invalid attachment kind";
     public const string StatusMessage = "Attachments cannot be added in the current application status";
     public const string NotFoundMessage = "Attachment not found";
+    public const string ProfileTooManyMessage = "A profile can have at most 10 documents";
+    public const string ProfileTotalTooLargeMessage = "Total size of profile documents cannot exceed 25 MB";
+    public const string DocumentNotFoundMessage = "Document not found";
+    public const string NoDocumentsSelectedMessage = "No documents selected";
 
     private static readonly byte[] PdfSignature = "%PDF-"u8.ToArray();
     private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
@@ -175,6 +190,14 @@ public static class AttachmentFiles
     // Klucz w magazynie generowany przez serwer - nigdy z nazwy pliku użytkownika
     public static string NewStorageKey(int applicationId, AttachmentFileType type) =>
         $"{StorageKeyPrefix}{applicationId}/{Guid.NewGuid():N}{type.Extension}";
+
+    // Klucz dokumentu profilu; id użytkownika (GUID z Identity) tylko jako segment katalogu - znaki inne niż litery,
+    // cyfry i "-" są obronnie zastępowane
+    public static string NewProfileStorageKey(string userId, AttachmentFileType type)
+    {
+        var segment = new string(userId.Select(c => char.IsAsciiLetterOrDigit(c) || c == '-' ? c : '_').ToArray());
+        return $"{ProfileStorageKeyPrefix}{segment}/{Guid.NewGuid():N}{type.Extension}";
+    }
 
     // Content-Disposition: attachment z nazwą w UTF-8 (filename*, RFC 5987/6266) - budowany przez
     // ContentDispositionHeaderValue, który koduje każdy znak spoza dozwolonych (także CR/LF i cudzysłowy)
