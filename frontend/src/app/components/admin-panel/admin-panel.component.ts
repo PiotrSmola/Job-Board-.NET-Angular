@@ -9,6 +9,7 @@ import { AuthService } from '../../services/auth.service';
 import { AdminJobsTabComponent } from './admin-jobs-tab/admin-jobs-tab.component';
 import { AdminApplicationsTabComponent } from './admin-applications-tab/admin-applications-tab.component';
 import { AdminCompaniesTabComponent } from './admin-companies-tab/admin-companies-tab.component';
+import { StatsDashboardComponent } from '../stats/stats-dashboard.component';
 
 const JOBS_TAB = 0;
 const APPLICATIONS_TAB = 1;
@@ -23,7 +24,9 @@ const COMPANIES_TAB = 2;
     MatTabsModule,
     AdminJobsTabComponent,
     AdminApplicationsTabComponent,
-    AdminCompaniesTabComponent
+    AdminCompaniesTabComponent,
+    // używany wyłącznie w @defer – Angular wydziela go do osobnego chunka
+    StatsDashboardComponent
   ],
   templateUrl: './admin-panel.component.html',
   styleUrl: './admin-panel.component.scss'

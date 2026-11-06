@@ -74,6 +74,22 @@
           <app-employer-company-tab [company]="current" (companyChange)="onCompanyChange($event)"></app-employer-company-tab>
         </ng-template>
       </mat-tab>
+
+      <mat-tab label="Statystyki">
+        <ng-template mat-tab-label>
+          <mat-icon class="tab-icon">insights</mat-icon>
+          Statystyki
+        </ng-template>
+
+        <ng-template matTabContent>
+          <!-- Kod wykresów jest ładowany dopiero przy pierwszym wejściu w zakładkę -->
+          @defer (on immediate) {
+            <app-stats-dashboard mode="employer" />
+          } @placeholder {
+            <div class="stats-placeholder" role="status">Wczytywanie statystyk…</div>
+          }
+        </ng-template>
+      </mat-tab>
     </mat-tab-group>
   }
 </div>

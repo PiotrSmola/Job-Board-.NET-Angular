@@ -74,6 +74,13 @@
   }
 }
 
+// Rezerwacja miejsca na zakładkę statystyk ładowaną leniwie (bez skoku układu)
+.stats-placeholder {
+  min-height: 480px;
+  padding: 24px;
+  color: var(--text-secondary);
+}
+
 // Przycisk jest projektowany do paska akcji zakładki ofert (ng-content)
 .refresh-seed-button {
   display: flex;
