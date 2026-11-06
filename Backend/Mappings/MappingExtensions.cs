@@ -70,7 +70,7 @@ public static class MappingExtensions
         job.ExpiresAt = dto.GetExpiresAtUtc();
     }
 
-    // Wymaga załadowanych nawigacji JobOffer (z Company) i User (Include) - inaczej pola pochodne będą puste.
+    // Wymaga załadowanych nawigacji JobOffer (z Company), User i Attachments (Include) - inaczej pola pochodne będą puste.
     // includeHistory: dołącza historię (wymaga Include StatusHistory); includeChangedBy: autor zmian
     // (tylko dla admina i pracodawcy firmy oferty)
     public static JobApplicationDto ToDto(this JobApplication application, bool includeHistory = false, bool includeChangedBy = false) => new()
@@ -88,10 +88,13 @@ public static class MappingExtensions
         Company = application.JobOffer?.Company?.Name ?? string.Empty,
         CompanyId = application.JobOffer?.CompanyId ?? 0,
         JobOffer = application.JobOffer?.ToDto(),
-        HasCv = application.HasCv,
-        CvFileName = application.HasCv ? application.CvFileName : null,
-        CvSize = application.HasCv ? application.CvSize : null,
-        CvUploadedAt = application.HasCv ? application.CvUploadedAt : null,
+        Attachments = (application.Attachments ?? [])
+            .OrderBy(a => a.Kind)
+            .ThenBy(a => a.UploadedAt)
+            .ThenBy(a => a.Id)
+            .Select(a => a.ToDto())
+            .ToList(),
+        AttachmentsTotalSize = (application.Attachments ?? []).Sum(a => a.Size),
         History = includeHistory
             ? (application.StatusHistory ?? [])
                 .OrderBy(h => h.ChangedAt)
@@ -107,6 +110,16 @@ public static class MappingExtensions
         ChangedAt = entry.ChangedAt,
         Comment = entry.Comment,
         ChangedBy = includeChangedBy ? DescribeUser(entry.ChangedByUser) : null
+    };
+
+    // Bez klucza pliku i content type - dane magazynu nie trafiają do API
+    public static ApplicationAttachmentDto ToDto(this ApplicationAttachment attachment) => new()
+    {
+        Id = attachment.Id,
+        Kind = attachment.Kind,
+        FileName = attachment.FileName,
+        Size = attachment.Size,
+        UploadedAt = attachment.UploadedAt
     };
 
     // includeReview: status, powód odrzucenia i data decyzji (admin i członkowie firmy);

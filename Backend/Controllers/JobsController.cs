@@ -199,7 +199,7 @@ public class JobsController : ControllerBase
         return Ok(job.ToDto(now));
     }
 
-    // Admin usuwa ofertę razem z aplikacjami (kaskadowo, z plikami CV); pracodawca tylko ofertę bez aplikacji -
+    // Admin usuwa ofertę razem z aplikacjami (kaskadowo, z plikami załączników); pracodawca tylko ofertę bez aplikacji -
     // ofertę z aplikacjami kandydatów może zamknąć, ale nie usunąć ich danych
     [HttpDelete("{id}")]
     [Authorize(Roles = Roles.AdminOrEmployer)]
@@ -218,14 +218,14 @@ public class JobsController : ControllerBase
 
         if (_access.IsAdmin)
         {
-            var (deleted, cvFileKeys) = await _jobRepository.DeleteJobAsync(id);
+            var (deleted, fileKeys) = await _jobRepository.DeleteJobAsync(id);
             if (!deleted)
             {
                 return NotFound(new { message = JobNotFoundMessage });
             }
 
-            // pliki CV usuniętych aplikacji dopiero po zatwierdzeniu usunięcia w bazie
-            await _fileStorage.DeleteQuietlyAsync(cvFileKeys, _logger);
+            // pliki załączników usuniętych aplikacji dopiero po zatwierdzeniu usunięcia w bazie
+            await _fileStorage.DeleteQuietlyAsync(fileKeys, _logger);
             return NoContent();
         }
 

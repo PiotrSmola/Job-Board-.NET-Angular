@@ -4,9 +4,11 @@ using Backend.Helpers;
 using Backend.Interfaces;
 using Backend.Mappings;
 using Backend.Models;
+using Backend.Settings;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Controllers;
@@ -21,11 +23,6 @@ public class JobApplicationsController : ControllerBase
     private const string ConcurrentChangeMessage = "Application status was changed by another request";
 
     private const string JobNotFoundMessage = "Job offer not found";
-
-    private const string CvNotFoundMessage = "CV not found";
-    private const string CvStatusMessage = "CV cannot be changed in the current application status";
-    private const string CvConcurrentChangeMessage = "CV was changed by another request";
-    private const string NoFileMessage = "No file uploaded - send it in the 'file' form field";
 
     private readonly IJobApplicationRepository _applicationRepository;
     private readonly IJobRepository _jobRepository;
@@ -323,30 +320,33 @@ public class JobApplicationsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> DeleteApplication(int id)
     {
-        var (deleted, cvFileKey) = await _applicationRepository.DeleteApplicationAsync(id);
+        var (deleted, fileKeys) = await _applicationRepository.DeleteApplicationAsync(id);
 
         if (!deleted)
         {
             return NotFound(new { message = ApplicationNotFoundMessage });
         }
 
-        // plik CV dopiero po zatwierdzeniu usunięcia w bazie
-        await _fileStorage.DeleteQuietlyAsync(cvFileKey, _logger);
+        // pliki załączników dopiero po zatwierdzeniu usunięcia w bazie
+        await _fileStorage.DeleteQuietlyAsync(fileKeys, _logger);
 
         return NoContent();
     }
 
-    // Dodanie albo zamiana CV przez kandydata (multipart/form-data, pole "file"; PDF lub DOCX do 5 MB, typ
-    // rozpoznawany po zawartości). Kolejność: zapis nowego pliku -> warunkowy zapis w bazie -> usunięcie starego
-    // pliku; gdy zapis w bazie się nie uda, nowy plik jest usuwany.
-    [HttpPut("{id:int}/cv")]
-    [CvUploadForm]
-    [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status200OK)]
+    // Dodanie załączników przez kandydata: multipart/form-data, jedno lub więcej pól "files" i równoległa lista "kinds"
+    // (AttachmentKind jako liczba; brak - Other). PDF, DOCX, PNG, JPEG (typ po zawartości) do 5 MB na plik, najwyżej
+    // 10 plików i 25 MB łącznie na aplikację. Wszystko albo nic: najpierw walidacja wszystkich plików, potem zapis
+    // plików w magazynie, na końcu rekordy w bazie (pod blokadą wiersza aplikacji z kontrolą limitów); gdy zapis
+    // w bazie się nie uda albo limit przekroczy równoległe żądanie - zapisane pliki są usuwane.
+    [HttpPost("{id:int}/attachments")]
+    [EnableRateLimiting(RateLimitingSettings.UploadsPolicy)]
+    [DisableFormValueModelBinding]
+    [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<ActionResult<JobApplicationDto>> UploadCv(int id, IFormFile? file)
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<ActionResult<JobApplicationDto>> UploadAttachments(int id)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId))
@@ -354,84 +354,109 @@ public class JobApplicationsController : ControllerBase
             return Unauthorized();
         }
 
-        var application = await _applicationRepository.GetApplicationByIdAsync(id, cancellationToken: HttpContext.RequestAborted);
+        var cancellationToken = HttpContext.RequestAborted;
 
-        // tylko właściciel - cudza aplikacja wygląda jak nieistniejąca
-        if (application == null || application.UserId != userId)
+        // właściciel i status sprawdzane lekkim zapytaniem PRZED odczytem treści żądania (do 26 MB) - cudza
+        // aplikacja wygląda jak nieistniejąca, a jej id nie zmusi serwera do buforowania plików
+        var ownership = await _applicationRepository.GetOwnershipAsync(id, cancellationToken);
+        if (ownership == null || ownership.UserId != userId)
         {
             return NotFound(new { message = ApplicationNotFoundMessage });
         }
 
-        if (!application.CanChangeCv)
+        if (!JobApplication.AttachmentUploadStatuses.Contains(ownership.Status))
         {
-            return BadRequest(new { message = CvStatusMessage });
+            return BadRequest(new { message = AttachmentFiles.StatusMessage });
         }
 
-        if (file == null)
+        var form = await AttachmentUploadForm.ReadAsync(HttpContext, cancellationToken);
+        if (form.Error != null)
         {
-            return BadRequest(new { message = NoFileMessage });
+            return BadRequest(new { message = form.Error });
         }
 
-        if (file.Length == 0)
+        // walidacja wszystkich plików, zanim cokolwiek trafi do magazynu
+        var uploadedAt = DateTime.UtcNow;
+        var uploads = new List<(IFormFile File, ApplicationAttachment Attachment)>(form.Items.Count);
+        foreach (var item in form.Items)
         {
-            return BadRequest(new { message = CvFiles.EmptyFileMessage });
+            var (error, type) = await ValidateAttachmentAsync(item.File, cancellationToken);
+            if (type == null)
+            {
+                return BadRequest(new { message = error });
+            }
+
+            uploads.Add((item.File, new ApplicationAttachment
+            {
+                Kind = item.Kind,
+                FileKey = AttachmentFiles.NewStorageKey(id, type),
+                FileName = AttachmentFiles.SanitizeFileName(item.File.FileName, type),
+                ContentType = type.ContentType,
+                Size = item.File.Length,
+                UploadedAt = uploadedAt
+            }));
         }
 
-        if (file.Length > CvFiles.MaxFileSize)
+        if (uploads.Sum(u => u.Attachment.Size) > AttachmentFiles.MaxTotalSize)
         {
-            return BadRequest(new { message = CvFiles.TooLargeMessage });
+            return BadRequest(new { message = AttachmentFiles.TotalTooLargeMessage });
         }
 
-        // strumień pliku z formularza jest przewijalny (bufor ASP.NET Core) - po sprawdzeniu typu wraca na początek
-        await using var content = file.OpenReadStream();
-        var type = await CvFiles.DetectTypeAsync(content, HttpContext.RequestAborted);
-        if (type == null)
-        {
-            return BadRequest(new { message = CvFiles.UnsupportedTypeMessage });
-        }
-
-        var cv = new CvFile(
-            CvFiles.NewStorageKey(id, type),
-            CvFiles.SanitizeFileName(file.FileName, type),
-            type.ContentType,
-            file.Length,
-            DateTime.UtcNow);
-
-        await _fileStorage.SaveAsync(cv.Key, content, cv.ContentType, HttpContext.RequestAborted);
-
-        bool updated;
+        var savedKeys = new List<string>(uploads.Count);
+        AttachmentsAddResult result;
         try
         {
-            // bez tokenu żądania: przerwanie w trakcie zapisu mogłoby zostawić niepewny stan (zapis wykonany,
-            // a nowy plik usunięty poniżej) - po zapisaniu pliku operacja jest doprowadzana do końca
-            updated = await _applicationRepository.UpdateCvAsync(id, userId, application.CvFileKey, cv, CancellationToken.None);
+            foreach (var (file, attachment) in uploads)
+            {
+                // klucz dodawany przed zapisem - sprzątany jest też plik, którego zapis się nie udał (magazyn nie
+                // zostawia częściowych plików, ale S3 mógł przyjąć obiekt tuż przed zerwaniem połączenia)
+                savedKeys.Add(attachment.FileKey);
+                await using var content = file.OpenReadStream();
+                await _fileStorage.SaveAsync(attachment.FileKey, content, attachment.ContentType, cancellationToken);
+            }
+
+            // bez tokenu żądania: po zapisaniu plików operacja jest doprowadzana do końca, żeby przerwanie nie
+            // zostawiło niepewnego stanu (rekordy zapisane, a pliki usunięte poniżej)
+            result = await _applicationRepository.AddAttachmentsAsync(id, userId,
+                uploads.Select(u => u.Attachment).ToList(), CancellationToken.None);
         }
         catch
         {
-            await _fileStorage.DeleteQuietlyAsync(cv.Key, _logger);
+            await _fileStorage.DeleteQuietlyAsync(savedKeys, _logger);
             throw;
         }
 
-        if (!updated)
+        if (result != AttachmentsAddResult.Added)
         {
-            await _fileStorage.DeleteQuietlyAsync(cv.Key, _logger);
-            return await CvChangeRejectedAsync(id, userId, requireCv: false);
+            // stan zmieniło równoległe żądanie (np. decyzja rekrutera, inny upload, usunięcie aplikacji)
+            await _fileStorage.DeleteQuietlyAsync(savedKeys, _logger);
+            return result switch
+            {
+                AttachmentsAddResult.ApplicationNotFound => NotFound(new { message = ApplicationNotFoundMessage }),
+                AttachmentsAddResult.StatusNotAllowed => BadRequest(new { message = AttachmentFiles.StatusMessage }),
+                AttachmentsAddResult.TooMany => BadRequest(new { message = AttachmentFiles.TooManyMessage }),
+                _ => BadRequest(new { message = AttachmentFiles.TotalTooLargeMessage })
+            };
         }
 
-        await _fileStorage.DeleteQuietlyAsync(application.CvFileKey, _logger);
+        var application = await _applicationRepository.GetApplicationByIdAsync(id, includeHistory: true);
+        if (application == null)
+        {
+            // aplikację usunięto zaraz po zapisie - jej pliki usunęło to samo usunięcie
+            return NotFound(new { message = ApplicationNotFoundMessage });
+        }
 
-        // zmienia tylko kandydat - nie widzi autorów zmian
-        return await ApplicationWithHistoryAsync(id, includeChangedBy: false);
+        // dodaje tylko kandydat - nie widzi autorów zmian
+        return CreatedAtAction(nameof(GetApplication), new { id }, application.ToDto(includeHistory: true));
     }
 
-    // Usunięcie CV przez kandydata (te same statusy co przy wgrywaniu)
-    [HttpDelete("{id:int}/cv")]
+    // Usunięcie załącznika przez kandydata - w każdym statusie aplikacji (prawo do usunięcia danych); plik
+    // z magazynu dopiero po zatwierdzeniu usunięcia rekordu
+    [HttpDelete("{id:int}/attachments/{attachmentId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> DeleteCv(int id)
+    public async Task<IActionResult> DeleteAttachment(int id, int attachmentId)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId))
@@ -439,40 +464,28 @@ public class JobApplicationsController : ControllerBase
             return Unauthorized();
         }
 
-        var application = await _applicationRepository.GetApplicationByIdAsync(id, cancellationToken: HttpContext.RequestAborted);
-        if (application == null || application.UserId != userId)
+        // przerwanie w trakcie najwyżej osieroci plik (bez rekordu wskazującego na nieistniejący plik)
+        var (result, fileKey) = await _applicationRepository.DeleteAttachmentAsync(id, attachmentId, userId, HttpContext.RequestAborted);
+        switch (result)
         {
-            return NotFound(new { message = ApplicationNotFoundMessage });
+            case AttachmentDeleteResult.ApplicationNotFound:
+                return NotFound(new { message = ApplicationNotFoundMessage });
+            case AttachmentDeleteResult.AttachmentNotFound:
+                return NotFound(new { message = AttachmentFiles.NotFoundMessage });
         }
 
-        if (!application.HasCv)
-        {
-            return NotFound(new { message = CvNotFoundMessage });
-        }
-
-        if (!application.CanChangeCv)
-        {
-            return BadRequest(new { message = CvStatusMessage });
-        }
-
-        // przerwanie w trakcie zapisu najwyżej osieroci plik (bez odwołania w bazie do nieistniejącego pliku)
-        if (!await _applicationRepository.UpdateCvAsync(id, userId, application.CvFileKey, null, HttpContext.RequestAborted))
-        {
-            return await CvChangeRejectedAsync(id, userId, requireCv: true);
-        }
-
-        await _fileStorage.DeleteQuietlyAsync(application.CvFileKey, _logger);
+        await _fileStorage.DeleteQuietlyAsync(fileKey, _logger);
 
         return NoContent();
     }
 
-    // Pobranie CV: kandydat (własna aplikacja), admin, pracodawca firmy oferty; pozostali - 404
-    [HttpGet("{id:int}/cv")]
+    // Pobranie załącznika: kandydat (własna aplikacja), admin, pracodawca firmy oferty; pozostali - 404
+    [HttpGet("{id:int}/attachments/{attachmentId:int}")]
     [ProducesResponseType(typeof(FileStreamResult), StatusCodes.Status200OK, "application/pdf",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/png", "image/jpeg")]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> DownloadCv(int id)
+    public async Task<IActionResult> DownloadAttachment(int id, int attachmentId)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId))
@@ -480,30 +493,47 @@ public class JobApplicationsController : ControllerBase
             return Unauthorized();
         }
 
-        var application = await _applicationRepository.GetApplicationByIdAsync(id, cancellationToken: HttpContext.RequestAborted);
+        var cancellationToken = HttpContext.RequestAborted;
+        var application = await _applicationRepository.GetApplicationByIdAsync(id, cancellationToken: cancellationToken);
         if (application == null || (application.UserId != userId && !await _access.CanManageApplicationAsync(application)))
         {
             return NotFound(new { message = ApplicationNotFoundMessage });
         }
 
-        if (!application.HasCv)
+        var attachment = application.Attachments.FirstOrDefault(a => a.Id == attachmentId);
+        if (attachment == null)
         {
-            return NotFound(new { message = CvNotFoundMessage });
+            return NotFound(new { message = AttachmentFiles.NotFoundMessage });
         }
 
-        var content = await _fileStorage.OpenReadAsync(application.CvFileKey!, HttpContext.RequestAborted);
-        if (content == null)
+        var file = await _fileStorage.OpenReadAsync(attachment.FileKey, cancellationToken);
+        if (file == null)
         {
-            _logger.LogWarning("CV file {FileKey} of application {ApplicationId} is missing in storage",
-                application.CvFileKey, application.Id);
-            return NotFound(new { message = CvNotFoundMessage });
+            _logger.LogWarning("Attachment file {FileKey} of application {ApplicationId} is missing in storage",
+                attachment.FileKey, application.Id);
+            return NotFound(new { message = AttachmentFiles.NotFoundMessage });
         }
 
-        Response.Headers.ContentDisposition = CvFiles.ContentDisposition(application.CvFileName ?? "cv");
-        Response.Headers.XContentTypeOptions = "nosniff";
-        Response.Headers.CacheControl = "no-store";
+        try
+        {
+            Response.Headers.ContentDisposition = AttachmentFiles.ContentDisposition(attachment.FileName);
+            Response.Headers.XContentTypeOptions = "nosniff";
+            Response.Headers.CacheControl = "no-store";
+            // rozmiar podany przez magazyn (Local - plik, S3 - nagłówek odpowiedzi); strumienia S3 nie da się
+            // przewijać, więc FileStreamResult sam by go nie ustawił
+            if (file.Length.HasValue)
+            {
+                Response.ContentLength = file.Length.Value;
+            }
 
-        return File(content, application.CvContentType ?? "application/octet-stream");
+            // FileStreamResult zwalnia strumień po wysłaniu odpowiedzi (także przerwanej)
+            return File(file.Content, attachment.ContentType);
+        }
+        catch
+        {
+            await file.DisposeAsync();
+            throw;
+        }
     }
 
     [HttpGet("check/{jobId}")]
@@ -549,27 +579,24 @@ public class JobApplicationsController : ControllerBase
         return Ok(applications.Select(a => a.ToDto()));
     }
 
-    // Warunkowy zapis CV nie trafił w żaden wiersz - powód ustalany na aktualnym stanie aplikacji
-    private async Task<ObjectResult> CvChangeRejectedAsync(int id, string userId, bool requireCv)
+    // Rozmiar i typ pliku (po zawartości): wykryty typ albo komunikat błędu
+    private static async Task<(string? Error, AttachmentFileType? Type)> ValidateAttachmentAsync(IFormFile file,
+        CancellationToken cancellationToken)
     {
-        var current = await _applicationRepository.GetApplicationByIdAsync(id, cancellationToken: HttpContext.RequestAborted);
-        if (current == null || current.UserId != userId)
+        if (file.Length == 0)
         {
-            return NotFound(new { message = ApplicationNotFoundMessage });
+            return (AttachmentFiles.EmptyFileMessage, null);
         }
 
-        if (requireCv && !current.HasCv)
+        if (file.Length > AttachmentFiles.MaxFileSize)
         {
-            return NotFound(new { message = CvNotFoundMessage });
+            return (AttachmentFiles.TooLargeMessage, null);
         }
 
-        if (!current.CanChangeCv)
-        {
-            return BadRequest(new { message = CvStatusMessage });
-        }
-
-        // równoległe żądanie zmieniło CV w międzyczasie
-        return Conflict(new { message = CvConcurrentChangeMessage });
+        // strumień pliku z formularza jest przewijalny (bufor ASP.NET Core)
+        await using var content = file.OpenReadStream();
+        var type = await AttachmentFiles.DetectTypeAsync(content, cancellationToken);
+        return type == null ? (AttachmentFiles.UnsupportedTypeMessage, null) : (null, type);
     }
 
     private async Task<ActionResult<JobApplicationDto>> ApplicationWithHistoryAsync(int id, bool includeChangedBy)
