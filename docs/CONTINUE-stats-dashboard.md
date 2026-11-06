@@ -53,3 +53,31 @@ Frontend powstaje PRZED backendem – ten kontrakt jest źródłem prawdy. JSON 
 ## Stan prac
 
 Frontend jest robiony PRZED backendem (równolegle z etapem 3 i aktualizacjami), w worktree `.worktrees/stats-dashboard`, od commita `a421eff` gałęzi `feature/cv-upload`. Backend powstanie później wg tego kontraktu (po merge'u aktualizacji zależności, etapu 3 i przeglądu jakości do `main`). Potem: testy, review, poprawki, dopasowanie do nowej wersji Angulara, merge.
+
+## Frontend – stan
+
+Zaimplementowane wg kontraktu (frontend/src/app):
+
+- `models/stats.model.ts` – typy odpowiedzi admina i pracodawcy; `services/stats.service.ts` – `getAdminStats`, `getEmployerStats`, `exportCsv(mode, range)` (blob + `resolveDownloadFileName` + `saveBlobAsFile`, fallback nazwy `statystyki-<od>_<do>.csv`, błąd z blobu parsowany do JSON).
+- `components/stats/` – `StatsDashboardComponent` (wspólny, `mode` = `admin` | `employer`) oraz podkomponenty OnPush: zakres dat (`stats-range-picker`), kafelki KPI, wykres liniowy SVG, lejek SVG, sortowalna tabela ofert. Zakładka „Statystyki” (ostatnia) w panelu admina i pracodawcy; zawartość w `@defer (on immediate)`, więc kod dashboardu i MatDatepicker jest w osobnym chunku, a nie w initial bundle.
+- `utils/stats-range.ts` (presety, parsowanie/walidacja zakresu, daty po polsku), `utils/chart-scale.ts` (skala „nice”, ścieżki, indeksy etykiet, znaczniki), `utils/stats-view.ts` (modele widoku, opisy `aria-label`).
+- Zakres w query params `from`/`to` (źródło prawdy to URL; zmiana zakresu = `router.navigate` z `replaceUrl`, domyślny zakres nie zapisuje się do URL). Niepoprawne parametry (zły format, `from > to`, > 366 dni) cicho wracają do domyślnych 30 dni.
+- Dane ładowane przez `toObservable(...)` + `switchMap` (zmiana zakresu/ponowienie anuluje trwające żądanie), `takeUntilDestroyed`; brak timerów.
+- Wykresy: `viewBox` (responsywne), `role="img"` z `aria-label` (zakres dat, sumy, dzień szczytu), osie z polskimi etykietami dat, legenda tekstowa będąca przyciskami (`aria-pressed`; skala Y dopasowuje się do widocznych serii), serie rozróżnialne kolorem + kreskowaniem + kształtem znacznika, przełącznik „Pokaż jako tabelę” (prawdziwa `<table>` z `<caption>` i `scope`).
+
+### Rozstrzygnięcia niejasności kontraktu
+
+- „Tooltip dostępny z klawiatury albo pominięty” – pominięty; zamiast niego tabela z dokładnymi wartościami.
+- Dni statystyk są w UTC: presety liczone od dnia UTC (`toISOString`), a daty wybrane w kalendarzu bierzemy jako dzień kalendarzowy bez przesunięcia strefy.
+- Jedna wspólna skala Y dla wszystkich serii (np. wyświetlenia vs nowi użytkownicy mają różne rzędy wielkości) – legenda pozwala ukryć serię, a skala dopasowuje się do pozostałych (ostatniej widocznej nie da się ukryć).
+- Dla zakresu bez żadnej aktywności (same zera, `submitted = 0`) zamiast wykresów pokazujemy stan „Brak danych w wybranym zakresie”; kafelki KPI (stany całkowite) i tabela ofert pozostają widoczne.
+- Mediana: „~X h” (jedno miejsce po przecinku poniżej 10 h), `null` -> „brak danych”.
+- Tabela admina to `topJobs` (kolumny: oferta, firma, aplikacje, wyświetlenia), pracodawcy – `jobs` (status liczony z `status` + `isExpired`, konwersja = `conversionRate`); domyślne sortowanie po aplikacjach malejąco.
+- Zakres własny > 366 dni jest odrzucany po stronie klienta (komunikat `role="alert"`), bez żądania; komunikaty 400 z API są tłumaczone (`Date range cannot exceed 366 days`, `Invalid date range`).
+- Zakładka nie jest odzwierciedlona w URL (odświeżenie `/admin?from=..&to=..` otwiera pierwszą zakładkę); zakres w URL wspólny dla trybu admina i pracodawcy (osobne trasy).
+- Po powrocie na zakładkę dane nie są przeładowywane automatycznie (zakładki mają `preserveContent`); dostępny przycisk „Odśwież”.
+
+### Weryfikacja i ryzyka (frontend)
+
+- `npx ng build` przechodzi bez błędów; paczka startowa 629,32 kB (ostrzeżenie budżetu 500 kB istniało już wcześniej). Analiza `--stats-json`: w chunkach startowych nie ma żadnego pliku z `components/stats`, `stats.service`, `http-errors`, MatDatepicker ani MatSlideToggle – dashboard jest osobnym leniwym chunkiem (`stats-dashboard-component`, ok. 61 kB surowo / 14 kB po kompresji). Różnica względem poprzednio zanotowanych 623,41 kB wynika z wersji zainstalowanych zależności w tym worktree (Angular 21.0.6, Material 21.0.5), nie z tych zmian.
+- Specy napisane (utils, serwis, 5 komponentów, zakładki w obu panelach), ale NIE zostały jeszcze uruchomione: kontener `jobboard-dev-node` miał wyczerpany swap przez osierocone procesy `ng test`/vitest z wielu sesji i workery nie startowały (`Timeout waiting for worker to respond`). Kompilacja specyfikacji (`ng test` – etap budowania) przechodzi. Po zwolnieniu zasobów uruchomić pełny `npx ng test --watch=false`.
