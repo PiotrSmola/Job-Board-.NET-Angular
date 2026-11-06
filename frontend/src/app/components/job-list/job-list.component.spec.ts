@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, TestRequest, provideHttpClientTesting } from '@angular/common/http/testing';
-import { ActivatedRoute, ParamMap, Router, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, ParamMap, Router, UrlTree, convertToParamMap, provideRouter } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 import { JobListComponent } from './job-list.component';
 import { ContractTypes, Currency, JobOffer, SalaryPeriod, SeniorityLevel, WorkType } from '../../models/job-offer.model';
@@ -728,11 +728,16 @@ describe('JobListComponent', () => {
     });
 
     it('clicking the company link does not open the offer details', () => {
+      const router = TestBed.inject(Router);
+      // routerLink nawiguje przez navigateByUrl - test nie rejestruje trasy profilu firmy
+      const navigateByUrl = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
       const viewDetails = vi.spyOn(component, 'viewJobDetails');
 
       root().querySelector<HTMLAnchorElement>('a.company-link')!.click();
 
       expect(viewDetails).not.toHaveBeenCalled();
+      expect(navigateByUrl).toHaveBeenCalledTimes(1);
+      expect(router.serializeUrl(navigateByUrl.mock.calls[0][0] as UrlTree)).toBe('/companies/7');
     });
 
     it('clicking elsewhere on the card still opens the offer details', () => {
