@@ -1,4 +1,4 @@
-import { Component, inject, signal, viewChild } from '@angular/core';
+import { Component, inject, signal, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MatButtonModule } from '@angular/material/button';
@@ -26,6 +26,7 @@ const COMPANIES_TAB = 2;
     AdminCompaniesTabComponent
   ],
   templateUrl: './admin-panel.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './admin-panel.component.scss'
 })
 export class AdminPanelComponent {

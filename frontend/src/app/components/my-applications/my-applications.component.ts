@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, inject, OnInit, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { MatTableModule } from '@angular/material/table';
@@ -31,6 +31,7 @@ import { StatusTimelineComponent } from '../shared/status-timeline.component';
     StatusTimelineComponent
   ],
   templateUrl: './my-applications.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './my-applications.component.scss'
 })
 export class MyApplicationsComponent implements OnInit {

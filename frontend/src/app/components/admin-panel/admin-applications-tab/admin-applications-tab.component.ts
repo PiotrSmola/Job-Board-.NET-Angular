@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, signal, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -51,6 +51,7 @@ const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt',
     StatusChipComponent
   ],
   templateUrl: './admin-applications-tab.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './admin-applications-tab.component.scss'
 })
 export class AdminApplicationsTabComponent {
