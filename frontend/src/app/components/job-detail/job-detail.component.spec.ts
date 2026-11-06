@@ -4,12 +4,12 @@ import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/route
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { Observable, Subject, of, throwError } from 'rxjs';
-import { ApplyDialogComponent, CV_UPLOAD_FAILED_MESSAGE, JobDetailComponent } from './job-detail.component';
+import { APPLY_DIALOG_CONFIG, ApplyDialogComponent, ATTACHMENTS_UPLOAD_FAILED_MESSAGE, JobDetailComponent } from './job-detail.component';
 import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
-import { ApplicationStatus, CvUploadEvent } from '../../models/job-application.model';
+import { ApplicationStatus, AttachmentKind, AttachmentUploadEvent, AttachmentUploadItem } from '../../models/job-application.model';
 
 const JOB: JobOffer = {
   id: 5, title: 'Angular Developer', company: 'Acme', companyId: 1, description: 'Opis', salaryMin: 1000, salaryMax: 2000,
@@ -26,7 +26,7 @@ describe('JobDetailComponent', () => {
   let getJob: ReturnType<typeof vi.fn>;
   let checkIfApplied: ReturnType<typeof vi.fn>;
   let applyToJob: ReturnType<typeof vi.fn>;
-  let uploadCv: ReturnType<typeof vi.fn>;
+  let uploadAttachments: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
   let authenticated: boolean;
@@ -51,7 +51,7 @@ describe('JobDetailComponent', () => {
     employer = false;
     checkIfApplied = vi.fn().mockReturnValue(of({ hasApplied: false }));
     applyToJob = vi.fn();
-    uploadCv = vi.fn();
+    uploadAttachments = vi.fn();
     snackBarOpen = vi.fn();
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -62,7 +62,7 @@ describe('JobDetailComponent', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: '5' })) } },
         { provide: JobService, useValue: { getJob } },
-        { provide: JobApplicationService, useValue: { checkIfApplied, applyToJob, uploadCv } },
+        { provide: JobApplicationService, useValue: { checkIfApplied, applyToJob, uploadAttachments } },
         { provide: AuthService, useValue: { isAuthenticated: () => authenticated, isAdmin: () => admin, isEmployer: () => employer } },
         { provide: MatSnackBar, useValue: { open: snackBarOpen } }
       ]
@@ -315,141 +315,202 @@ describe('JobDetailComponent', () => {
     });
   });
 
-  describe('applying with a CV', () => {
-    const CV = new File(['%PDF-'], 'cv.pdf', { type: 'application/pdf' });
+  describe('applying with attachments', () => {
+    const CV: AttachmentUploadItem = { file: new File(['%PDF-'], 'cv.pdf', { type: 'application/pdf' }), kind: AttachmentKind.Cv };
+    const LETTER: AttachmentUploadItem = { file: new File(['PK'], 'list.docx'), kind: AttachmentKind.CoverLetter };
+    const ITEMS = [CV, LETTER];
 
     function text(): string {
       fixture.detectChanges();
       return (fixture.nativeElement as HTMLElement).textContent ?? '';
     }
 
-    it('submits the application first and then uploads the CV to the returned application', () => {
+    function liveStatus(): string {
+      fixture.detectChanges();
+      return (fixture.nativeElement as HTMLElement).querySelector('[role="status"].sr-only')?.textContent ?? '';
+    }
+
+    it('submits the application first and then uploads all attachments in one request to the returned application', () => {
       create();
       applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-      uploadCv.mockReturnValue(of<CvUploadEvent>({ type: 'done', application: { id: 42 } as never }));
+      uploadAttachments.mockReturnValue(of<AttachmentUploadEvent>({ type: 'done', application: { id: 42 } as never }));
 
-      component.applyToJob('Notatka', CV);
+      component.applyToJob('Notatka', ITEMS);
 
       expect(applyToJob).toHaveBeenCalledWith({ jobOfferId: 5, note: 'Notatka' });
-      expect(uploadCv).toHaveBeenCalledWith(42, CV);
-      expect(applyToJob.mock.invocationCallOrder[0]).toBeLessThan(uploadCv.mock.invocationCallOrder[0]);
+      expect(uploadAttachments).toHaveBeenCalledTimes(1);
+      expect(uploadAttachments).toHaveBeenCalledWith(42, ITEMS);
+      expect(applyToJob.mock.invocationCallOrder[0]).toBeLessThan(uploadAttachments.mock.invocationCallOrder[0]);
       expect(component.applying).toBe(false);
-      expect(component.cvUploadProgress).toBeNull();
+      expect(component.attachmentsUploadProgress).toBeNull();
       expect(snackBarOpen).toHaveBeenCalledTimes(1);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja wysłana pomyślnie! CV zostało dołączone.');
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja wysłana pomyślnie! Załączniki zostały dołączone.');
+      expect(liveStatus()).toBe('Załączniki przesłane');
     });
 
-    it('does not upload anything without a CV', () => {
+    it('does not upload anything without attachments', () => {
       create();
       applyToJob.mockReturnValue(of({ id: 42 }));
 
-      component.applyToJob('', null);
+      component.applyToJob('', []);
 
-      expect(uploadCv).not.toHaveBeenCalled();
+      expect(uploadAttachments).not.toHaveBeenCalled();
       expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja wysłana pomyślnie!');
     });
 
-    it('shows the upload progress while the CV is being sent', () => {
+    it('shows the upload progress on the button and announces the phase once', () => {
       create();
-      const events = new Subject<CvUploadEvent>();
+      const events = new Subject<AttachmentUploadEvent>();
       applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-      uploadCv.mockReturnValue(events);
+      uploadAttachments.mockReturnValue(events);
 
-      component.applyToJob('', CV);
+      component.applyToJob('', ITEMS);
       expect(component.applying).toBe(true);
       expect(component.hasApplied).toBe(true);
-      expect(text()).toContain('Wysyłanie CV… 0%');
+      expect(text()).toContain('Wysyłanie załączników… 0%');
+      expect(liveStatus()).toBe('Wysyłanie załączników…');
 
       events.next({ type: 'progress', percent: 60 });
-      expect(component.cvUploadProgress).toBe(60);
-      expect(text()).toContain('Wysyłanie CV… 60%');
+      expect(component.attachmentsUploadProgress).toBe(60);
+      expect(text()).toContain('Wysyłanie załączników… 60%');
+      expect(liveStatus()).toBe('Wysyłanie załączników…');
 
       events.next({ type: 'progress', percent: 100 });
-      expect(text()).toContain('Przetwarzanie CV…');
+      expect(text()).toContain('Przetwarzanie załączników…');
       expect(snackBarOpen).not.toHaveBeenCalled();
 
       events.next({ type: 'done', application: { id: 42 } as never });
       events.complete();
       expect(text()).toContain('Już aplikowałeś');
-      expect(text()).not.toContain('Wysyłanie CV');
+      expect(text()).not.toContain('Wysyłanie załączników');
     });
 
-    it('cancels a pending CV upload when the page is destroyed', () => {
+    it('has a single, visually hidden status region on the page', () => {
       create();
-      const events = new Subject<CvUploadEvent>();
-      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-      uploadCv.mockReturnValue(events);
 
-      component.applyToJob('', CV);
+      const regions = (fixture.nativeElement as HTMLElement).querySelectorAll('.sr-only[role="status"]');
+      expect(regions.length).toBe(1);
+    });
+
+    it('cancels a pending upload and explains how to add the attachments later when the page is left', () => {
+      create();
+      const events = new Subject<AttachmentUploadEvent>();
+      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
+      uploadAttachments.mockReturnValue(events);
+
+      component.applyToJob('', ITEMS);
       expect(events.observed).toBe(true);
 
       fixture.destroy();
 
       expect(events.observed).toBe(false);
+      expect(snackBarOpen).toHaveBeenCalledTimes(1);
+      expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
+      expect(snackBarOpen.mock.calls[0][2]).toEqual({ duration: 8000 });
     });
 
-    it('keeps the submitted application and explains how to add the CV later when the upload fails', () => {
+    it('does not show the "left the page" message when the page is left after the upload finished', () => {
       create();
       applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-      uploadCv.mockReturnValue(throwError(() => httpError(400, { message: 'Unsupported file type - upload a PDF or DOCX file' })));
+      uploadAttachments.mockReturnValue(of<AttachmentUploadEvent>({ type: 'done', application: { id: 42 } as never }));
+      component.applyToJob('', ITEMS);
+      snackBarOpen.mockClear();
 
-      component.applyToJob('', CV);
+      fixture.destroy();
+
+      expect(snackBarOpen).not.toHaveBeenCalled();
+    });
+
+    it('does not start the upload but informs the user when the page was left before the application was submitted', () => {
+      create();
+      const submitted = new Subject<{ id: number; status: ApplicationStatus }>();
+      applyToJob.mockReturnValue(submitted);
+
+      component.applyToJob('', ITEMS);
+      fixture.destroy();
+      submitted.next({ id: 42, status: ApplicationStatus.Submitted });
+      submitted.complete();
+
+      expect(uploadAttachments).not.toHaveBeenCalled();
+      expect(snackBarOpen).toHaveBeenCalledTimes(1);
+      expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
+    });
+
+    it('keeps the submitted application and explains how to add the attachments later when the upload fails', () => {
+      create();
+      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
+      uploadAttachments.mockReturnValue(throwError(() => httpError(400, { message: 'Total size of attachments cannot exceed 25 MB' })));
+
+      component.applyToJob('', ITEMS);
 
       expect(component.hasApplied).toBe(true);
       expect(component.applicationStatus).toBe(ApplicationStatus.Submitted);
       expect(component.applying).toBe(false);
-      expect(component.cvUploadProgress).toBeNull();
+      expect(component.attachmentsUploadProgress).toBeNull();
       expect(snackBarOpen).toHaveBeenCalledTimes(1);
-      expect(snackBarOpen.mock.calls[0][0]).toBe(CV_UPLOAD_FAILED_MESSAGE);
-      expect(CV_UPLOAD_FAILED_MESSAGE)
-        .toBe('Aplikacja złożona, ale nie udało się dołączyć CV – możesz dodać je w Moich aplikacjach');
+      expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
+      expect(ATTACHMENTS_UPLOAD_FAILED_MESSAGE)
+        .toBe('Aplikacja złożona, ale nie udało się dołączyć załączników – możesz dodać je w Moich aplikacjach');
+      expect(liveStatus()).toBe('Przerwano wysyłanie');
       expect(text()).toContain('Już aplikowałeś');
+    });
+
+    it.each([401, 403, 429, 500])('reports the partial success also for a %i upload error', status => {
+      create();
+      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
+      uploadAttachments.mockReturnValue(throwError(() => httpError(status)));
+
+      component.applyToJob('', ITEMS);
+
+      expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
     });
 
     it('reports the partial success also when the API does not return the application id', () => {
       create();
       applyToJob.mockReturnValue(of(null));
 
-      component.applyToJob('', CV);
+      component.applyToJob('', ITEMS);
 
-      expect(uploadCv).not.toHaveBeenCalled();
+      expect(uploadAttachments).not.toHaveBeenCalled();
       expect(component.hasApplied).toBe(true);
-      expect(snackBarOpen.mock.calls[0][0]).toBe(CV_UPLOAD_FAILED_MESSAGE);
+      expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
     });
 
-    it('does not upload the CV when the application itself is rejected', () => {
+    it('does not upload the attachments when the application itself is rejected', () => {
       create();
       applyToJob.mockReturnValue(throwError(() => httpError(400, { message: 'You have already applied to this job' })));
 
-      component.applyToJob('', CV);
+      component.applyToJob('', ITEMS);
 
-      expect(uploadCv).not.toHaveBeenCalled();
+      expect(uploadAttachments).not.toHaveBeenCalled();
       expect(snackBarOpen.mock.calls[0][0]).toBe('Już aplikowałeś na tę ofertę');
     });
 
-    it('mentions the reactivation and the CV after applying again', () => {
+    it('mentions the reactivation and the attachments after applying again', () => {
       checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
       create();
       applyToJob.mockReturnValue(of({ id: 3, status: ApplicationStatus.Submitted }));
-      uploadCv.mockReturnValue(of<CvUploadEvent>({ type: 'done', application: { id: 3 } as never }));
+      uploadAttachments.mockReturnValue(of<AttachmentUploadEvent>({ type: 'done', application: { id: 3 } as never }));
 
-      component.applyToJob('', CV);
+      component.applyToJob('', [CV]);
 
-      expect(uploadCv).toHaveBeenCalledWith(3, CV);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja została złożona ponownie! CV zostało dołączone.');
+      expect(uploadAttachments).toHaveBeenCalledWith(3, [CV]);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja została złożona ponownie! Załączniki zostały dołączone.');
     });
 
-    it('passes the note and the CV chosen in the dialog to applyToJob', () => {
+    it('opens the apply dialog as an ARIA modal and passes the note and the attachments to applyToJob', () => {
       create();
       const dialog = (component as unknown as { dialog: MatDialog }).dialog;
-      vi.spyOn(dialog, 'open').mockReturnValue({
-        afterClosed: () => of({ confirmed: true, note: 'Cześć', cvFile: CV })
+      const open = vi.spyOn(dialog, 'open').mockReturnValue({
+        afterClosed: () => of({ confirmed: true, note: 'Cześć', attachments: ITEMS })
       } as never);
       const apply = vi.spyOn(component, 'applyToJob').mockImplementation(() => undefined);
 
       component.openApplyDialog();
 
-      expect(apply).toHaveBeenCalledWith('Cześć', CV);
+      expect(open).toHaveBeenCalledWith(ApplyDialogComponent, APPLY_DIALOG_CONFIG);
+      expect(APPLY_DIALOG_CONFIG.ariaModal).toBe(true);
+      expect(apply).toHaveBeenCalledWith('Cześć', ITEMS);
     });
 
     it('does not apply when the dialog is cancelled', () => {
@@ -473,25 +534,43 @@ describe('ApplyDialogComponent', () => {
     }).compileComponents();
   });
 
-  it('offers an optional CV picker next to the note', () => {
+  it('offers an optional attachments picker next to the note', () => {
     const fixture = TestBed.createComponent(ApplyDialogComponent);
     fixture.detectChanges();
     const root = fixture.nativeElement as HTMLElement;
 
     expect(root.querySelector('textarea')).not.toBeNull();
-    expect(root.querySelector('app-cv-upload input[type="file"]')).not.toBeNull();
-    expect(root.textContent).toContain('Dołącz CV (opcjonalnie)');
+    expect(root.querySelector('app-attachments-picker input[type="file"][multiple]')).not.toBeNull();
+    expect(root.textContent).toContain('Dołącz CV, list motywacyjny lub inne pliki (opcjonalnie)');
   });
 
-  it('returns the note and the chosen CV (or null) as the dialog result', () => {
+  it('returns the note and the chosen attachments (or none) as the dialog result', () => {
     const fixture = TestBed.createComponent(ApplyDialogComponent);
     const dialog = fixture.componentInstance;
 
-    expect(dialog.result()).toEqual({ confirmed: true, note: '', cvFile: null });
+    expect(dialog.result()).toEqual({ confirmed: true, note: '', attachments: [] });
 
-    const file = new File(['x'], 'cv.docx');
+    const items = [{ file: new File(['x'], 'cv.docx'), kind: AttachmentKind.Cv }];
     dialog.note = 'Hej';
-    dialog.cvFile = file;
-    expect(dialog.result()).toEqual({ confirmed: true, note: 'Hej', cvFile: file });
+    dialog.attachments = items;
+    expect(dialog.result()).toEqual({ confirmed: true, note: 'Hej', attachments: items });
+  });
+
+  it('collects the files chosen in the picker with their kinds', () => {
+    const fixture = TestBed.createComponent(ApplyDialogComponent);
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+    const input = root.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const cv = new File(['%PDF-'], 'cv.pdf');
+    const portfolio = new File(['x'], 'portfolio.png');
+
+    Object.defineProperty(input, 'files', { value: [cv, portfolio], configurable: true });
+    input.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.result().attachments).toEqual([
+      { file: cv, kind: AttachmentKind.Cv }, { file: portfolio, kind: AttachmentKind.Other }
+    ]);
+    expect(root.querySelectorAll('.file-name').length).toBe(2);
   });
 });

@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, OnInit, ChangeDetectorRef } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, OnInit, ChangeDetectorRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { CommonModule } from '@angular/common';
@@ -9,7 +9,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDividerModule } from '@angular/material/divider';
-import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatDialog, MatDialogConfig, MatDialogModule } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -18,28 +18,32 @@ import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
-import { ApplicationStatus, JobApplication } from '../../models/job-application.model';
+import { ApplicationStatus, AttachmentUploadItem, JobApplication } from '../../models/job-application.model';
 import { getApplicationStatusPresentation, getJobState, StatusPresentation } from '../../utils/status-labels';
 import { StatusChipComponent } from '../shared/status-chip.component';
-import { CvUploadComponent } from '../shared/cv-upload.component';
+import { AttachmentsPickerComponent } from '../shared/attachments-picker.component';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
 
 const ALREADY_APPLIED_MESSAGE = 'You have already applied to this job';
 const NOT_ACCEPTING_MESSAGE = 'This job offer is not accepting applications';
 
-export const CV_UPLOAD_FAILED_MESSAGE =
-  'Aplikacja złożona, ale nie udało się dołączyć CV – możesz dodać je w Moich aplikacjach';
+export const ATTACHMENTS_UPLOAD_FAILED_MESSAGE =
+  'Aplikacja złożona, ale nie udało się dołączyć załączników – możesz dodać je w Moich aplikacjach';
+
+/** Konfiguracja dialogu aplikowania (modalny dla czytników ekranu, miejsce na listę plików). */
+export const APPLY_DIALOG_CONFIG: MatDialogConfig = { width: '600px', maxWidth: '95vw', ariaModal: true };
 
 /** Wynik dialogu aplikowania (undefined = anulowano). */
 export interface ApplyDialogResult {
   confirmed: boolean;
   note: string;
-  cvFile: File | null;
+  attachments: AttachmentUploadItem[];
 }
 
 @Component({
   selector: 'app-apply-dialog',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     FormsModule,
@@ -47,7 +51,7 @@ export interface ApplyDialogResult {
     MatFormFieldModule,
     MatInputModule,
     MatButtonModule,
-    CvUploadComponent
+    AttachmentsPickerComponent
   ],
   template: `
     <h2 mat-dialog-title>Aplikuj na stanowisko</h2>
@@ -57,8 +61,8 @@ export interface ApplyDialogResult {
         <mat-label>Notatka</mat-label>
         <textarea matInput [(ngModel)]="note" rows="4" placeholder="Dlaczego jesteś idealnym kandydatem..."></textarea>
       </mat-form-field>
-      <p>Dołącz CV (opcjonalnie):</p>
-      <app-cv-upload [(file)]="cvFile" />
+      <p>Dołącz CV, list motywacyjny lub inne pliki (opcjonalnie):</p>
+      <app-attachments-picker [(items)]="attachments" />
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close>Anuluj</button>
@@ -67,16 +71,16 @@ export interface ApplyDialogResult {
   `,
   styles: [`
     .full-width { width: 100%; }
-    mat-dialog-content { min-width: 400px; padding: 20px; }
+    mat-dialog-content { min-width: 460px; padding: 20px; }
     @media (max-width: 600px) { mat-dialog-content { min-width: 0; } }
   `]
 })
 export class ApplyDialogComponent {
   note = '';
-  cvFile: File | null = null;
+  attachments: AttachmentUploadItem[] = [];
 
   result(): ApplyDialogResult {
-    return { confirmed: true, note: this.note, cvFile: this.cvFile };
+    return { confirmed: true, note: this.note, attachments: this.attachments };
   }
 }
 
@@ -116,10 +120,24 @@ export class JobDetailComponent implements OnInit {
   applicationStatus: ApplicationStatus | null = null;
   checkingApplication = false;
   applying = false;
-  /** Postęp wysyłania CV po złożeniu aplikacji (null = CV nie jest wysyłane). */
-  cvUploadProgress: number | null = null;
+  /** Postęp wysyłania załączników po złożeniu aplikacji (null = nic nie jest wysyłane). */
+  attachmentsUploadProgress: number | null = null;
+  /** Tekst regionu `role="status"`: etap wysyłania załączników (bez kolejnych procentów). */
+  uploadAnnouncement = '';
+  private destroyed = false;
 
   WorkType = WorkType;
+
+  constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+      // opuszczenie strony w trakcie wysyłania przerywa żądanie (takeUntilDestroyed) – aplikacja jest już złożona
+      if (this.attachmentsUploadProgress !== null) {
+        this.attachmentsUploadProgress = null;
+        this.notify(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 8000);
+      }
+    });
+  }
 
   /** Oferta przyjmuje aplikacje: aktywna i niewygasła. */
   get acceptsApplications(): boolean {
@@ -205,17 +223,17 @@ export class JobDetailComponent implements OnInit {
   openApplyDialog(): void {
     if (!this.job) return;
 
-    const dialogRef = this.dialog.open(ApplyDialogComponent);
+    const dialogRef = this.dialog.open(ApplyDialogComponent, APPLY_DIALOG_CONFIG);
 
     dialogRef.afterClosed().subscribe((result: ApplyDialogResult | undefined) => {
       if (result?.confirmed && this.job) {
-        this.applyToJob(result.note, result.cvFile);
+        this.applyToJob(result.note, result.attachments);
       }
     });
   }
 
-  /** Najpierw składa aplikację, potem (opcjonalnie) dołącza CV – błąd CV nie cofa złożonej aplikacji. */
-  applyToJob(note: string, cvFile: File | null = null): void {
+  /** Najpierw składa aplikację, potem (opcjonalnie) jednym żądaniem dołącza załączniki – ich błąd nie cofa aplikacji. */
+  applyToJob(note: string, attachments: readonly AttachmentUploadItem[] = []): void {
     if (!this.job) return;
 
     this.applying = true;
@@ -229,8 +247,8 @@ export class JobDetailComponent implements OnInit {
         this.applicationStatus = application?.status ?? ApplicationStatus.Submitted;
         const successMessage = reapplied ? 'Aplikacja została złożona ponownie!' : 'Aplikacja wysłana pomyślnie!';
 
-        if (cvFile) {
-          this.uploadCv(application?.id ?? null, cvFile, successMessage);
+        if (attachments.length) {
+          this.uploadAttachments(application?.id ?? null, attachments, successMessage);
           return;
         }
 
@@ -260,36 +278,41 @@ export class JobDetailComponent implements OnInit {
     });
   }
 
-  private uploadCv(applicationId: number | null, file: File, successMessage: string): void {
-    if (applicationId === null) {
-      this.finishCvUpload(CV_UPLOAD_FAILED_MESSAGE, 8000);
+  private uploadAttachments(applicationId: number | null, items: readonly AttachmentUploadItem[], successMessage: string): void {
+    // brak id albo użytkownik opuścił już stronę (aplikacja złożona, pliki nie zostały wysłane)
+    if (applicationId === null || this.destroyed) {
+      this.finishAttachmentsUpload(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 'Przerwano wysyłanie', 8000);
       return;
     }
 
-    this.cvUploadProgress = 0;
+    this.attachmentsUploadProgress = 0;
+    this.uploadAnnouncement = 'Wysyłanie załączników…';
     this.cdr.detectChanges();
-    // opuszczenie strony przerywa wysyłanie CV (aplikacja jest już złożona)
-    this.applicationService.uploadCv(applicationId, file).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    // opuszczenie strony przerywa wysyłanie (komunikat pokazuje hook onDestroy z konstruktora)
+    this.applicationService.uploadAttachments(applicationId, items).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (event) => {
         if (event.type === 'progress') {
-          this.cvUploadProgress = event.percent;
+          this.attachmentsUploadProgress = event.percent;
           this.cdr.detectChanges();
         } else {
-          this.finishCvUpload(`${successMessage} CV zostało dołączone.`);
+          this.finishAttachmentsUpload(`${successMessage} Załączniki zostały dołączone.`, 'Załączniki przesłane');
         }
       },
       error: (error) => {
-        console.error('Error uploading CV:', error);
+        console.error('Error uploading attachments:', error);
         // Aplikacja jest już złożona – informujemy o tym zawsze, także przy 401/403
-        this.finishCvUpload(CV_UPLOAD_FAILED_MESSAGE, 8000);
+        this.finishAttachmentsUpload(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 'Przerwano wysyłanie', 8000);
       }
     });
   }
 
-  private finishCvUpload(message: string, duration?: number): void {
+  private finishAttachmentsUpload(message: string, announcement: string, duration?: number): void {
     this.applying = false;
-    this.cvUploadProgress = null;
-    this.cdr.detectChanges();
+    this.attachmentsUploadProgress = null;
+    if (!this.destroyed) {
+      this.uploadAnnouncement = announcement;
+      this.cdr.detectChanges();
+    }
     this.notify(message, duration);
   }
 
