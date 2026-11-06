@@ -242,4 +242,225 @@ describe('CvUploadComponent', () => {
     expect(fileInput().disabled).toBe(true);
     expect(root().querySelector('.choose-button')?.classList).toContain('disabled');
   });
+
+  describe('file size and name edge cases', () => {
+    const MAX = 5 * 1024 * 1024;
+
+    it('accepts a file of exactly 5 MB', () => {
+      const file = makeFile('cv.pdf', MAX);
+
+      choose(file);
+
+      expect(host.file()).toBe(file);
+      expect(root().querySelector('.error')).toBeNull();
+      expect(root().querySelector('.file-size')?.textContent).toContain('5 MB');
+    });
+
+    it('rejects a file 1 byte over 5 MB', () => {
+      choose(makeFile('cv.pdf', MAX + 1));
+
+      expect(host.file()).toBeNull();
+      expect(root().querySelector('.error')?.textContent).toContain('Plik jest za duży – maksymalny rozmiar to 5 MB');
+    });
+
+    it.each(['CV.PDF', 'Cv.Docx', 'cv.pDf'])('accepts the upper-case extension of %s', name => {
+      const file = makeFile(name, 100);
+
+      choose(file);
+
+      expect(host.file()).toBe(file);
+      expect(root().querySelector('.error')).toBeNull();
+    });
+
+    it.each(['cv', 'pdf', '.hidden', 'cv.', 'cv.pdf.exe', 'cv.docx.txt'])('rejects %s (no valid extension)', name => {
+      choose(makeFile(name, 100));
+
+      expect(host.file()).toBeNull();
+      expect(root().querySelector('.error')?.textContent).toContain('Nieobsługiwany typ pliku');
+    });
+
+    it('treats a cancelled picker (empty file list) as no change and keeps the previous file and error', () => {
+      const valid = makeFile('cv.pdf', 10);
+      choose(valid);
+
+      choose(null);
+
+      expect(host.file()).toBe(valid);
+      expect(root().querySelector('.file-name')?.textContent).toContain('cv.pdf');
+      expect(root().querySelector('.error')).toBeNull();
+    });
+
+    it('keeps showing a validation error when the picker is cancelled afterwards', () => {
+      choose(makeFile('cv.txt', 10));
+
+      choose(null);
+
+      expect(root().querySelector('.error')?.textContent).toContain('Nieobsługiwany typ pliku');
+    });
+
+    it('survives a change event without a files list', () => {
+      const input = fileInput();
+      Object.defineProperty(input, 'files', { value: null, configurable: true });
+
+      input.dispatchEvent(new Event('change'));
+
+      expect(host.file()).toBeNull();
+      expect(root().querySelector('.error')).toBeNull();
+    });
+  });
+
+  describe('security', () => {
+    it.each([
+      '<script>window.__pwned = true</script>.pdf',
+      '<img src=x onerror="window.__pwned = true">.pdf',
+      '"><svg onload=alert(1)>.docx',
+      '..\\..\\windows\\system32\\evil.pdf',
+      '../../etc/passwd.pdf',
+      'bell\u0007\u0000null.pdf'
+    ])('renders the file name %j as text only', name => {
+      choose(makeFile(name, 100));
+
+      const view = root();
+      const label = view.querySelector('.file-name')!;
+      expect(label.textContent).toBe(name);
+      expect(label.children.length).toBe(0);
+      expect(view.querySelector('script, img, svg')).toBeNull();
+      expect(view.querySelector('.remove-button')?.getAttribute('aria-label')).toBe(`Usuń wybrany plik: ${name}`);
+      expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+    });
+
+    it('renders an API error containing markup as text only', () => {
+      host.apiError.set('<img src=x onerror="window.__pwned = true"> błąd');
+
+      const view = root();
+      expect(view.querySelector('.error span')?.textContent).toBe('<img src=x onerror="window.__pwned = true"> błąd');
+      expect(view.querySelector('img')).toBeNull();
+    });
+
+    it('does not use innerHTML bindings in its template', () => {
+      choose(makeFile('<b>x</b>.pdf', 10));
+
+      expect(root().querySelector('.file-name b')).toBeNull();
+    });
+  });
+
+  describe('accessibility in every state', () => {
+    function describedElement(): HTMLElement | null {
+      const id = fileInput().getAttribute('aria-describedby');
+      return id ? root().querySelector<HTMLElement>('#' + id) : null;
+    }
+
+    it('keeps aria-describedby pointing at an existing element in the hint, error and progress states', () => {
+      expect(describedElement()?.querySelector('.hint')).not.toBeNull();
+
+      choose(makeFile('cv.txt', 1));
+      expect(describedElement()?.querySelector('.error')).not.toBeNull();
+
+      host.progress.set(20);
+      expect(describedElement()?.querySelector('mat-progress-bar')).not.toBeNull();
+
+      host.progress.set(null);
+      expect(describedElement()).not.toBeNull();
+    });
+
+    it('associates the label with the input so the visible text is its accessible name', () => {
+      const input = fileInput();
+
+      expect(input.labels?.length).toBe(1);
+      expect(input.labels?.[0].textContent).toContain('Wybierz plik CV');
+    });
+
+    it('is the only focusable control while empty and keeps the remove button reachable by keyboard afterwards', () => {
+      expect(root().querySelectorAll('button').length).toBe(0);
+
+      choose(makeFile('cv.pdf', 10));
+      const remove = root().querySelector<HTMLButtonElement>('.remove-button')!;
+      remove.focus();
+
+      expect(remove.disabled).toBe(false);
+      expect(remove.tabIndex).toBe(0);
+      expect(document.activeElement).toBe(remove);
+    });
+
+    it('does not hide the file input from assistive technology', () => {
+      const input = fileInput();
+
+      expect(input.getAttribute('aria-hidden')).toBeNull();
+      expect(input.hidden).toBe(false);
+      expect(input.getAttribute('tabindex')).toBeNull();
+    });
+
+    it('updates aria-valuenow and aria-valuetext as the progress changes', () => {
+      host.progress.set(10);
+      const bar = root().querySelector('mat-progress-bar')!;
+      expect([bar.getAttribute('aria-valuenow'), bar.getAttribute('aria-valuetext')]).toEqual(['10', 'Wysyłanie… 10%']);
+
+      host.progress.set(70);
+      root();
+      expect([bar.getAttribute('aria-valuenow'), bar.getAttribute('aria-valuetext')]).toEqual(['70', 'Wysyłanie… 70%']);
+      expect(root().querySelector('mat-progress-bar')).toBe(bar);
+
+      host.progress.set(100);
+      root();
+      expect(bar.getAttribute('aria-valuetext')).toBe('Przetwarzanie…');
+    });
+
+    it('hides the visual progress percentage from screen readers, which use the progressbar instead', () => {
+      host.progress.set(33);
+
+      expect(root().querySelector('.progress-text')?.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('marks decorative icons as hidden from assistive technology', () => {
+      choose(makeFile('cv.pdf', 10));
+      host.apiError.set('Błąd');
+
+      const icons = Array.from(root().querySelectorAll('mat-icon'));
+      expect(icons.length).toBeGreaterThan(0);
+      expect(icons.every(icon => icon.getAttribute('aria-hidden') === 'true')).toBe(true);
+    });
+
+    it('tells the user about the error with an icon and text, not colour alone', () => {
+      choose(makeFile('cv.txt', 1));
+
+      const error = root().querySelector('.error')!;
+      expect(error.querySelector('mat-icon')?.textContent).toContain('error_outline');
+      expect(error.querySelector('span')?.textContent?.trim()).not.toBe('');
+    });
+  });
+
+  describe('cleanup', () => {
+    it('leaves no timers behind after the component is destroyed', () => {
+      vi.useFakeTimers();
+      try {
+        const other = TestBed.createComponent(HostComponent);
+        other.componentInstance.progress.set(50);
+        other.detectChanges();
+        other.componentInstance.progress.set(100);
+        other.detectChanges();
+
+        other.destroy();
+
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not touch the DOM or emit when inputs change after the component is destroyed', () => {
+      const emitted = vi.fn();
+      const other = TestBed.createComponent(HostComponent);
+      other.detectChanges();
+      const picker = (other.nativeElement as HTMLElement).querySelector('app-cv-upload')!;
+      const component = other.debugElement.children[0].componentInstance as CvUploadComponent;
+      component.fileChange.subscribe(emitted);
+
+      other.destroy();
+      other.componentInstance.progress.set(30);
+      other.componentInstance.apiError.set('Po zniszczeniu');
+
+      expect(emitted).not.toHaveBeenCalled();
+      expect(picker.textContent).not.toContain('Po zniszczeniu');
+    });
+  });
 });
