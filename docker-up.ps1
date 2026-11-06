@@ -64,18 +64,29 @@ function New-RandomSecret([int]$Length) {
     return $sb.ToString()
 }
 
-# hasło do bazy, sekret JWT, ALLOW_SEED_REFRESH i SEED_DEMO_ACCOUNTS zachowujemy z poprzedniego .env
+# hasło do bazy, sekret JWT, klucze S3, ALLOW_SEED_REFRESH i SEED_DEMO_ACCOUNTS zachowujemy z poprzedniego .env
 $dbPassword = Get-EnvValue 'DB_PASSWORD' 'jobboard'
 $jwtSecret = Get-EnvValue 'JWT_SECRET' ''
 if (-not $jwtSecret) {
     $jwtSecret = New-RandomSecret 64
     Write-Host 'Wygenerowano nowy JWT_SECRET (zapisany w .env).'
 }
+# klucze magazynu plików CV (SeaweedFS) - zmiana kluczy przy istniejącym wolumenie storage-data jest bezpieczna,
+# bo konfiguracja S3 jest generowana przy każdym starcie kontenera
+$s3AccessKey = Get-EnvValue 'S3_ACCESS_KEY' ''
+$s3SecretKey = Get-EnvValue 'S3_SECRET_KEY' ''
+if (-not $s3AccessKey -or -not $s3SecretKey) {
+    $s3AccessKey = New-RandomSecret 20
+    $s3SecretKey = New-RandomSecret 40
+    Write-Host 'Wygenerowano nowe klucze S3_ACCESS_KEY i S3_SECRET_KEY (zapisane w .env).'
+}
 $allowSeedRefresh = Get-EnvValue 'ALLOW_SEED_REFRESH' ''
 $seedDemoAccounts = Get-EnvValue 'SEED_DEMO_ACCOUNTS' ''
 
-# docker compose wymaga JWT_SECRET już przy "down" (interpolacja całego pliku), a .env może go jeszcze nie mieć
+# docker compose wymaga JWT_SECRET i kluczy S3 już przy "down" (interpolacja całego pliku), a .env może ich jeszcze nie mieć
 $env:JWT_SECRET = $jwtSecret
+$env:S3_ACCESS_KEY = $s3AccessKey
+$env:S3_SECRET_KEY = $s3SecretKey
 try {
     # zatrzymanie wcześniej uruchomionych kontenerów tego projektu, żeby nie blokowały własnych portów
     docker compose down
@@ -87,7 +98,8 @@ try {
         DB_PORT       = Get-FreePort $DbPort
     }
 
-    $envLines = @($ports.Keys | ForEach-Object { "$_=$($ports[$_])" }) + "DB_PASSWORD=$dbPassword" + "JWT_SECRET=$jwtSecret"
+    $envLines = @($ports.Keys | ForEach-Object { "$_=$($ports[$_])" }) + "DB_PASSWORD=$dbPassword" + "JWT_SECRET=$jwtSecret" +
+        "S3_ACCESS_KEY=$s3AccessKey" + "S3_SECRET_KEY=$s3SecretKey"
     if ($allowSeedRefresh) { $envLines += "ALLOW_SEED_REFRESH=$allowSeedRefresh" }
     if ($seedDemoAccounts) { $envLines += "SEED_DEMO_ACCOUNTS=$seedDemoAccounts" }
     [System.IO.File]::WriteAllLines((Join-Path $PSScriptRoot '.env'), $envLines, [System.Text.UTF8Encoding]::new($false))
@@ -95,7 +107,7 @@ try {
     docker compose up -d --build
     if ($LASTEXITCODE -ne 0) { throw 'docker compose up nie powiodło się' }
 } finally {
-    Remove-Item Env:JWT_SECRET -ErrorAction SilentlyContinue
+    Remove-Item Env:JWT_SECRET, Env:S3_ACCESS_KEY, Env:S3_SECRET_KEY -ErrorAction SilentlyContinue
 }
 
 Write-Host ''

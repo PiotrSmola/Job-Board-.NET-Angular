@@ -52,4 +52,49 @@ public class DockerComposeTests
         Assert.Contains("Seed__DemoAccounts: ${SEED_DEMO_ACCOUNTS:-true}", compose);
         Assert.Contains("SEED_DEMO_ACCOUNTS=true", File.ReadAllText(RepositoryFiles.Find(".env.example")));
     }
+
+    [Fact]
+    public void Storage_IsSeaweedFsWithS3AuthenticationAndNoPublishedPorts()
+    {
+        var compose = File.ReadAllText(RepositoryFiles.Find("docker-compose.yml"));
+        var storage = ServiceBlock(compose, "storage");
+
+        Assert.Contains("image: chrislusf/seaweedfs:4.50", storage);
+        Assert.DoesNotContain("ports:", storage);
+        Assert.Contains("- storage-data:/data", storage);
+        Assert.Contains("healthcheck:", storage);
+        // tożsamość S3 z kluczami z .env generowana przy starcie; $$ - zmienna kontenera, nie interpolacja compose
+        Assert.Contains("\"$$S3_ACCESS_KEY\" \"$$S3_SECRET_KEY\" > /tmp/s3.json", storage);
+        Assert.Contains("-s3.config=/tmp/s3.json", storage);
+        Assert.Contains("exec /entrypoint.sh server -s3 -dir=/data", storage);
+    }
+
+    [Fact]
+    public void Backend_UsesS3StorageServiceWithKeysFromEnv()
+    {
+        var compose = File.ReadAllText(RepositoryFiles.Find("docker-compose.yml"));
+        var backend = ServiceBlock(compose, "backend");
+
+        Assert.Contains("Storage__Provider: S3", backend);
+        Assert.Contains("Storage__S3__ServiceUrl: http://storage:8333", backend);
+        Assert.Contains("Storage__S3__AccessKey: \"${S3_ACCESS_KEY:?", backend);
+        Assert.Contains("Storage__S3__SecretKey: \"${S3_SECRET_KEY:?", backend);
+        Assert.Matches(new Regex(@"storage:\s+condition: service_healthy"), backend);
+
+        var envExample = File.ReadAllText(RepositoryFiles.Find(".env.example"));
+        Assert.Contains("S3_ACCESS_KEY=", envExample);
+        Assert.Contains("S3_SECRET_KEY=", envExample);
+    }
+
+    // Treść usługi (od "  name:" do następnej usługi albo sekcji najwyższego poziomu)
+    private static string ServiceBlock(string compose, string service)
+    {
+        var lines = compose.Replace("\r\n", "\n").Split('\n');
+        var start = Array.IndexOf(lines, $"  {service}:");
+        Assert.True(start >= 0, $"service {service} not found");
+
+        var block = lines.Skip(start + 1)
+            .TakeWhile(line => line.Length == 0 || line.StartsWith("    ") || line.TrimStart().StartsWith('#'));
+        return string.Join("\n", block);
+    }
 }

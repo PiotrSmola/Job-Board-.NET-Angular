@@ -108,6 +108,22 @@ public class DockerUpScriptTests
     }
 
     [Fact]
+    public void Script_GeneratesAndKeepsS3Keys()
+    {
+        // klucze magazynu plików: zachowane z .env, generowane (20 i 40 znaków) tylko gdy brak, ustawione w env dla "down"
+        var script = File.ReadAllText(RepositoryFiles.Find("docker-up.ps1"));
+
+        Assert.Contains("Get-EnvValue 'S3_ACCESS_KEY'", script);
+        Assert.Contains("Get-EnvValue 'S3_SECRET_KEY'", script);
+        Assert.Contains("New-RandomSecret 20", script);
+        Assert.Contains("New-RandomSecret 40", script);
+        Assert.Contains("\"S3_ACCESS_KEY=$s3AccessKey\"", script);
+        Assert.Contains("\"S3_SECRET_KEY=$s3SecretKey\"", script);
+        Assert.Contains("$env:S3_ACCESS_KEY = $s3AccessKey", script);
+        Assert.Contains("Env:S3_SECRET_KEY", script);
+    }
+
+    [Fact]
     public void Script_IsSavedWithUtf8Bom()
     {
         // Windows PowerShell 5.1 bez BOM czyta plik w kodowaniu ANSI i psuje polskie znaki
