@@ -42,6 +42,20 @@ public static class ApiJson
         return value!;
     }
 
+    // Pole "message" z odpowiedzi błędu API (np. new { message = "..." })
+    public static async Task<string?> ReadMessageAsync(this HttpResponseMessage response)
+    {
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return body.RootElement.GetProperty("message").GetString();
+    }
+
+    // Nazwy pól z błędami walidacji (ValidationProblem: "errors")
+    public static async Task<string[]> ReadValidationFieldsAsync(this HttpResponseMessage response)
+    {
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return body.RootElement.GetProperty("errors").EnumerateObject().Select(p => p.Name).ToArray();
+    }
+
     // Parsuje nagłówek Pagination i sprawdza, że ma dokładnie pola z kontraktu (PascalCase)
     public static PaginationHeader ReadPagination(this HttpResponseMessage response)
     {

@@ -85,6 +85,13 @@ public class ApiFixture : IAsyncLifetime
         return new TestUser(email, password, dto.FirstName, dto.LastName, user.Token, JwtTestHelper.GetUserId(user.Token));
     }
 
+    // Odczyt bezpośrednio z bazy (pola, których API nie zwraca, np. ReviewedByUserId)
+    public async Task<T> QueryDbAsync<T>(Func<ApplicationDbContext, Task<T>> query)
+    {
+        using var scope = Factory.Services.CreateScope();
+        return await query(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+    }
+
     // Unikalna nazwa (np. firmy) - testy współdzielą bazę, więc nazwy nie mogą się powtarzać
     public static string UniqueName(string prefix) => $"{prefix} {Guid.NewGuid().ToString("N")[..10]}";
 
