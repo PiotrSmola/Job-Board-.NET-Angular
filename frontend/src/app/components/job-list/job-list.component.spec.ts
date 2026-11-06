@@ -385,6 +385,51 @@ describe('JobListComponent', () => {
     });
   });
 
+  describe('company link', () => {
+    function root(): HTMLElement {
+      fixture.detectChanges();
+      return fixture.nativeElement as HTMLElement;
+    }
+
+    function createWithCompanies(): void {
+      create(of({
+        ...page(0, 2),
+        result: [
+          { ...makeJob(1), company: 'Alfa', companyId: 7 },
+          { ...makeJob(2), company: 'Beta', companyId: 9 }
+        ]
+      }));
+    }
+
+    it('shows the company name on each card as a link to the company profile', () => {
+      createWithCompanies();
+
+      const links = Array.from(root().querySelectorAll<HTMLAnchorElement>('mat-card-subtitle a.company-link'));
+      expect(links.map(l => l.textContent?.trim())).toEqual(['Alfa', 'Beta']);
+      expect(links.map(l => l.getAttribute('href'))).toEqual(['/companies/7', '/companies/9']);
+    });
+
+    it('clicking the company link does not open the offer details', () => {
+      createWithCompanies();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const viewDetails = vi.spyOn(component, 'viewJobDetails');
+
+      root().querySelector<HTMLAnchorElement>('a.company-link')!.click();
+
+      expect(viewDetails).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalledWith(['/jobs', 1]);
+    });
+
+    it('clicking elsewhere on the card still opens the offer details', () => {
+      createWithCompanies();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      root().querySelector<HTMLElement>('mat-card-title')!.click();
+
+      expect(navigate).toHaveBeenCalledWith(['/jobs', 1]);
+    });
+  });
+
   it('formats salary and work type labels', () => {
     create();
 

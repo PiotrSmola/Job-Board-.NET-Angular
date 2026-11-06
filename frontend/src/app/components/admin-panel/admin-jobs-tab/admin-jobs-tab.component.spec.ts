@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { By } from '@angular/platform-browser';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { AdminJobsTabComponent } from './admin-jobs-tab.component';
 import { JobService } from '../../../services/job.service';
@@ -10,6 +11,11 @@ import { AdminService } from '../../../services/admin.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
 import { ManageJobParams } from '../../../models/job-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
+import { Company, CompanyStatus } from '../../../models/company.model';
+import { PanelMode } from '../../../models/panel-mode.model';
+import { CompanyAutocompleteComponent } from '../../shared/company-autocomplete.component';
+import { JobDialogComponent } from '../job-dialog/job-dialog.component';
+import { makeCompany } from '../../../../testing/company-fixtures';
 
 function makeJob(id: number): JobOffer {
   return {
@@ -582,6 +588,241 @@ describe('AdminJobsTabComponent', () => {
 
       expect(snackBarOpen).not.toHaveBeenCalled();
       expect(alertSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('panel mode', () => {
+    let dialogOpen: ReturnType<typeof vi.fn>;
+
+    function createInMode(mode: PanelMode, company: Company | null = null, jobs = [makeJob(1)]): void {
+      getManagedJobs.mockReturnValue(of({ ...page(0, jobs.length), result: jobs }));
+      dialogOpen = TestBed.inject(MatDialog).open as ReturnType<typeof vi.fn>;
+      dialogOpen.mockReturnValue({ afterClosed: () => of(undefined) });
+      fixture = TestBed.createComponent(AdminJobsTabComponent);
+      fixture.componentRef.setInput('mode', mode);
+      fixture.componentRef.setInput('company', company);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+    }
+
+    function root(): HTMLElement {
+      fixture.detectChanges();
+      return fixture.nativeElement as HTMLElement;
+    }
+
+    function headers(): string[] {
+      return Array.from(root().querySelectorAll('th')).map(h => h.textContent?.trim() ?? '');
+    }
+
+    function rowActions(index: number): (string | null)[] {
+      return Array.from(root().querySelectorAll('tr.table-row')[index].querySelectorAll('.actions-cell button'))
+        .map(b => b.getAttribute('aria-label'));
+    }
+
+    const jobsInEveryState = (): JobOffer[] => [
+      { ...makeJob(1), status: JobOfferStatus.Draft },
+      { ...makeJob(2), status: JobOfferStatus.Active },
+      { ...makeJob(3), status: JobOfferStatus.Closed }
+    ];
+
+    describe('admin', () => {
+      it('is the default mode: shows the company column and the company filter', () => {
+        create();
+
+        expect(component.isAdmin()).toBe(true);
+        expect(component.displayedColumns()).toContain('company');
+        expect(root().querySelector('app-company-autocomplete')).not.toBeNull();
+      });
+
+      it('renders the "Firma" header and the company name in each row', () => {
+        createInMode('admin', null, [{ ...makeJob(1), company: 'Alfa' }]);
+
+        expect(headers()).toContain('Firma');
+        expect(root().querySelector('tr.table-row .company-name')?.textContent).toBe('Alfa');
+      });
+
+      it('may publish and resume offers regardless of any company', () => {
+        createInMode('admin', null, jobsInEveryState());
+
+        expect(component.canPublish()).toBe(true);
+        expect(rowActions(0)).toContain('Opublikuj');
+        expect(rowActions(2)).toContain('Wznów');
+      });
+
+      it('filtering by company sends companyId, resets the page and counts as an active filter', () => {
+        createInMode('admin');
+        component.onPageChange({ pageIndex: 2, pageSize: 10, length: 35, previousPageIndex: 0 });
+
+        component.onCompanyFilterChange({ id: 7, name: 'Alfa' });
+
+        expect(lastParams().companyId).toBe(7);
+        expect(lastParams().pageNumber).toBe(1);
+        expect(component.hasActiveFilters()).toBe(true);
+      });
+
+      it('does not reload when the same company is selected again', () => {
+        createInMode('admin');
+        component.onCompanyFilterChange({ id: 7, name: 'Alfa' });
+        const callsBefore = getManagedJobs.mock.calls.length;
+
+        component.onCompanyFilterChange({ id: 7, name: 'Alfa' });
+
+        expect(getManagedJobs.mock.calls.length).toBe(callsBefore);
+      });
+
+      it('removing the company filter (null) reloads without companyId', () => {
+        createInMode('admin');
+        component.onCompanyFilterChange({ id: 7, name: 'Alfa' });
+
+        component.onCompanyFilterChange(null);
+
+        expect(lastParams().companyId).toBeNull();
+        expect(component.hasActiveFilters()).toBe(false);
+      });
+
+      it('the autocomplete in the template drives the company filter', () => {
+        createInMode('admin');
+        const autocomplete = fixture.debugElement.query(By.directive(CompanyAutocompleteComponent));
+
+        autocomplete.componentInstance.companyChange.emit({ id: 3, name: 'Gamma' });
+
+        expect(lastParams().companyId).toBe(3);
+      });
+
+      it('clearFilters removes the company filter', () => {
+        createInMode('admin');
+        component.onCompanyFilterChange({ id: 7, name: 'Alfa' });
+
+        component.clearFilters();
+
+        expect(lastParams().companyId).toBeNull();
+        expect(component.companyFilter()).toBeNull();
+      });
+
+      it('the "Firma" header sorts by company', async () => {
+        createInMode('admin');
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        const header = Array.from(root().querySelectorAll<HTMLElement>('th.mat-sort-header')).find(h => h.textContent?.includes('Firma'))!;
+        header.click();
+
+        expect(lastParams().orderBy).toBe('companyAsc');
+      });
+
+      it('opens the job dialog in admin mode without a company', () => {
+        createInMode('admin');
+
+        component.openAddDialog();
+
+        expect(dialogOpen).toHaveBeenCalledWith(JobDialogComponent, expect.objectContaining({
+          data: { job: null, mode: 'admin', company: null }
+        }));
+      });
+    });
+
+    describe('employer', () => {
+      it('hides the company column and the company filter', () => {
+        createInMode('employer', makeCompany(1, { status: CompanyStatus.Approved }));
+
+        expect(component.isAdmin()).toBe(false);
+        expect(component.displayedColumns()).not.toContain('company');
+        expect(headers()).not.toContain('Firma');
+        expect(root().querySelector('app-company-autocomplete')).toBeNull();
+        expect(root().querySelector('.company-name')).toBeNull();
+      });
+
+      it('keeps all other columns', () => {
+        createInMode('employer', makeCompany(1, { status: CompanyStatus.Approved }));
+
+        expect(component.displayedColumns()).toEqual(['id', 'title', 'status', 'location', 'workType', 'salary', 'createdAt', 'actions']);
+      });
+
+      it('never sends a company filter', () => {
+        createInMode('employer', makeCompany(1, { status: CompanyStatus.Approved }));
+
+        component.onSortChange({ active: 'title', direction: 'asc' });
+
+        expect(lastParams().companyId).toBeNull();
+      });
+
+      it('approved company: offers Opublikuj / Zamknij / Wznów as an admin does', () => {
+        createInMode('employer', makeCompany(1, { status: CompanyStatus.Approved }), jobsInEveryState());
+
+        expect(component.canPublish()).toBe(true);
+        expect(rowActions(0)[0]).toBe('Opublikuj');
+        expect(rowActions(1)[0]).toBe('Zamknij');
+        expect(rowActions(2)[0]).toBe('Wznów');
+      });
+
+      it.each([
+        [CompanyStatus.Pending],
+        [CompanyStatus.Rejected]
+      ])('company with status %i: hides Opublikuj and Wznów, keeps Zamknij', status => {
+        createInMode('employer', makeCompany(1, { status }), jobsInEveryState());
+
+        expect(component.canPublish()).toBe(false);
+        expect(rowActions(0)).not.toContain('Opublikuj');
+        expect(rowActions(1)).toContain('Zamknij');
+        expect(rowActions(2)).not.toContain('Wznów');
+      });
+
+      it('a company with an unknown status, or no company at all, cannot publish', () => {
+        createInMode('employer', makeCompany(1, { status: null }), jobsInEveryState());
+        expect(component.canPublish()).toBe(false);
+
+        createInMode('employer', null, jobsInEveryState());
+        expect(component.canPublish()).toBe(false);
+        expect(rowActions(0)).not.toContain('Opublikuj');
+      });
+
+      it('still offers edit and delete for offers of a not approved company', () => {
+        createInMode('employer', makeCompany(1, { status: CompanyStatus.Pending }), [{ ...makeJob(1), status: JobOfferStatus.Draft }]);
+
+        expect(root().querySelectorAll('tr.table-row .actions-cell button').length).toBe(2);
+      });
+
+      it('quickActions filters out only the Active-targeting actions', () => {
+        createInMode('employer', makeCompany(1, { status: CompanyStatus.Pending }));
+
+        expect(component.quickActions({ ...makeJob(1), status: JobOfferStatus.Draft })).toEqual([]);
+        expect(component.quickActions({ ...makeJob(2), status: JobOfferStatus.Closed })).toEqual([]);
+        expect(component.quickActions({ ...makeJob(3), status: JobOfferStatus.Active }).map(a => a.label)).toEqual(['Zamknij']);
+        expect(component.quickActions({ ...makeJob(4), status: JobOfferStatus.Active, isExpired: true }).map(a => a.label)).toEqual(['Zamknij']);
+      });
+
+      it('opens the job dialog in employer mode with the employer company', () => {
+        const company = makeCompany(4, { status: CompanyStatus.Pending });
+        createInMode('employer', company);
+
+        component.openAddDialog();
+
+        expect(dialogOpen).toHaveBeenCalledWith(JobDialogComponent, expect.objectContaining({
+          data: { job: null, mode: 'employer', company }
+        }));
+      });
+
+      it('passes the edited offer to the dialog and refreshes after saving', () => {
+        const company = makeCompany(4, { status: CompanyStatus.Approved });
+        createInMode('employer', company);
+        const job = makeJob(9);
+        dialogOpen.mockReturnValue({ afterClosed: () => of(true) });
+        const callsBefore = getManagedJobs.mock.calls.length;
+
+        component.openEditDialog(job);
+
+        expect(dialogOpen).toHaveBeenCalledWith(JobDialogComponent, expect.objectContaining({ data: { job, mode: 'employer', company } }));
+        expect(getManagedJobs.mock.calls.length).toBe(callsBefore + 1);
+      });
+
+      it('reacts to the company becoming approved (publish actions appear)', () => {
+        createInMode('employer', makeCompany(1, { status: CompanyStatus.Pending }), [{ ...makeJob(1), status: JobOfferStatus.Draft }]);
+        expect(rowActions(0)).not.toContain('Opublikuj');
+
+        fixture.componentRef.setInput('company', makeCompany(1, { status: CompanyStatus.Approved }));
+
+        expect(rowActions(0)).toContain('Opublikuj');
+      });
     });
   });
 
