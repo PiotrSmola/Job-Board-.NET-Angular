@@ -66,6 +66,11 @@
     font-style: italic;
   }
 
+  .attachments-cell {
+    min-width: 180px;
+    max-width: 260px;
+  }
+
   .actions-cell {
     display: flex;
     gap: 4px;

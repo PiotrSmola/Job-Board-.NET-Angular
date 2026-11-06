@@ -1,4 +1,4 @@
-import { Component, DestroyRef, computed, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -20,16 +20,17 @@ import { ApplicationStatus, JobApplication } from '../../../models/job-applicati
 import { ApplicationOrderBy, ApplicationParams } from '../../../models/application-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
 import { PanelMode } from '../../../models/panel-mode.model';
-import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
+import { isHandledByInterceptor } from '../../../utils/http-errors';
 import { APPLICATION_STATUS_FILTER_OPTIONS, getApplicationStatusPresentation } from '../../../utils/status-labels';
 import { StatusChipComponent } from '../../shared/status-chip.component';
 import { ApplicationStatusDialogComponent } from '../application-status-dialog/application-status-dialog.component';
 import { ApplicationHistoryDialogComponent } from '../application-history-dialog/application-history-dialog.component';
+import { AttachmentListComponent } from '../../shared/attachment-list.component';
 
 // API sortuje aplikacje tylko po dacie złożenia
 const DEFAULT_SORT: Sort = { active: 'appliedAt', direction: 'desc' };
 
-const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt', 'note', 'actions'];
+const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt', 'note', 'attachments', 'actions'];
 
 @Component({
   selector: 'app-admin-applications-tab',
@@ -48,7 +49,8 @@ const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt',
     MatSelectModule,
     MatPaginatorModule,
     MatSortModule,
-    StatusChipComponent
+    StatusChipComponent,
+    AttachmentListComponent
   ],
   templateUrl: './admin-applications-tab.component.html',
   styleUrl: './admin-applications-tab.component.scss'
@@ -56,7 +58,6 @@ const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt',
 export class AdminApplicationsTabComponent {
   private applicationService = inject(JobApplicationService);
   private dialog = inject(MatDialog);
-  private destroyRef = inject(DestroyRef);
 
   /** admin – wszystkie aplikacje (z usuwaniem); employer – aplikacje do ofert własnej firmy, bez usuwania. */
   readonly mode = input<PanelMode>('admin');
@@ -70,7 +71,6 @@ export class AdminApplicationsTabComponent {
   readonly totalItems = signal(0);
   readonly loading = signal(false);
   readonly deletingId = signal<number | null>(null);
-  readonly downloadingCvId = signal<number | null>(null);
 
   readonly pageIndex = signal(0);
   readonly pageSize = signal(10);
@@ -140,7 +140,7 @@ export class AdminApplicationsTabComponent {
   }
 
   openStatusDialog(application: JobApplication): void {
-    const dialogRef = this.dialog.open(ApplicationStatusDialogComponent, { width: '520px', data: application });
+    const dialogRef = this.dialog.open(ApplicationStatusDialogComponent, { width: '520px', ariaModal: true, data: application });
 
     dialogRef.afterClosed().subscribe(updated => {
       if (updated) {
@@ -151,21 +151,7 @@ export class AdminApplicationsTabComponent {
   }
 
   openHistoryDialog(application: JobApplication): void {
-    this.dialog.open(ApplicationHistoryDialogComponent, { width: '560px', data: application });
-  }
-
-  downloadCv(application: JobApplication): void {
-    this.downloadingCvId.set(application.id);
-    this.applicationService.downloadCv(application.id, application.cvFileName).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => this.downloadingCvId.set(null),
-      error: (error) => {
-        console.error('Error downloading CV:', error);
-        this.downloadingCvId.set(null);
-        if (!isHandledByInterceptor(error)) {
-          alert(getApiErrorMessage(error, 'Nie udało się pobrać CV'));
-        }
-      }
-    });
+    this.dialog.open(ApplicationHistoryDialogComponent, { width: '560px', ariaModal: true, data: application });
   }
 
   onSortChange(sort: Sort): void {

@@ -6,7 +6,7 @@ import { AdminApplicationsTabComponent } from './admin-applications-tab.componen
 import { ApplicationStatusDialogComponent } from '../application-status-dialog/application-status-dialog.component';
 import { ApplicationHistoryDialogComponent } from '../application-history-dialog/application-history-dialog.component';
 import { JobApplicationService } from '../../../services/job-application.service';
-import { ApplicationStatus, JobApplication } from '../../../models/job-application.model';
+import { ApplicationAttachment, ApplicationStatus, AttachmentKind, JobApplication } from '../../../models/job-application.model';
 import { ApplicationParams } from '../../../models/application-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
 import { PanelMode } from '../../../models/panel-mode.model';
@@ -25,10 +25,8 @@ function makeApplication(id: number, status = ApplicationStatus.Submitted): JobA
     appliedAt: new Date('2026-01-01T10:00:00Z'),
     status,
     statusChangedAt: '2026-01-01T10:00:00Z',
-    hasCv: false,
-    cvFileName: null,
-    cvSize: null,
-    cvUploadedAt: null
+    attachments: [],
+    attachmentsTotalSize: 0
   };
 }
 
@@ -52,7 +50,7 @@ describe('AdminApplicationsTabComponent', () => {
   let component: AdminApplicationsTabComponent;
   let getAllApplications: ReturnType<typeof vi.fn>;
   let deleteApplication: ReturnType<typeof vi.fn>;
-  let downloadCv: ReturnType<typeof vi.fn>;
+  let downloadAttachment: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
   let confirmSpy: ReturnType<typeof vi.spyOn>;
   let dialogOpen: ReturnType<typeof vi.fn>;
@@ -72,7 +70,7 @@ describe('AdminApplicationsTabComponent', () => {
   beforeEach(async () => {
     getAllApplications = vi.fn();
     deleteApplication = vi.fn().mockReturnValue(of(undefined));
-    downloadCv = vi.fn().mockReturnValue(of(undefined));
+    downloadAttachment = vi.fn().mockReturnValue(of(undefined));
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -82,7 +80,7 @@ describe('AdminApplicationsTabComponent', () => {
     await TestBed.configureTestingModule({
       imports: [AdminApplicationsTabComponent],
       providers: [
-        { provide: JobApplicationService, useValue: { getAllApplications, deleteApplication, downloadCv } },
+        { provide: JobApplicationService, useValue: { getAllApplications, deleteApplication, downloadAttachment } },
         { provide: MatDialog, useValue: { open: dialogOpen } }
       ]
     }).compileComponents();
@@ -569,7 +567,7 @@ describe('AdminApplicationsTabComponent', () => {
         createInMode('employer');
 
         expect(component.isAdmin()).toBe(false);
-        expect(component.displayedColumns()).toEqual(['id', 'jobTitle', 'user', 'status', 'appliedAt', 'note', 'actions']);
+        expect(component.displayedColumns()).toEqual(['id', 'jobTitle', 'user', 'status', 'appliedAt', 'note', 'attachments', 'actions']);
         expect(headers()).not.toContain('Firma');
         expect(root().querySelector('.company-name')).toBeNull();
       });
@@ -628,8 +626,13 @@ describe('AdminApplicationsTabComponent', () => {
     expect(text.toLowerCase()).toContain('marca');
   });
 
-  describe('CV download', () => {
-    const CV_FIELDS = { hasCv: true, cvFileName: 'jan-cv.pdf', cvSize: 1024, cvUploadedAt: '2026-01-02T10:00:00Z' };
+  describe('attachments', () => {
+    const CV: ApplicationAttachment = { id: 21, kind: AttachmentKind.Cv, fileName: 'jan-cv.pdf', size: 1024, uploadedAt: '2026-01-02T10:00:00Z' };
+    const PORTFOLIO: ApplicationAttachment = { id: 22, kind: AttachmentKind.Portfolio, fileName: 'projekt.png', size: 2048, uploadedAt: '2026-01-03T10:00:00Z' };
+
+    function withAttachments(id: number, attachments = [CV, PORTFOLIO]): JobApplication {
+      return { ...makeApplication(id), attachments, attachmentsTotalSize: attachments.reduce((s, a) => s + a.size, 0) };
+    }
 
     function createWith(mode: PanelMode, applications: JobApplication[]): void {
       getAllApplications.mockReturnValue(of({ ...page(0, applications.length), result: applications }));
@@ -639,58 +642,101 @@ describe('AdminApplicationsTabComponent', () => {
       fixture.detectChanges();
     }
 
-    function downloadButtons(): HTMLButtonElement[] {
+    function cell(index: number): HTMLElement {
       fixture.detectChanges();
-      return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('button.download-cv'));
+      return (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('td.mat-column-attachments')[index];
     }
 
-    it.each<PanelMode>(['admin', 'employer'])('%s: shows a labelled download button only for applications with a CV', mode => {
-      createWith(mode, [{ ...makeApplication(1), ...CV_FIELDS }, makeApplication(2)]);
+    function downloadButtons(index: number): HTMLButtonElement[] {
+      return Array.from(cell(index).querySelectorAll<HTMLButtonElement>('button.download-button'));
+    }
 
-      const buttons = downloadButtons();
-      expect(buttons.length).toBe(1);
-      expect(buttons[0].getAttribute('aria-label')).toBe('Pobierz CV: jan-cv.pdf');
+    it.each<PanelMode>(['admin', 'employer'])('%s: shows the "Załączniki" column before the actions', mode => {
+      createWith(mode, [withAttachments(1)]);
+
+      const columns = component.displayedColumns();
+      expect(columns.indexOf('attachments')).toBe(columns.indexOf('actions') - 1);
+      const headers = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('th')).map(h => h.textContent?.trim());
+      expect(headers).toContain('Załączniki');
     });
 
-    it('downloads the CV with the stored file name as a fallback', () => {
-      createWith('employer', [{ ...makeApplication(1), ...CV_FIELDS }]);
+    it.each<PanelMode>(['admin', 'employer'])('%s: offers a labelled download button for every attachment and nothing else', mode => {
+      createWith(mode, [withAttachments(1), makeApplication(2)]);
 
-      downloadButtons()[0].click();
-
-      expect(downloadCv).toHaveBeenCalledWith(1, 'jan-cv.pdf');
-      expect(component.downloadingCvId()).toBeNull();
+      expect(downloadButtons(0).map(b => b.getAttribute('aria-label'))).toEqual([
+        'Pobierz CV: jan-cv.pdf', 'Pobierz Portfolio: projekt.png'
+      ]);
+      expect(cell(0).querySelectorAll('.delete-button').length).toBe(0);
+      expect(cell(1).querySelector('.empty')?.textContent).toBe('Brak');
+      expect(cell(1).querySelectorAll('button').length).toBe(0);
     });
 
-    it('disables the button while the file is being downloaded', () => {
+    it('no longer shows the single-CV button in the actions', () => {
+      createWith('admin', [withAttachments(1)]);
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.actions-cell .download-cv')).toBeNull();
+    });
+
+    it('downloads the clicked attachment of the row application', () => {
+      createWith('employer', [withAttachments(4)]);
+
+      downloadButtons(0)[1].click();
+
+      expect(downloadAttachment).toHaveBeenCalledWith(4, PORTFOLIO);
+    });
+
+    it('marks the button with aria-disabled while the file is being downloaded', () => {
       const pending = new Subject<void>();
-      downloadCv.mockReturnValue(pending);
-      createWith('admin', [{ ...makeApplication(1), ...CV_FIELDS }]);
+      downloadAttachment.mockReturnValue(pending);
+      createWith('admin', [withAttachments(1)]);
 
-      component.downloadCv(component.applications()[0]);
+      downloadButtons(0)[0].click();
 
-      expect(downloadButtons()[0].disabled).toBe(true);
+      expect(downloadButtons(0)[0].getAttribute('aria-disabled')).toBe('true');
+      expect(downloadButtons(0)[0].disabled).toBe(false);
       pending.next();
       pending.complete();
-      expect(downloadButtons()[0].disabled).toBe(false);
+      expect(downloadButtons(0)[0].getAttribute('aria-disabled')).toBeNull();
     });
 
-    it('alerts the translated API message when the download fails', () => {
-      downloadCv.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { message: 'Application not found' } })));
-      createWith('admin', [{ ...makeApplication(1), ...CV_FIELDS }]);
+    it('shows the translated API message in an alert when the download fails', () => {
+      downloadAttachment.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { message: 'Attachment not found' } })));
+      createWith('admin', [withAttachments(1)]);
 
-      component.downloadCv(component.applications()[0]);
+      downloadButtons(0)[0].click();
 
-      expect(alertSpy).toHaveBeenCalledWith('Aplikacja nie została znaleziona');
-      expect(component.downloadingCvId()).toBeNull();
-    });
-
-    it('does not alert when the interceptor handles 403', () => {
-      downloadCv.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
-      createWith('employer', [{ ...makeApplication(1), ...CV_FIELDS }]);
-
-      component.downloadCv(component.applications()[0]);
-
+      expect(cell(0).querySelector('[role="alert"]')?.textContent).toBe('Nie znaleziono załącznika');
       expect(alertSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not show a message when the interceptor handles 403', () => {
+      downloadAttachment.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+      createWith('employer', [withAttachments(1)]);
+
+      downloadButtons(0)[0].click();
+
+      expect(cell(0).querySelector('[role="alert"]')).toBeNull();
+      expect(alertSpy).not.toHaveBeenCalled();
+    });
+
+    it('opens the status and history dialogs as ARIA modals', () => {
+      createWith('admin', [withAttachments(1)]);
+
+      component.openStatusDialog(component.applications()[0]);
+      component.openHistoryDialog(component.applications()[0]);
+
+      expect(dialogOpen.mock.calls.map(call => call[1].ariaModal)).toEqual([true, true]);
+    });
+
+    it('stops a pending download when the tab is destroyed', () => {
+      const pending = new Subject<void>();
+      downloadAttachment.mockReturnValue(pending);
+      createWith('admin', [withAttachments(1)]);
+
+      downloadButtons(0)[0].click();
+      fixture.destroy();
+
+      expect(pending.observed).toBe(false);
     });
   });
 });
