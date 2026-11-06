@@ -196,7 +196,7 @@ public class ApplicationWorkflowTests
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(OnlyCandidatesMessage, await MessageAsync(response));
-        var forJob = await (await admin.GetAsync($"{Url}/job/{job.Id}")).ReadJsonAsync<JobApplicationDto[]>();
+        var forJob = await (await admin.GetAsync($"{Url}/all?pageSize=50&jobOfferId={job.Id}")).ReadJsonAsync<JobApplicationDto[]>();
         Assert.Empty(forJob);
     }
 
@@ -614,7 +614,7 @@ public class ApplicationWorkflowTests
         using var admin = await _api.AdminClientAsync();
 
         var mine = await (await client.GetAsync($"{Url}/my-applications")).ReadJsonAsync<JobApplicationDto[]>();
-        var byJob = await (await admin.GetAsync($"{Url}/job/{job.Id}")).ReadJsonAsync<JobApplicationDto[]>();
+        var byJob = await (await admin.GetAsync($"{Url}/all?pageSize=50&jobOfferId={job.Id}")).ReadJsonAsync<JobApplicationDto[]>();
 
         Assert.Equal(ApplicationStatus.Withdrawn, Assert.Single(mine).Status);
         Assert.Equal(ApplicationStatus.Withdrawn, Assert.Single(byJob).Status);
@@ -657,7 +657,7 @@ public class ApplicationWorkflowTests
         using var admin = await _api.AdminClientAsync();
 
         var mine = await (await client.GetAsync($"{Url}/my-applications")).ReadJsonAsync<JobApplicationDto[]>();
-        var byJob = await (await admin.GetAsync($"{Url}/job/{job.Id}")).ReadJsonAsync<JobApplicationDto[]>();
+        var byJob = await (await admin.GetAsync($"{Url}/all?pageSize=50&jobOfferId={job.Id}")).ReadJsonAsync<JobApplicationDto[]>();
 
         Assert.Equal(application.Id, Assert.Single(mine).Id);
         Assert.Single(byJob);
@@ -977,7 +977,6 @@ public class ApplicationWorkflowTests
         var responses = new[]
         {
             await client.GetAsync($"{Url}/my-applications"),
-            await admin.GetAsync($"{Url}/job/{job.Id}"),
             await admin.GetAsync($"{Url}/all?jobOfferId={job.Id}")
         };
 

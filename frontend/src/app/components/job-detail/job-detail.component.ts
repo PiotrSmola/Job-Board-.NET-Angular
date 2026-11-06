@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, OnInit, ChangeDetectorRef } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, OnInit, ChangeDetectorRef, computed, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { CommonModule } from '@angular/common';
@@ -21,7 +21,12 @@ import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model
 import { ApplicationAttachment, ApplicationStatus, AttachmentUploadItem, JobApplication } from '../../models/job-application.model';
 import { getApplicationStatusPresentation, getJobState, StatusPresentation } from '../../utils/status-labels';
 import { StatusChipComponent } from '../shared/status-chip.component';
+import { JobTaxonomyComponent } from '../shared/job-taxonomy.component';
+import { formatJobSalary, getContractTypeLabels, getSeniorityLabel, getWorkTypeLabel } from '../../utils/job-labels';
 import { AttachmentsPickerComponent } from '../shared/attachments-picker.component';
+import { ProfileDocumentsPickerComponent } from '../shared/profile-documents-picker.component';
+import { SaveJobButtonComponent } from '../shared/save-job-button.component';
+import { ProfileDocument } from '../../models/account.model';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
 
 const ALREADY_APPLIED_MESSAGE = 'You have already applied to this job';
@@ -43,6 +48,8 @@ export interface ApplyDialogResult {
   confirmed: boolean;
   note: string;
   attachments: AttachmentUploadItem[];
+  /** Dokumenty z profilu do skopiowania do aplikacji. */
+  profileDocumentIds: number[];
 }
 
 @Component({
@@ -56,7 +63,8 @@ export interface ApplyDialogResult {
     MatFormFieldModule,
     MatInputModule,
     MatButtonModule,
-    AttachmentsPickerComponent
+    AttachmentsPickerComponent,
+    ProfileDocumentsPickerComponent
   ],
   template: `
     <h2 mat-dialog-title>Aplikuj na stanowisko</h2>
@@ -66,8 +74,10 @@ export interface ApplyDialogResult {
         <mat-label>Notatka</mat-label>
         <textarea matInput [(ngModel)]="note" rows="4" placeholder="Dlaczego jesteś idealnym kandydatem..."></textarea>
       </mat-form-field>
+      <app-profile-documents-picker [pendingItems]="attachments" [existing]="existing" (selectionChange)="profileDocuments.set($event)" />
       <p>Dołącz CV, list motywacyjny lub inne pliki (opcjonalnie):</p>
-      <app-attachments-picker [(items)]="attachments" [existing]="existing" />
+      <!-- zachowane załączniki i wybrane dokumenty z profilu wliczają się do limitów nowych plików -->
+      <app-attachments-picker [(items)]="attachments" [existing]="countedAttachments()" />
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close>Anuluj</button>
@@ -85,9 +95,16 @@ export class ApplyDialogComponent {
   readonly existing = inject<ApplyDialogData | null>(MAT_DIALOG_DATA, { optional: true })?.existing ?? [];
   note = '';
   attachments: AttachmentUploadItem[] = [];
+  readonly profileDocuments = signal<ProfileDocument[]>([]);
+  readonly countedAttachments = computed<readonly ApplicationAttachment[]>(() => [...this.existing, ...this.profileDocuments()]);
 
   result(): ApplyDialogResult {
-    return { confirmed: true, note: this.note, attachments: this.attachments };
+    return {
+      confirmed: true,
+      note: this.note,
+      attachments: this.attachments,
+      profileDocumentIds: this.profileDocuments().map(d => d.id)
+    };
   }
 }
 
@@ -104,7 +121,9 @@ export class ApplyDialogComponent {
     MatDividerModule,
     MatDialogModule,
     RouterModule,
-    StatusChipComponent
+    StatusChipComponent,
+    JobTaxonomyComponent,
+    SaveJobButtonComponent
   ],
   templateUrl: './job-detail.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -260,13 +279,16 @@ export class JobDetailComponent implements OnInit {
 
     dialogRef.afterClosed().subscribe((result: ApplyDialogResult | undefined) => {
       if (result?.confirmed && this.job) {
-        this.applyToJob(result.note, result.attachments);
+        this.applyToJob(result.note, result.attachments, result.profileDocumentIds ?? []);
       }
     });
   }
 
-  /** Najpierw składa aplikację, potem (opcjonalnie) jednym żądaniem dołącza załączniki – ich błąd nie cofa aplikacji. */
-  applyToJob(note: string, attachments: readonly AttachmentUploadItem[] = []): void {
+  /**
+   * Najpierw składa aplikację, potem (opcjonalnie) dołącza kopie dokumentów z profilu, a na końcu jednym żądaniem
+   * przesyła nowe pliki – błąd dołączania nie cofa aplikacji.
+   */
+  applyToJob(note: string, attachments: readonly AttachmentUploadItem[] = [], profileDocumentIds: readonly number[] = []): void {
     if (!this.job) return;
 
     this.applying = true;
@@ -279,6 +301,11 @@ export class JobDetailComponent implements OnInit {
         this.hasApplied = true;
         this.applicationStatus = application?.status ?? ApplicationStatus.Submitted;
         const successMessage = reapplied ? 'Aplikacja została złożona ponownie!' : 'Aplikacja wysłana pomyślnie!';
+
+        if (profileDocumentIds.length) {
+          this.attachProfileDocuments(application?.id ?? null, profileDocumentIds, attachments, successMessage);
+          return;
+        }
 
         if (attachments.length) {
           this.uploadAttachments(application?.id ?? null, attachments, successMessage);
@@ -307,6 +334,37 @@ export class JobDetailComponent implements OnInit {
         if (!isHandledByInterceptor(error)) {
           this.notify(getApiErrorMessage(error, 'Błąd podczas aplikowania'));
         }
+      }
+    });
+  }
+
+  /** Kopiuje dokumenty z profilu do aplikacji; potem (jeśli są) wysyła nowe pliki. */
+  private attachProfileDocuments(
+    applicationId: number | null,
+    documentIds: readonly number[],
+    items: readonly AttachmentUploadItem[],
+    successMessage: string
+  ): void {
+    if (applicationId === null || this.destroyed) {
+      this.finishAttachmentsUpload(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 'Przerwano wysyłanie', 8000);
+      return;
+    }
+
+    // serwer kopiuje pliki – bez postępu wysyłania, przycisk pokazuje „Przetwarzanie załączników…”
+    this.attachmentsUploadProgress = 100;
+    this.uploadAnnouncement = 'Dołączanie dokumentów z profilu…';
+    this.cdr.detectChanges();
+    this.applicationService.attachFromProfile(applicationId, documentIds).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
+        if (items.length) {
+          this.uploadAttachments(applicationId, items, successMessage);
+        } else {
+          this.finishAttachmentsUpload(`${successMessage} Załączniki zostały dołączone.`, 'Załączniki przesłane');
+        }
+      },
+      error: (error) => {
+        console.error('Error attaching profile documents:', error);
+        this.finishAttachmentsUpload(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 'Przerwano wysyłanie', 8000);
       }
     });
   }
@@ -354,23 +412,19 @@ export class JobDetailComponent implements OnInit {
   }
 
   getWorkTypeLabel(): string {
-    if (!this.job) return '';
-    switch (this.job.workType) {
-      case WorkType.Remote: return 'Zdalna';
-      case WorkType.Hybrid: return 'Hybrydowa';
-      case WorkType.Onsite: return 'Stacjonarna';
-      default: return 'Nieznany';
-    }
+    return this.job ? getWorkTypeLabel(this.job.workType) : '';
   }
 
   formatSalary(): string {
-    if (!this.job) return '';
-    const { salaryMin, salaryMax } = this.job;
-    if (!salaryMin && !salaryMax) return 'Nieokreślona';
-    if (salaryMin && salaryMax) return `${salaryMin} - ${salaryMax} PLN`;
-    if (salaryMin) return `Od ${salaryMin} PLN`;
-    if (salaryMax) return `Do ${salaryMax} PLN`;
-    return 'Nieokreślona';
+    return this.job ? formatJobSalary(this.job) : '';
+  }
+
+  get seniorityLabel(): string | null {
+    return this.job ? getSeniorityLabel(this.job.seniority) : null;
+  }
+
+  get contractLabels(): string[] {
+    return this.job ? getContractTypeLabels(this.job.contractTypes) : [];
   }
 
   goBack(): void {

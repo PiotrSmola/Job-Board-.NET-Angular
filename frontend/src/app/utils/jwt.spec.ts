@@ -1,4 +1,4 @@
-import { decodeJwtPayload, getJwtExpiration, getJwtRoles, isJwtExpired } from './jwt';
+import { decodeJwtPayload, getJwtExpiration, getJwtRoles, getJwtUserId, isJwtExpired } from './jwt';
 import { MS_ROLE_CLAIM, base64UrlEncode, makeJwt } from '../../testing/jwt-helper';
 
 describe('jwt utils', () => {
@@ -132,6 +132,23 @@ describe('jwt utils', () => {
     it('returns an empty array for an unreadable token', () => {
       expect(getJwtRoles('garbage')).toEqual([]);
       expect(getJwtRoles(null)).toEqual([]);
+    });
+  });
+
+  describe('getJwtUserId', () => {
+    it('reads the short nameid claim written by JwtSecurityTokenHandler', () => {
+      expect(getJwtUserId(makeJwt({ nameid: 'u-1' }))).toBe('u-1');
+    });
+
+    it('falls back to sub and the long NameIdentifier claim', () => {
+      expect(getJwtUserId(makeJwt({ sub: 'u-2' }))).toBe('u-2');
+      expect(getJwtUserId(makeJwt({ 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier': 'u-3' }))).toBe('u-3');
+    });
+
+    it('returns null without a usable claim', () => {
+      expect(getJwtUserId(makeJwt({ nameid: 5 }))).toBeNull();
+      expect(getJwtUserId('garbage')).toBeNull();
+      expect(getJwtUserId(null)).toBeNull();
     });
   });
 });

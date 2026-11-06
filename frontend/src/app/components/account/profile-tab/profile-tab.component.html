@@ -1,0 +1,110 @@
+@switch (state()) {
+  @case ('loading') {
+    <div class="loading" role="status">
+      <mat-spinner diameter="40" aria-hidden="true"></mat-spinner>
+      <span class="sr-only">Wczytywanie profilu…</span>
+    </div>
+  }
+  @case ('error') {
+    <div class="loading load-error" role="alert">
+      <p class="error">{{ loadError() }}</p>
+      <button mat-stroked-button type="button" (click)="load()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Spróbuj ponownie
+      </button>
+    </div>
+  }
+  @default {
+    <section class="section" aria-labelledby="profile-heading">
+      <h2 id="profile-heading">Dane profilu</h2>
+      @if (profile(); as current) {
+        <dl class="account-facts">
+          <div>
+            <dt>E-mail</dt>
+            <dd>
+              {{ current.email }}
+              <span [class]="current.emailConfirmed ? 'success' : 'error'">
+                ({{ current.emailConfirmed ? 'potwierdzony' : 'niepotwierdzony' }})
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Konto od</dt>
+            <dd>{{ current.createdAt | date: 'dd.MM.yyyy' }}</dd>
+          </div>
+        </dl>
+      }
+
+      <form [formGroup]="form" (ngSubmit)="save()" novalidate>
+        <div class="row">
+          <mat-form-field appearance="outline">
+            <mat-label>Imię</mat-label>
+            <input matInput formControlName="firstName" autocomplete="given-name" required [maxlength]="limits.firstName">
+            <mat-error>Imię jest wymagane (maks. {{ limits.firstName }} znaków)</mat-error>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Nazwisko</mat-label>
+            <input matInput formControlName="lastName" autocomplete="family-name" required [maxlength]="limits.lastName">
+            <mat-error>Nazwisko jest wymagane (maks. {{ limits.lastName }} znaków)</mat-error>
+          </mat-form-field>
+        </div>
+
+        <div class="row">
+          <mat-form-field appearance="outline">
+            <mat-label>Telefon (opcjonalnie)</mat-label>
+            <input matInput type="tel" formControlName="phoneNumber" autocomplete="tel" [maxlength]="limits.phoneNumber"
+              placeholder="+48 600 100 200">
+            <mat-error>Dozwolone są cyfry, spacje, „+” i „-” (maks. {{ limits.phoneNumber }} znaków)</mat-error>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Lokalizacja (opcjonalnie)</mat-label>
+            <input matInput formControlName="location" autocomplete="address-level2" [maxlength]="limits.location"
+              placeholder="np. Rzeszów">
+            <mat-error>Maksymalnie {{ limits.location }} znaków</mat-error>
+          </mat-form-field>
+        </div>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Nagłówek (opcjonalnie)</mat-label>
+          <input matInput formControlName="headline" autocomplete="organization-title" [maxlength]="limits.headline"
+            placeholder="np. Frontend Developer (Angular)">
+          <mat-error>Maksymalnie {{ limits.headline }} znaków</mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Profil LinkedIn (opcjonalnie)</mat-label>
+          <input matInput type="url" formControlName="linkedInUrl" autocomplete="url" [maxlength]="limits.linkedInUrl"
+            placeholder="https://www.linkedin.com/in/...">
+          <mat-hint>Adres zaczynający się od https://www.linkedin.com/ lub https://linkedin.com/</mat-hint>
+          <mat-error>Podaj adres profilu LinkedIn zaczynający się od https://linkedin.com/ lub https://www.linkedin.com/</mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>O mnie (opcjonalnie)</mat-label>
+          <textarea matInput formControlName="about" rows="5" [maxlength]="limits.about"></textarea>
+          <mat-hint align="end">{{ form.controls.about.value.length }} / {{ limits.about }}</mat-hint>
+          <mat-error>Maksymalnie {{ limits.about }} znaków</mat-error>
+        </mat-form-field>
+
+        <div class="actions">
+          <button mat-raised-button color="primary" type="submit" [disabled]="saving()">
+            @if (saving()) {
+              <mat-spinner diameter="20" aria-hidden="true"></mat-spinner>
+              Zapisywanie…
+            } @else {
+              Zapisz profil
+            }
+          </button>
+        </div>
+
+        <!-- stałe miejsce na wynik zapisu; błąd w role="alert", sukces w role="status" -->
+        <div class="feedback">
+          <p class="error" role="alert">{{ saveError() }}</p>
+          <p class="success" role="status">{{ saveStatus() }}</p>
+        </div>
+      </form>
+    </section>
+  }
+}

@@ -6,6 +6,7 @@ namespace Backend.Helpers;
 public class ApplicationParams : PaginationParams
 {
     // Filtrowanie: email, imię/nazwisko kandydata, tytuł oferty, nazwa firmy
+    [MaxLength(MaxSearchLength)]
     public string? SearchTerm { get; set; }
     public int? JobOfferId { get; set; }
 

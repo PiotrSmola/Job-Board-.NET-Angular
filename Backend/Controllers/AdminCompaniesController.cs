@@ -16,11 +16,13 @@ public class AdminCompaniesController : ControllerBase
 {
     private readonly ICompanyRepository _companyRepository;
     private readonly ICurrentUserAccess _access;
+    private readonly IEmailOutbox _emailOutbox;
 
-    public AdminCompaniesController(ICompanyRepository companyRepository, ICurrentUserAccess access)
+    public AdminCompaniesController(ICompanyRepository companyRepository, ICurrentUserAccess access, IEmailOutbox emailOutbox)
     {
         _companyRepository = companyRepository;
         _access = access;
+        _emailOutbox = emailOutbox;
     }
 
     [HttpGet]
@@ -115,7 +117,14 @@ public class AdminCompaniesController : ControllerBase
             return NotFound(new { message = CompanyMessages.NotFound });
         }
 
+        var wasApproved = company.Status == CompanyStatus.Approved;
         company.Approve(_access.UserId, DateTime.UtcNow);
+        if (!wasApproved)
+        {
+            // e-mail do członków firmy zapisuje się w tym samym SaveChanges co decyzja
+            _emailOutbox.Queue(await _emailOutbox.PrepareCompanyReviewedAsync(company));
+        }
+
         await _companyRepository.UpdateCompanyAsync(company);
 
         return Ok(await SummaryDtoAsync(id));
@@ -136,7 +145,15 @@ public class AdminCompaniesController : ControllerBase
             return NotFound(new { message = CompanyMessages.NotFound });
         }
 
-        company.Reject(rejectDto.Reason.Trim(), _access.UserId, DateTime.UtcNow);
+        var reason = rejectDto.Reason.Trim();
+        var changed = company.Status != CompanyStatus.Rejected || company.RejectionReason != reason;
+        company.Reject(reason, _access.UserId, DateTime.UtcNow);
+        if (changed)
+        {
+            // e-mail do członków firmy (z powodem) zapisuje się w tym samym SaveChanges co decyzja
+            _emailOutbox.Queue(await _emailOutbox.PrepareCompanyReviewedAsync(company));
+        }
+
         await _companyRepository.UpdateCompanyAsync(company);
 
         return Ok(await SummaryDtoAsync(id));

@@ -15,6 +15,7 @@ public class PaginationParamsTests
         Assert.Equal(10, parameters.PageSize);
         Assert.Equal(10, PaginationParams.DefaultPageSize);
         Assert.Equal(50, PaginationParams.MaxPageSize);
+        Assert.Equal(100_000, PaginationParams.MaxPageNumber);
     }
 
     [Theory]
@@ -23,7 +24,10 @@ public class PaginationParamsTests
     [InlineData(0, 1)]
     [InlineData(-1, 1)]
     [InlineData(int.MinValue, 1)]
-    public void PageNumber_IsNormalizedToAtLeastOne(int input, int expected)
+    [InlineData(100_000, 100_000)]
+    [InlineData(100_001, 100_000)]
+    [InlineData(int.MaxValue, 100_000)]
+    public void PageNumber_IsClampedBetweenOneAndTheMaximum(int input, int expected)
     {
         var parameters = new ApplicationParams { PageNumber = input };
 

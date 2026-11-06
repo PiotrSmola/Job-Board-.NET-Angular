@@ -320,7 +320,7 @@ export class AdminJobsTabComponent {
     params.pageNumber = this.pageIndex() + 1;
     params.pageSize = this.pageSize();
     params.searchTerm = this.searchTerm();
-    params.workType = this.workType();
+    params.workTypes = this.workType() === null ? [] : [this.workType() as WorkType];
     params.state = this.state();
     params.companyId = this.companyFilter()?.id ?? null;
     params.orderBy = this.toOrderBy(this.sort());

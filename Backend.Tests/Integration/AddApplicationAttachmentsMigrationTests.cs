@@ -11,6 +11,7 @@ namespace Backend.Tests.Integration;
 // Migracja AddApplicationAttachments na bazie z danymi: nowa tabela ApplicationAttachments (klucz obcy z kaskadą,
 // unikalny klucz pliku, indeks po aplikacji), istniejące aplikacje bez zmian i bez załączników, a Down usuwa tabelę
 // i nie rusza reszty danych. Dane sprzed migracji wstawiane są surowym SQL-em.
+[Trait("Category", "Migrations")]
 public class AddApplicationAttachmentsMigrationTests
 {
     private const string PreviousMigration = "20261105120246_AddCompanies";
@@ -355,7 +356,8 @@ public class AddApplicationAttachmentsMigrationTests
             Assert.Equal("old", application.Note);
             Assert.Empty(application.Attachments);
             Assert.False(check.Database.GetPendingMigrations().Any());
-            Assert.Equal(AddApplicationAttachments, check.Database.GetAppliedMigrations().Last());
+            // migracja jest zastosowana (późniejsze migracje mogą być po niej)
+            Assert.Contains(AddApplicationAttachments, check.Database.GetAppliedMigrations());
         });
     }
 }

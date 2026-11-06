@@ -11,6 +11,7 @@ import { CompanyService } from '../../services/company.service';
 import { StatsService } from '../../services/stats.service';
 import { adminStatsFixture } from '../../../testing/stats-fixtures';
 import { provideRouter } from '@angular/router';
+import { CategoryService } from '../../services/category.service';
 
 const EMPTY_PAGE = { result: [], pagination: { CurrentPage: 1, ItemsPerPage: 10, TotalItems: 0, TotalPages: 1 } };
 
@@ -25,6 +26,7 @@ describe('AdminPanelComponent', () => {
   let getManagedJobs: ReturnType<typeof vi.fn>;
   let getAllApplications: ReturnType<typeof vi.fn>;
   let getAdminStats: ReturnType<typeof vi.fn>;
+  let getCategories: ReturnType<typeof vi.fn>;
   let logout: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
   let confirmSpy: ReturnType<typeof vi.spyOn>;
@@ -58,6 +60,7 @@ describe('AdminPanelComponent', () => {
     getManagedJobs = vi.fn().mockReturnValue(of(EMPTY_PAGE));
     getAllApplications = vi.fn().mockReturnValue(of(EMPTY_PAGE));
     getAdminStats = vi.fn().mockReturnValue(of(adminStatsFixture()));
+    getCategories = vi.fn().mockReturnValue(of([]));
     logout = vi.fn();
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -73,6 +76,7 @@ describe('AdminPanelComponent', () => {
         { provide: JobService, useValue: { getManagedJobs, deleteJob: vi.fn() } },
         { provide: JobApplicationService, useValue: { getAllApplications, deleteApplication: vi.fn() } },
         { provide: CompanyService, useValue: { getCompanies: vi.fn() } },
+        { provide: CategoryService, useValue: { getCategories } },
         { provide: MatDialog, useValue: { open: vi.fn() } }
       ]
     }).compileComponents();
@@ -184,12 +188,24 @@ describe('AdminPanelComponent', () => {
       expect(getManagedJobs.mock.calls.length).toBe(jobCalls + 1);
     });
 
+    it('adds a Kategorie tab after Firmy that can be selected, without loading it before it is opened', async () => {
+      await create();
+
+      const labels = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('.mdc-tab')).map(t => t.textContent?.trim());
+      expect(labels[3]).toContain('Kategorie');
+      expect(getCategories).not.toHaveBeenCalled();
+
+      await openTab(3);
+
+      expect(component.selectedTabIndex()).toBe(3);
+    });
+
     it('lists the statistics tab last', async () => {
       await create();
 
       const labels = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('.mdc-tab__text-label'))
         .map(label => label.textContent?.replace(/\s+/g, ' ').trim());
-      expect(labels).toEqual(['work Oferty Pracy', 'assignment Aplikacje', 'business Firmy', 'insights Statystyki']);
+      expect(labels).toEqual(['work Oferty Pracy', 'assignment Aplikacje', 'business Firmy', 'category Kategorie', 'insights Statystyki']);
     });
 
     it('loads the statistics dashboard (lazily, in admin mode) only after visiting the tab', async () => {
@@ -197,7 +213,7 @@ describe('AdminPanelComponent', () => {
       expect((fixture.nativeElement as HTMLElement).querySelector('app-stats-dashboard')).toBeNull();
       expect(getAdminStats).not.toHaveBeenCalled();
 
-      await openTab(3);
+      await openTab(4);
       await vi.waitFor(() => {
         fixture.detectChanges();
         expect((fixture.nativeElement as HTMLElement).querySelector('app-stats-dashboard')).not.toBeNull();

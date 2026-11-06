@@ -1,5 +1,6 @@
 import { AfterViewChecked, ChangeDetectionStrategy, Component, DestroyRef, ElementRef, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Observable } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -10,7 +11,19 @@ import { formatFileSize, getAttachmentKindLabel } from '../../utils/attachments'
 import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
 
 /**
- * Lista załączników aplikacji z pobieraniem i (opcjonalnie) usuwaniem.
+ * Operacje na pozycjach listy – np. dokumenty profilu zamiast załączników aplikacji.
+ * Bez nich lista pobiera i usuwa załączniki aplikacji `applicationId`.
+ */
+export interface AttachmentListActions {
+  download(attachment: ApplicationAttachment): Observable<void>;
+  delete(attachment: ApplicationAttachment): Observable<void>;
+}
+
+// 404 dla już usuniętej pozycji (np. w innej karcie) – efekt jest taki sam jak udane usunięcie
+const ALREADY_DELETED_MESSAGES = ['Attachment not found', 'Document not found'];
+
+/**
+ * Lista załączników aplikacji (albo dokumentów profilu – `actions`) z pobieraniem i (opcjonalnie) usuwaniem.
  * W trakcie pobierania/usuwania przyciski mają `aria-disabled` zamiast `disabled`, więc fokus nie ginie;
  * po usunięciu fokus przechodzi na następną pozycję (albo poprzednią, albo tekst pustej listy).
  * Zniszczenie komponentu przerywa trwające żądania.
@@ -88,7 +101,11 @@ export class AttachmentListComponent implements AfterViewChecked {
   private focusEmptyAfterId: number | null = null;
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
-  readonly applicationId = input.required<number>();
+  /** Aplikacja, do której należą załączniki – wymagana, gdy nie podano `actions`. */
+  readonly applicationId = input<number | null>(null);
+  readonly actions = input<AttachmentListActions | null>(null);
+  /** Rzeczownik w pytaniu o usunięcie („Czy na pewno chcesz usunąć załącznik …”). */
+  readonly itemNoun = input('załącznik');
   readonly attachments = input<readonly ApplicationAttachment[]>([]);
   /** Usuwanie – tylko dla kandydata (właściciela aplikacji). */
   readonly allowDelete = input(false);
@@ -119,7 +136,7 @@ export class AttachmentListComponent implements AfterViewChecked {
 
     this.setDownloading(attachment.id, true);
     this.error.set(null);
-    this.applicationService.downloadAttachment(this.applicationId(), attachment)
+    this.downloadRequest(attachment)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => this.setDownloading(attachment.id, false),
@@ -136,11 +153,11 @@ export class AttachmentListComponent implements AfterViewChecked {
   remove(attachment: ApplicationAttachment, index: number): void {
     if (this.deletingId() !== null) return;
     const kind = this.kindLabel(attachment.kind);
-    if (!confirm(`Czy na pewno chcesz usunąć załącznik „${attachment.fileName}” (${kind})?`)) return;
+    if (!confirm(`Czy na pewno chcesz usunąć ${this.itemNoun()} „${attachment.fileName}” (${kind})?`)) return;
 
     this.deletingId.set(attachment.id);
     this.error.set(null);
-    this.applicationService.deleteAttachment(this.applicationId(), attachment.id)
+    this.deleteRequest(attachment)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => this.onDeleted(attachment, index),
@@ -148,7 +165,7 @@ export class AttachmentListComponent implements AfterViewChecked {
           console.error('Error deleting attachment:', error);
           this.deletingId.set(null);
           // załącznik usunięto już wcześniej (np. w innej karcie) – efekt jest taki sam
-          if (error instanceof HttpErrorResponse && error.status === 404 && error.error?.message === 'Attachment not found') {
+          if (error instanceof HttpErrorResponse && error.status === 404 && ALREADY_DELETED_MESSAGES.includes(error.error?.message)) {
             this.onDeleted(attachment, index);
             return;
           }
@@ -187,6 +204,16 @@ export class AttachmentListComponent implements AfterViewChecked {
       // lista nie jest pusta (np. odświeżona z serwera) – nie przejmujemy fokusu później
       this.focusEmptyAfterId = null;
     }
+  }
+
+  private downloadRequest(attachment: ApplicationAttachment): Observable<void> {
+    const actions = this.actions();
+    return actions ? actions.download(attachment) : this.applicationService.downloadAttachment(this.applicationId()!, attachment);
+  }
+
+  private deleteRequest(attachment: ApplicationAttachment): Observable<void> {
+    const actions = this.actions();
+    return actions ? actions.delete(attachment) : this.applicationService.deleteAttachment(this.applicationId()!, attachment.id);
   }
 
   private setDownloading(id: number, downloading: boolean): void {

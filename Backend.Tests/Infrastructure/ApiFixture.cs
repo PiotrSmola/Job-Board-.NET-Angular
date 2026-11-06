@@ -19,6 +19,9 @@ public class ApiFixture : IAsyncLifetime
 
     public JobBoardFactory Factory { get; }
 
+    // wiadomości wysłane przez outbox aplikacji
+    public FakeEmailSender Emails => Factory.EmailSender ?? throw new InvalidOperationException("The factory uses a real SMTP sender");
+
     // domyślnie: środowisko Development (reset danych dozwolony), jawnie ustawiony sekret JWT
     public ApiFixture() : this("Development", JobBoardFactory.TestJwtSecret, allowSeedRefresh: false)
     {
@@ -92,6 +95,11 @@ public class ApiFixture : IAsyncLifetime
         using var scope = Factory.Services.CreateScope();
         return await query(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
     }
+
+    // Oznacza adres jako potwierdzony bezpośrednio w bazie (bez linku z e-maila) - powiadomienia e-mail idą tylko na
+    // potwierdzone adresy
+    public Task MarkEmailConfirmedAsync(TestUser user) => QueryDbAsync(db =>
+        db.Users.Where(u => u.Id == user.Id).ExecuteUpdateAsync(s => s.SetProperty(u => u.EmailConfirmed, true)));
 
     // Unikalna nazwa (np. firmy) - testy współdzielą bazę, więc nazwy nie mogą się powtarzać
     public static string UniqueName(string prefix) => $"{prefix} {Guid.NewGuid().ToString("N")[..10]}";

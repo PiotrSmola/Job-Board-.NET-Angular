@@ -15,7 +15,6 @@ public interface IJobApplicationRepository
     Task<JobApplication?> GetUserApplicationForJobAsync(int jobId, string userId);
     // listy z załącznikami (jedno zapytanie, bez N+1)
     Task<IEnumerable<JobApplication>> GetApplicationsByUserIdAsync(string userId);
-    Task<IEnumerable<JobApplication>> GetApplicationsByJobIdAsync(int jobId);
     // panel zarządzania: aplikacje do ofert z zakresu (admin - wszystkie, pracodawca - jego firmy)
     Task<PagedList<JobApplication>> GetApplicationsAsync(ApplicationParams applicationParams, ManagementScope scope);
     Task<JobApplication> AddApplicationAsync(JobApplication application);

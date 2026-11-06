@@ -63,6 +63,27 @@ public class JobViewTrackingTests : IClassFixture<StatsFixture>
         Assert.Contains(row.Date, new[] { today, today.AddDays(-1) });
     }
 
+    // za nginx odwiedzający to adres z X-Forwarded-For (ostatni wpis) - ten sam co w limitach żądań per IP
+    [Fact]
+    public async Task AnonymousVisitorsBehindTheProxy_AreCountedByTheForwardedAddress()
+    {
+        var employer = await NewCompanyWithJobAsync();
+        var jobId = _jobs[employer.CompanyId].Id;
+        using var first = _api.CreateClient();
+        first.DefaultRequestHeaders.Add("X-Forwarded-For", "203.0.113.10");
+        using var spoofed = _api.CreateClient();
+        spoofed.DefaultRequestHeaders.Add("X-Forwarded-For", "198.51.100.99, 203.0.113.10");
+        using var second = _api.CreateClient();
+        second.DefaultRequestHeaders.Add("X-Forwarded-For", "203.0.113.11");
+
+        await GetJobAsync(first, jobId, "Browser-A/1.0");
+        await GetJobAsync(spoofed, jobId, "Browser-A/1.0");
+        Assert.Equal(1, await ViewsAsync(jobId));
+
+        await GetJobAsync(second, jobId, "Browser-A/1.0");
+        Assert.Equal(2, await ViewsAsync(jobId));
+    }
+
     [Fact]
     public async Task SignedInUsers_AreCountedOnceEach_SeparatelyFromAnonymousVisitors()
     {

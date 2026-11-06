@@ -4,6 +4,8 @@ import { Observable, map } from 'rxjs';
 import { JobOffer, CreateJobOffer, JobOfferStatus } from '../models/job-offer.model';
 import { PaginatedResult } from '../models/pagination.model';
 import { JobParams, ManageJobParams } from '../models/job-params.model';
+import { JobFacets } from '../models/taxonomy.model';
+import { filterQuery } from '../utils/job-query';
 import { toPaginatedResult } from '../utils/pagination';
 
 @Injectable({
@@ -56,36 +58,20 @@ export class JobService {
     return this.http.delete<void>(`${this.API_URL}/${id}`);
   }
 
+  /** Liczniki opcji filtrów (kategorie, poziomy, umowy, tryby pracy, umiejętności) dla bieżących filtrów, bez paginacji. */
+  getFacets(jobParams: JobParams): Observable<JobFacets> {
+    const params = new HttpParams({ fromObject: filterQuery(jobParams) });
+    return this.http.get<JobFacets>(`${this.API_URL}/facets`, { params });
+  }
+
   private buildParams(jobParams: JobParams): HttpParams {
-    let params = new HttpParams();
-
-    params = params.append('pageNumber', jobParams.pageNumber.toString());
-    params = params.append('pageSize', jobParams.pageSize.toString());
-
-    if (jobParams.searchTerm) {
-      params = params.append('searchTerm', jobParams.searchTerm);
-    }
-
-    if (jobParams.workType !== null) {
-      params = params.append('workType', jobParams.workType.toString());
-    }
-
-    if (jobParams.minSalary) {
-      params = params.append('minSalary', jobParams.minSalary.toString());
-    }
-
-    if (jobParams.maxSalary) {
-      params = params.append('maxSalary', jobParams.maxSalary.toString());
-    }
-
-    if (jobParams.location) {
-      params = params.append('location', jobParams.location);
-    }
-
-    if (jobParams.companyId !== null) {
-      params = params.append('companyId', jobParams.companyId.toString());
-    }
-
-    return params.append('orderBy', jobParams.orderBy);
+    return new HttpParams({
+      fromObject: {
+        pageNumber: jobParams.pageNumber.toString(),
+        pageSize: jobParams.pageSize.toString(),
+        ...filterQuery(jobParams),
+        orderBy: jobParams.orderBy
+      }
+    });
   }
 }

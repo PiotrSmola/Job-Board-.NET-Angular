@@ -9,11 +9,13 @@ import { AuthService } from '../../services/auth.service';
 import { AdminJobsTabComponent } from './admin-jobs-tab/admin-jobs-tab.component';
 import { AdminApplicationsTabComponent } from './admin-applications-tab/admin-applications-tab.component';
 import { AdminCompaniesTabComponent } from './admin-companies-tab/admin-companies-tab.component';
+import { AdminCategoriesTabComponent } from './admin-categories-tab/admin-categories-tab.component';
 import { StatsDashboardComponent } from '../stats/stats-dashboard.component';
 
 const JOBS_TAB = 0;
 const APPLICATIONS_TAB = 1;
 const COMPANIES_TAB = 2;
+const CATEGORIES_TAB = 3;
 
 @Component({
   selector: 'app-admin-panel',
@@ -25,6 +27,7 @@ const COMPANIES_TAB = 2;
     AdminJobsTabComponent,
     AdminApplicationsTabComponent,
     AdminCompaniesTabComponent,
+    AdminCategoriesTabComponent,
     // używany wyłącznie w @defer – Angular wydziela go do osobnego chunka
     StatsDashboardComponent
   ],
@@ -39,6 +42,7 @@ export class AdminPanelComponent {
   private readonly jobsTab = viewChild(AdminJobsTabComponent);
   private readonly applicationsTab = viewChild(AdminApplicationsTabComponent);
   private readonly companiesTab = viewChild(AdminCompaniesTabComponent);
+  private readonly categoriesTab = viewChild(AdminCategoriesTabComponent);
 
   // Zakładki tworzone są leniwie przy pierwszym wejściu; przy kolejnych – odświeżamy dane
   private readonly visitedTabs = new Set<number>([JOBS_TAB]);
@@ -71,6 +75,8 @@ export class AdminPanelComponent {
       this.applicationsTab()?.reload();
     } else if (index === COMPANIES_TAB) {
       this.companiesTab()?.reload();
+    } else if (index === CATEGORIES_TAB) {
+      this.categoriesTab()?.reload();
     }
   }
 

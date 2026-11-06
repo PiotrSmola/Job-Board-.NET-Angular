@@ -13,7 +13,8 @@ public class JwtSettings
     public string Secret { get; set; } = string.Empty;
     public string Issuer { get; set; } = "JobBoardAPI";
     public string Audience { get; set; } = "JobBoardClient";
-    public int ExpirationInMinutes { get; set; } = 1440;
+    // czas życia tokenu (bez odświeżania - po wygaśnięciu trzeba zalogować się ponownie)
+    public int ExpirationInMinutes { get; set; } = 120;
 
     // true, gdy podstawiono klucz deweloperski (nie jest wczytywane z konfiguracji)
     public bool UsesDevelopmentSecret { get; private set; }

@@ -29,6 +29,9 @@ const KNOWN_API_MESSAGES: Record<string, string> = {
   'Company has job offers or members': 'Nie można usunąć firmy, która ma oferty lub członków zespołu',
   'Company not found': 'Firma nie została znaleziona',
   'Job offer has applications - close it instead': 'Oferta ma aplikacje – zamiast usuwać, zamknij ją.',
+  // kategorie ofert
+  'Category name or slug is already taken': 'Kategoria o takiej nazwie lub slugu już istnieje',
+  'Category not found': 'Kategoria nie została znaleziona',
   // załączniki aplikacji
   'Unsupported file type - upload a PDF, DOCX, PNG or JPEG file': 'Nieobsługiwany typ pliku – prześlij plik PDF, DOCX, PNG lub JPEG',
   'File is too large - maximum size is 5 MB': 'Plik jest za duży – maksymalny rozmiar to 5 MB',
@@ -47,6 +50,22 @@ const KNOWN_API_MESSAGES: Record<string, string> = {
   'Request body too large': 'Przesyłane dane są za duże',
   'Request timed out': 'Przekroczono czas wysyłania danych – spróbuj ponownie',
   'Invalid request': 'Nieprawidłowe żądanie',
+  // konto, hasło i e-mail
+  'Current password is incorrect': 'Obecne hasło jest nieprawidłowe',
+  'Administrator accounts cannot be deleted here': 'Konta administratora nie można usunąć w tym miejscu',
+  'You are the last member of a company with job offers':
+    'Jesteś ostatnim członkiem firmy, która ma oferty pracy – nie możesz teraz usunąć konta',
+  'Invalid or expired confirmation link': 'Link potwierdzający jest nieprawidłowy lub wygasł',
+  'Email is already confirmed': 'Adres e-mail jest już potwierdzony',
+  'Invalid or expired reset link': 'Link do zmiany hasła jest nieprawidłowy lub wygasł',
+  // 423 – zbyt wiele błędnych haseł (logowanie, zmiana hasła, usunięcie konta)
+  'Account is temporarily locked due to too many failed login attempts':
+    'Konto zostało tymczasowo zablokowane po zbyt wielu nieudanych próbach. Spróbuj ponownie za kilka minut.',
+  // dokumenty profilu i dołączanie ich do aplikacji
+  'A profile can have at most 10 documents': 'Profil może mieć maksymalnie 10 dokumentów',
+  'Total size of profile documents cannot exceed 25 MB': 'Łączny rozmiar dokumentów profilu nie może przekroczyć 25 MB',
+  'Document not found': 'Nie znaleziono dokumentu',
+  'No documents selected': 'Nie wybrano dokumentów z profilu',
   [TOO_MANY_REQUESTS]: TOO_MANY_REQUESTS_PL,
   // m.in. 'Company must be approved before publishing offers'
   ...FORBIDDEN_API_MESSAGES

@@ -1,11 +1,13 @@
 using Backend.Models;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Backend.Data;
 
-public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
+// IDataProtectionKeyContext - klucze Data Protection (tokeny potwierdzenia e-maila i resetu hasła) w bazie
+public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionKeyContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
@@ -14,11 +16,21 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
     public DbSet<Company> Companies { get; set; }
     public DbSet<JobOffer> JobOffers { get; set; }
+    public DbSet<Category> Categories { get; set; }
+    public DbSet<Skill> Skills { get; set; }
     public DbSet<JobApplication> JobApplications { get; set; }
     public DbSet<ApplicationStatusHistory> ApplicationStatusHistories { get; set; }
     public DbSet<ApplicationAttachment> ApplicationAttachments { get; set; }
     public DbSet<JobOfferDailyViews> DailyViews { get; set; }
     public DbSet<JobOfferViewer> JobOfferViewers { get; set; }
+    public DbSet<ProfileDocument> ProfileDocuments { get; set; }
+    public DbSet<SavedJob> SavedJobs { get; set; }
+    public DbSet<EmailMessage> EmailMessages { get; set; }
+    public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
+
+    // stan EmailOutboxInterceptor: trwa zapis nowych wiadomości e-mail / zapisane czekają na COMMIT transakcji
+    internal bool SavingEmails { get; set; }
+    internal bool UncommittedEmails { get; set; }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -46,6 +58,29 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             // bo EF pomijałby wtedy przy INSERT wartość Draft (= domyślna wartość CLR enuma)
             entity.Property(e => e.Status).HasConversion<int>();
             entity.Property(e => e.ExpiresAt);
+            // wartości domyślne kolumn (0 = PLN, miesięcznie, bez typów umów) są ustawione w migracji - w modelu ich
+            // nie deklarujemy z tego samego powodu co przy Status
+            entity.Property(e => e.ContractTypes).HasConversion<int>();
+            entity.Property(e => e.SalaryCurrency).HasConversion<int>();
+            entity.Property(e => e.SalaryPeriod).HasConversion<int>();
+
+            // filtry listy ofert (kategoria ma indeks klucza obcego; maska typów umów nie jest indeksowalna)
+            entity.HasIndex(e => e.Seniority);
+            entity.HasIndex(e => e.SalaryCurrency);
+
+            // usunięcie kategorii zostawia oferty bez kategorii
+            entity.HasOne(e => e.Category)
+                .WithMany(e => e.JobOffers)
+                .HasForeignKey(e => e.CategoryId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // umiejętności: wiele-do-wielu, powiązania znikają razem z ofertą albo umiejętnością
+            entity.HasMany(e => e.Skills)
+                .WithMany(e => e.JobOffers)
+                .UsingEntity(join => join.ToTable("JobOfferSkills"));
+
+            // publiczna lista ofert: filtr po statusie i dacie ważności, domyślne sortowanie po dacie utworzenia
+            entity.HasIndex(e => new { e.Status, e.ExpiresAt, e.CreatedAt });
 
             // seria dzienna "nowe oferty" w statystykach
             entity.HasIndex(e => e.CreatedAt);
@@ -60,6 +95,27 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .WithMany(e => e.JobOffers)
                 .HasForeignKey(e => e.CompanyId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Category>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Slug).IsRequired().HasMaxLength(100);
+
+            // unikalność bez rozróżniania wielkości liter zapewnia kolacja kolumn (utf8mb4_0900_ai_ci)
+            entity.HasIndex(e => e.Name).IsUnique();
+            entity.HasIndex(e => e.Slug).IsUnique();
+        });
+
+        builder.Entity<Skill>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(50);
+            // klucz porównania (małe litery) w kolacji binarnej: dopasowanie dokładne, deterministyczne po stronie bazy i kodu
+            entity.Property(e => e.NormalizedName).IsRequired().HasMaxLength(50).UseCollation("utf8mb4_bin");
+
+            entity.HasIndex(e => e.NormalizedName).IsUnique();
         });
 
         builder.Entity<Company>(entity =>
@@ -127,6 +183,56 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(e => e.JobApplicationId);
         });
 
+        builder.Entity<ProfileDocument>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Kind).HasConversion<int>();
+            entity.Property(e => e.FileKey).IsRequired().HasMaxLength(300);
+            entity.Property(e => e.FileName).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.ContentType).IsRequired().HasMaxLength(100);
+
+            // klucz pliku w magazynie wskazuje dokładnie jeden dokument
+            entity.HasIndex(e => e.FileKey).IsUnique();
+            entity.HasIndex(e => e.UserId);
+        });
+
+        builder.Entity<SavedJob>(entity =>
+        {
+            // jedna pozycja na parę użytkownik-oferta (PUT jest idempotentny)
+            entity.HasKey(e => new { e.UserId, e.JobOfferId });
+            entity.Property(e => e.SavedAt);
+
+            // lista "Zapisane oferty" - od najnowszych zapisów
+            entity.HasIndex(e => new { e.UserId, e.SavedAt });
+
+            // usunięcie oferty usuwa ją z zapisanych
+            entity.HasOne(e => e.JobOffer)
+                .WithMany()
+                .HasForeignKey(e => e.JobOfferId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<EmailMessage>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Type).HasConversion<int>();
+            entity.Property(e => e.Status).HasConversion<int>();
+            entity.Property(e => e.ToAddress).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.ToName).HasMaxLength(200);
+            entity.Property(e => e.Subject).IsRequired().HasMaxLength(300);
+            entity.Property(e => e.LastError).HasMaxLength(500);
+
+            // wiadomości do wysłania: Pending z NextAttemptAt <= teraz
+            entity.HasIndex(e => new { e.Status, e.NextAttemptAt });
+            // limit e-maili resetu hasła na adres (Type, UserId, CreatedAt)
+            entity.HasIndex(e => new { e.UserId, e.Type, e.CreatedAt });
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         builder.Entity<ApplicationStatusHistory>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -173,6 +279,25 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.FirstName).HasMaxLength(100);
             entity.Property(e => e.LastName).HasMaxLength(100);
             entity.Property(e => e.CreatedAt);
+            entity.Property(e => e.Headline).HasMaxLength(150);
+            entity.Property(e => e.Location).HasMaxLength(200);
+            entity.Property(e => e.LinkedInUrl).HasMaxLength(300);
+            entity.Property(e => e.About).HasMaxLength(2000);
+            // wartość domyślna kolumn (true - istniejące konta mają powiadomienia włączone) jest ustawiona w migracji;
+            // w modelu jej nie deklarujemy, bo EF pomijałby przy INSERT wartość false (= domyślna wartość CLR)
+
+            // dokumenty profilu, zapisane oferty i wiadomości e-mail usuwane razem z kontem (pliki w magazynie
+            // usuwa kod po zatwierdzeniu zmian)
+            entity.HasMany(e => e.ProfileDocuments)
+                .WithOne(e => e.User)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.SavedJobs)
+                .WithOne(e => e.User)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
             // seria dzienna "nowi użytkownicy" w statystykach
             entity.HasIndex(e => e.CreatedAt);
 

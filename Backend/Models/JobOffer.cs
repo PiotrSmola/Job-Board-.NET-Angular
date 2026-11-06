@@ -34,8 +34,22 @@ public class JobOffer
     // UTC; null = oferta bezterminowa
     public DateTime? ExpiresAt { get; set; }
 
+    // Taksonomia: kategoria (null po jej usunięciu), poziom (null = nie podano), maska typów umów, waluta i okres
+    // widełek. Wartości domyślne kolumn (0) ustawia migracja: istniejące oferty dostają PLN, miesięcznie, bez typów umów
+    public int? CategoryId { get; set; }
+
+    public SeniorityLevel? Seniority { get; set; }
+
+    public ContractTypes ContractTypes { get; set; }
+
+    public Currency SalaryCurrency { get; set; }
+
+    public SalaryPeriod SalaryPeriod { get; set; }
+
     // Navigation properties
     public Company Company { get; set; } = null!;
+    public Category? Category { get; set; }
+    public ICollection<Skill> Skills { get; set; } = new List<Skill>();
     public ICollection<JobApplication> Applications { get; set; } = new List<JobApplication>();
     public ICollection<JobOfferDailyViews> DailyViews { get; set; } = new List<JobOfferDailyViews>();
 

@@ -32,4 +32,22 @@ public class JobOfferDto
 
     // Active z ExpiresAt w przeszłości (wyliczane w chwili odpowiedzi)
     public bool IsExpired { get; set; }
+
+    // Taksonomia: kategoria (null = bez kategorii), poziom, maska typów umów, waluta i okres widełek, umiejętności
+    public int? CategoryId { get; set; }
+
+    public string? CategoryName { get; set; }
+
+    public string? CategorySlug { get; set; }
+
+    public SeniorityLevel? Seniority { get; set; }
+
+    public ContractTypes ContractTypes { get; set; }
+
+    public Currency SalaryCurrency { get; set; }
+
+    public SalaryPeriod SalaryPeriod { get; set; }
+
+    // posortowane alfabetycznie
+    public List<string> Skills { get; set; } = new();
 }

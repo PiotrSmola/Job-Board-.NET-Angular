@@ -54,7 +54,19 @@
       </ng-template>
     </mat-tab>
 
-    <!-- TAB 4: Statystyki -->
+    <!-- TAB 4: Kategorie -->
+    <mat-tab label="Kategorie">
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">category</mat-icon>
+        Kategorie
+      </ng-template>
+
+      <ng-template matTabContent>
+        <app-admin-categories-tab></app-admin-categories-tab>
+      </ng-template>
+    </mat-tab>
+
+    <!-- TAB 5: Statystyki -->
     <mat-tab label="Statystyki">
       <ng-template mat-tab-label>
         <mat-icon class="tab-icon">insights</mat-icon>

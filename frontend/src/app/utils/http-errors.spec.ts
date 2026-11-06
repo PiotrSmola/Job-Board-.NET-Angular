@@ -50,9 +50,26 @@ describe('http-errors', () => {
       ['Attachment not found', 'Nie znaleziono załącznika'],
       ['Date range cannot exceed 366 days', 'Zakres dat nie może przekraczać 366 dni'],
       ['Invalid date range', 'Nieprawidłowy zakres dat'],
-      ['Too many requests - try again later', 'Zbyt wiele żądań – spróbuj ponownie za kilka minut']
+      ['Too many requests - try again later', 'Zbyt wiele żądań – spróbuj ponownie za kilka minut'],
+      ['Current password is incorrect', 'Obecne hasło jest nieprawidłowe'],
+      ['Administrator accounts cannot be deleted here', 'Konta administratora nie można usunąć w tym miejscu'],
+      ['You are the last member of a company with job offers', 'Jesteś ostatnim członkiem firmy, która ma oferty pracy – nie możesz teraz usunąć konta'],
+      ['Invalid or expired confirmation link', 'Link potwierdzający jest nieprawidłowy lub wygasł'],
+      ['Email is already confirmed', 'Adres e-mail jest już potwierdzony'],
+      ['Invalid or expired reset link', 'Link do zmiany hasła jest nieprawidłowy lub wygasł'],
+      ['A profile can have at most 10 documents', 'Profil może mieć maksymalnie 10 dokumentów'],
+      ['Total size of profile documents cannot exceed 25 MB', 'Łączny rozmiar dokumentów profilu nie może przekroczyć 25 MB'],
+      ['Document not found', 'Nie znaleziono dokumentu'],
+      ['No documents selected', 'Nie wybrano dokumentów z profilu']
     ])('translates the known API message "%s"', (message, expected) => {
       expect(getApiErrorMessage(httpError(400, { message }), FALLBACK)).toBe(expected);
+    });
+
+    it('translates the account lockout (423) of the password change and account deletion', () => {
+      const message = 'Account is temporarily locked due to too many failed login attempts';
+
+      expect(getApiErrorMessage(httpError(423, { message }), FALLBACK))
+        .toBe('Konto zostało tymczasowo zablokowane po zbyt wielu nieudanych próbach. Spróbuj ponownie za kilka minut.');
     });
 
     it('translates a known message also for a 409 conflict', () => {

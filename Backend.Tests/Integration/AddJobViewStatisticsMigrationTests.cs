@@ -9,9 +9,10 @@ namespace Backend.Tests.Integration;
 
 // Migracja AddJobViewStatistics na bazie z danymi: nowe tabele wyświetleń (klucze, kaskada po ofercie), indeksy pod
 // zakresy dat, istniejące dane bez zmian, a Down usuwa tylko to, co dodała.
+[Trait("Category", "Migrations")]
 public class AddJobViewStatisticsMigrationTests
 {
-    private const string PreviousMigration = "20261106103645_AddApplicationAttachments";
+    private const string PreviousMigration = "20261106152754_AddJobOfferListIndex";
     private const string AddJobViewStatistics = "20261106160206_AddJobViewStatistics";
 
     private static async Task MigrateToAsync(string connectionString, string migration)

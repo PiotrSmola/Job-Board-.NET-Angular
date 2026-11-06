@@ -3,7 +3,9 @@ using Backend.Helpers;
 using Backend.Interfaces;
 using Backend.Mappings;
 using Backend.Models;
+using Backend.Settings;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Backend.Controllers;
 
@@ -22,6 +24,7 @@ public class CompaniesController : ControllerBase
     }
 
     [HttpGet]
+    [EnableRateLimiting(RateLimitingSettings.PublicListsPolicy)]
     [ProducesResponseType(typeof(IEnumerable<CompanyDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<CompanyDto>>> GetCompanies([FromQuery] CompanyParams companyParams)
     {

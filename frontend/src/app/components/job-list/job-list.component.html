@@ -4,159 +4,110 @@
     <p class="subtitle">Znajdź swoją wymarzoną pracę</p>
   </div>
 
-  <mat-card class="filters-card">
-    <div class="filters-grid">
-      <mat-form-field appearance="outline" class="search-field">
-        <mat-label>Szukaj</mat-label>
-        <input matInput [ngModel]="jobParams.searchTerm" (ngModelChange)="onSearchTermChange($event)" placeholder="Stanowisko, firma...">
-        <mat-icon matPrefix>search</mat-icon>
-        @if (jobParams.searchTerm) {
-          <button mat-icon-button matSuffix (click)="clearSearch()">
-            <mat-icon>close</mat-icon>
-          </button>
+  <div class="layout">
+    <aside class="sidebar">
+      <app-job-filters
+        [params]="params()"
+        [facets]="facets()"
+        [categories]="categories()"
+        (filterChange)="onFilterChange($event)"
+        (clear)="clearFilters()" />
+    </aside>
+
+    <section class="content" aria-label="Wyniki wyszukiwania">
+      <app-removable-chips [items]="chips()" ariaLabel="Aktywne filtry" [focusOnEmpty]="resultsInfo" (remove)="removeFilter($event)" />
+
+      <!-- stała wysokość i region aria-live: zmiana liczby wyników jest ogłaszana i nie przesuwa układu -->
+      <div class="results-info" #resultsInfo tabindex="-1" role="status" aria-live="polite" aria-atomic="true">
+        @if (resultCount() !== null) {
+          Znaleziono <strong>{{ resultCount() }}</strong> {{ resultsNoun() }}
         }
-      </mat-form-field>
+      </div>
 
-      <mat-form-field appearance="outline">
-        <mat-label>Typ pracy</mat-label>
-        <mat-select [(ngModel)]="jobParams.workType" (selectionChange)="onFilterChange()">
-          @for (option of workTypeOptions; track option.value) {
-            <mat-option [value]="option.value">{{ option.label }}</mat-option>
-          }
-        </mat-select>
-        <mat-icon matPrefix>work</mat-icon>
-      </mat-form-field>
+      @if (loadError(); as error) {
+        <div class="load-error" role="alert">
+          <mat-icon aria-hidden="true">cloud_off</mat-icon>
+          <h3>{{ error }}</h3>
+          <p>Sprawdź połączenie i spróbuj ponownie</p>
+          <button mat-raised-button color="primary" (click)="retry()">
+            <mat-icon aria-hidden="true">refresh</mat-icon>
+            Spróbuj ponownie
+          </button>
+        </div>
+      } @else {
+        <div class="jobs-grid" [class.stale]="loading()" [attr.aria-busy]="loading()">
+          @if (!loaded()) {
+            @for (index of skeletons; track index) {
+              <div class="job-skeleton" aria-hidden="true"></div>
+            }
+          } @else {
+            @for (job of jobs(); track job.id) {
+              <mat-card class="job-card" (click)="viewJobDetails(job.id)">
+                <mat-card-header>
+                  <mat-card-title>{{ job.title }}</mat-card-title>
+                  <mat-card-subtitle>
+                    <mat-icon aria-hidden="true">business</mat-icon>
+                    <!-- link do profilu firmy nie może otwierać szczegółów oferty (klik na karcie) -->
+                    <a class="company-link" [routerLink]="['/companies', job.companyId]" (click)="$event.stopPropagation()">{{ job.company }}</a>
+                  </mat-card-subtitle>
+                </mat-card-header>
 
-      <mat-form-field appearance="outline">
-        <mat-label>Lokalizacja</mat-label>
-        <input matInput [(ngModel)]="jobParams.location" (ngModelChange)="onFilterChange()" placeholder="Warszawa, Kraków...">
-        <mat-icon matPrefix>location_on</mat-icon>
-      </mat-form-field>
+                <mat-card-content>
+                  <div class="job-info">
+                    <div class="info-item">
+                      <mat-icon aria-hidden="true">location_on</mat-icon>
+                      <span>{{ job.location }}</span>
+                    </div>
+                    <div class="info-item">
+                      <mat-icon aria-hidden="true">work</mat-icon>
+                      <span>{{ getWorkTypeLabel(job.workType) }}</span>
+                    </div>
+                  </div>
 
-      <mat-form-field appearance="outline" class="salary-field">
-        <mat-label>Płaca od</mat-label>
-        <input matInput type="number" min="0" [(ngModel)]="jobParams.minSalary" (ngModelChange)="onSalaryChange()" placeholder="8000">
-        <span matTextPrefix>$&nbsp;</span>
-        <span matTextSuffix>&nbsp;PLN</span>
-      </mat-form-field>
+                  <app-job-taxonomy [job]="job" />
 
-      <mat-form-field appearance="outline" class="salary-field">
-        <mat-label>Płaca do</mat-label>
-        <input matInput type="number" min="0" [(ngModel)]="jobParams.maxSalary" (ngModelChange)="onSalaryChange()" placeholder="20000">
-        <span matTextPrefix>$&nbsp;</span>
-        <span matTextSuffix>&nbsp;PLN</span>
-      </mat-form-field>
+                  <div class="salary-badge">
+                    <mat-icon aria-hidden="true">payments</mat-icon>
+                    {{ formatSalary(job) }}
+                  </div>
 
-      <mat-form-field appearance="outline">
-        <mat-label>Sortowanie</mat-label>
-        <mat-select [(ngModel)]="jobParams.orderBy" (selectionChange)="onFilterChange()">
-          @for (option of sortOptions; track option.value) {
-            <mat-option [value]="option.value">{{ option.label }}</mat-option>
-          }
-        </mat-select>
-        <mat-icon matPrefix>sort</mat-icon>
-      </mat-form-field>
-    </div>
+                  <p class="description">{{ job.description | slice:0:150 }}...</p>
+                </mat-card-content>
 
-    <div class="filter-actions">
-      <button mat-raised-button color="primary" (click)="onSearch()">
-        <mat-icon>search</mat-icon>
-        Szukaj
-      </button>
-      <button mat-button (click)="clearFilters()">
-        <mat-icon>clear</mat-icon>
-        Wyczyść filtry
-      </button>
-    </div>
-  </mat-card>
-
-  @if (!loadError) {
-    <div class="results-info">
-      Znaleziono: <span><strong>{{ totalItems }}</strong> ofert</span>
-    </div>
-  }
-
-  @if (loading) {
-    <div class="loading-container">
-      <mat-spinner></mat-spinner>
-    </div>
-  }
-
-  @if (!loading && loadError) {
-    <div class="load-error">
-      <mat-icon>cloud_off</mat-icon>
-      <h3>{{ loadError }}</h3>
-      <p>Sprawdź połączenie i spróbuj ponownie</p>
-      <button mat-raised-button color="primary" (click)="loadJobs()">
-        <mat-icon>refresh</mat-icon>
-        Spróbuj ponownie
-      </button>
-    </div>
-  }
-
-  @if (!loading && !loadError) {
-    <div class="jobs-grid">
-      @for (job of jobs; track job.id) {
-        <mat-card class="job-card" (click)="viewJobDetails(job.id)">
-          <mat-card-header>
-            <mat-card-title>{{ job.title }}</mat-card-title>
-            <mat-card-subtitle>
-              <mat-icon>business</mat-icon>
-              <!-- link do profilu firmy nie może otwierać szczegółów oferty (klik na karcie) -->
-              <a class="company-link" [routerLink]="['/companies', job.companyId]" (click)="$event.stopPropagation()">{{ job.company }}</a>
-            </mat-card-subtitle>
-          </mat-card-header>
-
-          <mat-card-content>
-            <div class="job-info">
-              <div class="info-item">
-                <mat-icon>location_on</mat-icon>
-                <span>{{ job.location }}</span>
+                <mat-card-actions>
+                  <div>
+                    <span class="posted-date">Dodano: {{ job.createdAt | date:'dd.MM.yyyy' }}</span>
+                    @if (expiresSoon(job); as hint) {
+                      <span class="expires-soon">{{ hint }}</span>
+                    }
+                  </div>
+                  <app-save-job-button class="push-end" [jobId]="job.id" [jobTitle]="job.title" />
+                  <button mat-button color="primary" [attr.aria-label]="'Szczegóły oferty: ' + job.title">
+                    Szczegóły <mat-icon aria-hidden="true">arrow_forward</mat-icon>
+                  </button>
+                </mat-card-actions>
+              </mat-card>
+            } @empty {
+              <div class="no-results">
+                <mat-icon aria-hidden="true">work_off</mat-icon>
+                <h3>Brak ofert</h3>
+                <p>Spróbuj zmienić kryteria wyszukiwania</p>
               </div>
-              <div class="info-item">
-                <mat-icon>work</mat-icon>
-                <span>{{ getWorkTypeLabel(job.workType) }}</span>
-              </div>
-            </div>
-            
-            <div class="salary-badge">
-              <mat-icon>payments</mat-icon>
-              {{ formatSalary(job.salaryMin, job.salaryMax) }}
-            </div>
-
-            <p class="description">{{ job.description | slice:0:150 }}...</p>
-          </mat-card-content>
-
-          <mat-card-actions>
-            <div>
-              <span class="posted-date">Dodano: {{ job.createdAt | date:'dd.MM.yyyy' }}</span>
-              @if (expiresSoon(job); as hint) {
-                <span class="expires-soon">{{ hint }}</span>
-              }
-            </div>
-            <button mat-button color="primary">
-              Szczegóły <mat-icon>arrow_forward</mat-icon>
-            </button>
-          </mat-card-actions>
-        </mat-card>
-      } @empty {
-        <div class="no-results">
-          <mat-icon>work_off</mat-icon>
-          <h3>Brak ofert</h3>
-          <p>Spróbuj zmienić kryteria wyszukiwania</p>
+            }
+          }
         </div>
       }
-    </div>
-  }
 
-  @if (!loading && !loadError && jobs.length > 0) {
-    <mat-paginator
-      [length]="totalItems"
-      [pageSize]="jobParams.pageSize"
-      [pageIndex]="jobParams.pageNumber - 1"
-      [pageSizeOptions]="[5, 10, 20, 50]"
-      (page)="onPageChange($event)"
-      showFirstLastButtons>
-    </mat-paginator>
-  }
+      @if (loaded() && !loadError() && jobs().length > 0) {
+        <mat-paginator
+          [length]="totalItems()"
+          [pageSize]="params().pageSize"
+          [pageIndex]="params().pageNumber - 1"
+          [pageSizeOptions]="pageSizeOptions"
+          (page)="onPageChange($event)"
+          showFirstLastButtons>
+        </mat-paginator>
+      }
+    </section>
+  </div>
 </div>

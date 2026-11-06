@@ -14,28 +14,56 @@ public static class DatabaseSeeder
     public const string PendingEmployerCompany = "Nowa Firma Sp. z o.o.";
     public const string EmployerPassword = "Employer123!";
 
+    // hasło kont adminów (admin@jobboard.com, superadmin@jobboard.com): Seed:AdminPassword, w Development domyślnie
+    // AdminDevelopmentPassword; stack Dockera podaje losowe hasło z .env (ADMIN_PASSWORD, docker-up.ps1)
+    public const string AdminPasswordKey = "Seed:AdminPassword";
+    public const string AdminDevelopmentPassword = "Admin123!";
+
     // Konta demo (kandydaci i pracodawcy ze znanymi hasłami) tylko lokalnie: domyślnie w Development,
     // poza nim po jawnym włączeniu Seed:DemoAccounts=true (lokalny stack Dockera); jawna wartość ma pierwszeństwo.
     // Konta adminów są tworzone zawsze.
     public static bool DemoAccountsEnabled(IHostEnvironment environment, IConfiguration configuration) =>
         configuration.GetValue<bool?>("Seed:DemoAccounts") ?? environment.IsDevelopment();
 
+    // Hasło dla nowo tworzonych kont adminów; null - brak (poza Development hasło musi być skonfigurowane).
+    // Istniejące konta adminów nie są zmieniane - ustawienie działa przy pierwszym seedzie i po resecie danych.
+    public static string? AdminPassword(IHostEnvironment environment, IConfiguration configuration)
+    {
+        var configured = configuration[AdminPasswordKey];
+        if (!string.IsNullOrEmpty(configured))
+        {
+            return configured;
+        }
+
+        return environment.IsDevelopment() ? AdminDevelopmentPassword : null;
+    }
+
     public static async Task SeedAsync(IServiceProvider serviceProvider)
     {
         var context = serviceProvider.GetRequiredService<ApplicationDbContext>();
         var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = serviceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-        var includeDemoAccounts = DemoAccountsEnabled(
-            serviceProvider.GetRequiredService<IHostEnvironment>(),
-            serviceProvider.GetRequiredService<IConfiguration>());
+        var environment = serviceProvider.GetRequiredService<IHostEnvironment>();
+        var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+        var includeDemoAccounts = DemoAccountsEnabled(environment, configuration);
+        var adminPassword = AdminPassword(environment, configuration);
 
         await context.Database.MigrateAsync();
 
         await SeedRoles(roleManager);
 
-        await SeedAdmins(userManager);
+        await SeedAdmins(userManager, adminPassword);
+
+        var categoriesSeeded = await SeedCategories(context);
 
         await SeedJobOffers(context);
+
+        // baza sprzed taksonomii: kategorie dopiero powstały, a istniejące oferty demo nie mają jeszcze kategorii
+        // ani umiejętności - uzupełniamy je (tylko oferty bez żadnej taksonomii, dopasowane po tytule z seeda)
+        if (categoriesSeeded)
+        {
+            await BackfillSeedTaxonomy(context);
+        }
 
         if (includeDemoAccounts)
         {
@@ -44,18 +72,26 @@ public static class DatabaseSeeder
         }
     }
 
-    // Usuwa WSZYSTKIE aplikacje, oferty, użytkowników i firmy, po czym odtwarza dane demo.
+    // Usuwa WSZYSTKIE aplikacje, oferty, użytkowników, firmy, kategorie i umiejętności, po czym odtwarza dane demo.
     // UserManager i RoleManager muszą korzystać z tego samego (scoped) kontekstu - wtedy całość jest w jednej transakcji.
     public static async Task RefreshSeedAsync(
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
         RoleManager<IdentityRole> roleManager,
-        bool includeDemoAccounts)
+        bool includeDemoAccounts,
+        string? adminPassword)
     {
+        // konta adminów są odtwarzane - bez hasła reset nie ma sensu (sprawdzenie przed usunięciem czegokolwiek)
+        EnsureAdminPassword(adminPassword);
+
         await using var transaction = await context.Database.BeginTransactionAsync();
 
         await context.JobApplications.ExecuteDeleteAsync();
         await context.JobOffers.ExecuteDeleteAsync();
+
+        // powiązania ofert z umiejętnościami zniknęły razem z ofertami (kaskada); kategorie i umiejętności wracają do zestawu demo
+        await context.Skills.ExecuteDeleteAsync();
+        await context.Categories.ExecuteDeleteAsync();
 
         var users = await userManager.Users.ToListAsync();
         foreach (var user in users)
@@ -68,7 +104,9 @@ public static class DatabaseSeeder
 
         await SeedRoles(roleManager);
 
-        await SeedAdmins(userManager);
+        await SeedAdmins(userManager, adminPassword);
+
+        await SeedCategories(context);
 
         await SeedJobOffers(context, forceReseed: true);
 
@@ -92,12 +130,18 @@ public static class DatabaseSeeder
         }
     }
 
-    private static async Task SeedAdmins(UserManager<ApplicationUser> userManager)
+    private static string EnsureAdminPassword(string? adminPassword) =>
+        string.IsNullOrEmpty(adminPassword)
+            ? throw new InvalidOperationException(
+                $"{AdminPasswordKey} is not configured - set it (e.g. the Seed__AdminPassword environment variable) to create the admin accounts.")
+            : adminPassword;
+
+    private static async Task SeedAdmins(UserManager<ApplicationUser> userManager, string? adminPassword)
     {
         var admins = new[]
         {
-            new { Email = "admin@jobboard.com", FirstName = "Admin", LastName = "Główny", Password = "Admin123!" },
-            new { Email = "superadmin@jobboard.com", FirstName = "Super", LastName = "Admin", Password = "Admin123!" }
+            new { Email = "admin@jobboard.com", FirstName = "Admin", LastName = "Główny" },
+            new { Email = "superadmin@jobboard.com", FirstName = "Super", LastName = "Admin" }
         };
 
         foreach (var adminData in admins)
@@ -114,11 +158,16 @@ public static class DatabaseSeeder
                     CreatedAt = DateTime.UtcNow
                 };
 
-                var result = await userManager.CreateAsync(admin, adminData.Password);
-                if (result.Succeeded)
+                // hasło niespełniające polityki Identity przerywa start czytelnym błędem (bez treści hasła)
+                var result = await userManager.CreateAsync(admin, EnsureAdminPassword(adminPassword));
+                if (!result.Succeeded)
                 {
-                    await userManager.AddToRoleAsync(admin, "Admin");
+                    throw new InvalidOperationException(
+                        $"Could not create the admin account {adminData.Email} - check {AdminPasswordKey}: " +
+                        string.Join(", ", result.Errors.Select(e => e.Code)));
                 }
+
+                await userManager.AddToRoleAsync(admin, Roles.Admin);
             }
         }
     }
@@ -424,9 +473,154 @@ public static class DatabaseSeeder
             offer.Company = await GetOrCreateCompanyAsync(context, companyName, CompanyStatus.Approved, offer.Location, offer.CreatedAt);
         }
 
+        await ApplySeedTaxonomy(context, jobOffers.Select(j => j.Offer).ToList());
+
         await context.JobOffers.AddRangeAsync(jobOffers.Select(j => j.Offer));
         await context.SaveChangesAsync();
     }
+
+    // Kategorie demo; tworzone tylko, gdy tabela jest pusta (admin może je potem zmieniać i usuwać). Zwraca true, gdy je dodano.
+    private static async Task<bool> SeedCategories(ApplicationDbContext context)
+    {
+        if (await context.Categories.AnyAsync())
+        {
+            return false;
+        }
+
+        context.Categories.AddRange(SeedCategoryList.Select((c, index) => new Category
+        {
+            Name = c.Name,
+            Slug = c.Slug,
+            SortOrder = (index + 1) * 10
+        }));
+        await context.SaveChangesAsync();
+        return true;
+    }
+
+    // Uzupełnia taksonomię ofert demo istniejących w bazie sprzed etapu 5 (oferty bez kategorii, poziomu i umiejętności,
+    // dopasowane po tytule); oferty dodane przez użytkowników mają inne tytuły, a edytowane ręcznie są pomijane
+    private static async Task BackfillSeedTaxonomy(ApplicationDbContext context)
+    {
+        var titles = SeedTaxonomies.Keys.ToList();
+        var offers = await context.JobOffers
+            .Where(j => titles.Contains(j.Title) && j.CategoryId == null && j.Seniority == null && !j.Skills.Any())
+            .ToListAsync();
+
+        await ApplySeedTaxonomy(context, offers);
+        await context.SaveChangesAsync();
+    }
+
+    // Ustawia kategorię, poziom, typy umów i umiejętności ofert demo wg tytułu (nowe umiejętności są dodawane do kontekstu)
+    private static async Task ApplySeedTaxonomy(ApplicationDbContext context, IReadOnlyCollection<JobOffer> offers)
+    {
+        var categories = await context.Categories.ToDictionaryAsync(c => c.Slug);
+        var skills = new Dictionary<string, Skill>();
+
+        foreach (var offer in offers)
+        {
+            if (!SeedTaxonomies.TryGetValue(offer.Title, out var taxonomy))
+            {
+                continue;
+            }
+
+            offer.CategoryId = categories.TryGetValue(taxonomy.CategorySlug, out var category) ? category.Id : null;
+            offer.Seniority = taxonomy.Seniority;
+            offer.ContractTypes = taxonomy.ContractTypes;
+            offer.SalaryCurrency = Currency.PLN;
+            offer.SalaryPeriod = SalaryPeriod.Month;
+
+            foreach (var name in taxonomy.Skills)
+            {
+                var key = SkillNames.KeyOf(name);
+                if (!skills.TryGetValue(key, out var skill))
+                {
+                    skill = await context.Skills.FirstOrDefaultAsync(s => s.NormalizedName == key)
+                            ?? context.Skills.Local.FirstOrDefault(s => s.NormalizedName == key);
+                    if (skill == null)
+                    {
+                        skill = new Skill { Name = name, NormalizedName = key };
+                        context.Skills.Add(skill);
+                    }
+
+                    skills[key] = skill;
+                }
+
+                offer.Skills.Add(skill);
+            }
+        }
+    }
+
+    private sealed record SeedCategoryInfo(string Name, string Slug);
+
+    private sealed record SeedTaxonomy(
+        string CategorySlug, SeniorityLevel Seniority, ContractTypes ContractTypes, string[] Skills);
+
+    private static readonly SeedCategoryInfo[] SeedCategoryList =
+    [
+        new("Programowanie", "programowanie"),
+        new("DevOps i chmura", "devops-i-chmura"),
+        new("Testowanie", "testowanie"),
+        new("Analiza danych", "analiza-danych"),
+        new("Design UX/UI", "design-ux-ui"),
+        new("Zarządzanie projektami", "zarzadzanie-projektami"),
+        new("Bezpieczeństwo IT", "bezpieczenstwo-it"),
+        new("Wsparcie IT", "wsparcie-it")
+    ];
+
+    private const ContractTypes EmploymentOrB2B = ContractTypes.EmploymentContract | ContractTypes.B2B;
+    private const ContractTypes EmploymentOrMandate = ContractTypes.EmploymentContract | ContractTypes.MandateContract;
+
+    // taksonomia ofert demo wg tytułu (waluta PLN, widełki miesięczne)
+    private static readonly Dictionary<string, SeedTaxonomy> SeedTaxonomies = new()
+    {
+        ["Senior .NET Developer"] = new("programowanie", SeniorityLevel.Senior, EmploymentOrB2B,
+            ["C#", ".NET", "ASP.NET Core", "Entity Framework", "SQL", "Docker"]),
+        ["Frontend Developer - Angular"] = new("programowanie", SeniorityLevel.Mid, EmploymentOrB2B,
+            ["Angular", "TypeScript", "RxJS", "HTML", "CSS", "Git"]),
+        ["Full Stack Developer (React + Node.js)"] = new("programowanie", SeniorityLevel.Mid, ContractTypes.B2B,
+            ["React", "Node.js", "TypeScript", "JavaScript", "SQL"]),
+        ["DevOps Engineer"] = new("devops-i-chmura", SeniorityLevel.Senior, EmploymentOrB2B,
+            ["AWS", "Docker", "Kubernetes", "Terraform", "Linux", "CI/CD"]),
+        ["Java Backend Developer"] = new("programowanie", SeniorityLevel.Senior, ContractTypes.EmploymentContract,
+            ["Java", "Spring Boot", "Hibernate", "Microservices", "SQL"]),
+        ["Mobile Developer - Flutter"] = new("programowanie", SeniorityLevel.Mid, EmploymentOrB2B,
+            ["Flutter", "Dart", "Firebase", "Git"]),
+        ["Python Data Engineer"] = new("analiza-danych", SeniorityLevel.Mid, EmploymentOrB2B,
+            ["Python", "SQL", "Pandas", "Apache Airflow", "ETL"]),
+        ["UI/UX Designer"] = new("design-ux-ui", SeniorityLevel.Mid, EmploymentOrMandate,
+            ["Figma", "Adobe XD", "Prototyping", "User Research"]),
+        ["QA Automation Engineer"] = new("testowanie", SeniorityLevel.Mid, EmploymentOrB2B,
+            ["Selenium", "Cypress", "JavaScript", "CI/CD", "Agile"]),
+        ["Scrum Master"] = new("zarzadzanie-projektami", SeniorityLevel.Senior, EmploymentOrB2B,
+            ["Scrum", "Agile", "Jira", "Facilitation"]),
+        ["Cybersecurity Specialist"] = new("bezpieczenstwo-it", SeniorityLevel.Senior, EmploymentOrB2B,
+            ["Penetration Testing", "Security Audits", "Incident Response", "Linux"]),
+        ["PHP Laravel Developer"] = new("programowanie", SeniorityLevel.Junior, EmploymentOrMandate,
+            ["PHP", "Laravel", "MySQL", "Redis", "REST API"]),
+        ["React Native Developer"] = new("programowanie", SeniorityLevel.Mid, ContractTypes.B2B,
+            ["React Native", "TypeScript", "Redux", "JavaScript"]),
+        ["Database Administrator (PostgreSQL)"] = new("devops-i-chmura", SeniorityLevel.Senior, EmploymentOrB2B,
+            ["PostgreSQL", "SQL", "Performance Tuning", "Backup", "Linux"]),
+        ["Machine Learning Engineer"] = new("analiza-danych", SeniorityLevel.Senior, ContractTypes.B2B,
+            ["Python", "TensorFlow", "PyTorch", "MLOps", "Docker"]),
+        ["Blockchain Developer"] = new("programowanie", SeniorityLevel.Mid, ContractTypes.B2B,
+            ["Solidity", "Ethereum", "Smart Contracts", "JavaScript"]),
+        ["System Administrator Linux"] = new("wsparcie-it", SeniorityLevel.Mid, ContractTypes.EmploymentContract,
+            ["Linux", "Bash", "Ansible", "Monitoring"]),
+        ["Business Intelligence Analyst"] = new("analiza-danych", SeniorityLevel.Junior, EmploymentOrMandate,
+            ["Power BI", "Tableau", "SQL", "DAX"]),
+        ["Embedded Systems Developer"] = new("programowanie", SeniorityLevel.Mid, ContractTypes.EmploymentContract,
+            ["C", "C++", "ARM", "RTOS"]),
+        ["Technical Project Manager"] = new("zarzadzanie-projektami", SeniorityLevel.Manager, EmploymentOrB2B,
+            ["Agile", "Jira", "Confluence", "Project Management"]),
+        ["Go Backend Developer"] = new("programowanie", SeniorityLevel.Senior, ContractTypes.B2B,
+            ["Go", "gRPC", "Kubernetes", "Microservices"]),
+        ["iOS Developer (Swift)"] = new("programowanie", SeniorityLevel.Mid, ContractTypes.EmploymentContract,
+            ["Swift", "SwiftUI", "iOS"]),
+        ["Junior Tester Manualny"] = new("testowanie", SeniorityLevel.Intern,
+            ContractTypes.EmploymentContract | ContractTypes.Internship,
+            ["Manual Testing", "Jira", "Test Documentation"])
+    };
 
     // Konta demo pracodawców: zatwierdzonej firmy z ofertami i firmy oczekującej na weryfikację (bez ofert)
     private static async Task SeedEmployers(ApplicationDbContext context, UserManager<ApplicationUser> userManager)

@@ -1,0 +1,69 @@
+<main class="saved-jobs-container">
+  <header class="header">
+    <h1 id="saved-jobs-heading">Zapisane oferty</h1>
+    <p class="subtitle">Oferty, do których chcesz wrócić</p>
+  </header>
+
+  <!-- stałe minimum wysokości listy – wczytywanie nie przesuwa stopki strony -->
+  <section class="results" aria-labelledby="saved-jobs-heading" [attr.aria-busy]="loading()">
+    @if (loading()) {
+      <div class="state" role="status">
+        <mat-spinner diameter="48" aria-hidden="true"></mat-spinner>
+        <span class="sr-only">Wczytywanie zapisanych ofert…</span>
+      </div>
+    } @else if (loadError()) {
+      <div class="state" role="alert">
+        <mat-icon class="state-icon" aria-hidden="true">cloud_off</mat-icon>
+        <p>{{ loadError() }}</p>
+        <button mat-raised-button color="primary" type="button" (click)="load()">
+          <mat-icon aria-hidden="true">refresh</mat-icon>
+          Spróbuj ponownie
+        </button>
+      </div>
+    } @else if (!items().length) {
+      <div class="state">
+        <mat-icon class="state-icon" aria-hidden="true">favorite_border</mat-icon>
+        <p>Nie masz jeszcze zapisanych ofert.</p>
+        <a mat-raised-button color="primary" routerLink="/jobs">Przeglądaj oferty</a>
+      </div>
+    } @else {
+      <p class="count">Zapisanych ofert: <strong>{{ totalItems() }}</strong></p>
+      <ul class="list">
+        @for (item of items(); track item.job.id) {
+          @let saved = savedJobs.isSaved(item.job.id);
+          <li class="item" [class.removed]="!saved">
+            <div class="main">
+              <h2 class="title"><a [routerLink]="['/jobs', item.job.id]">{{ item.job.title }}</a></h2>
+              <p class="meta">
+                <a class="company" [routerLink]="['/companies', item.job.companyId]">{{ item.job.company }}</a>
+                <span aria-hidden="true">·</span>
+                <span>{{ item.job.location }}</span>
+              </p>
+              <p class="meta">
+                @if (inactiveState(item); as state) {
+                  <app-status-chip [label]="state.label" [tone]="state.tone" />
+                }
+                <span>Zapisano: {{ item.savedAt | date: 'dd.MM.yyyy' }}</span>
+                @if (!saved) {
+                  <span class="removed-note">Usunięto z zapisanych</span>
+                }
+              </p>
+            </div>
+            <app-save-job-button [jobId]="item.job.id" [jobTitle]="item.job.title" />
+          </li>
+        }
+      </ul>
+
+      @if (totalItems() > pageSize) {
+        <mat-paginator
+          [length]="totalItems()"
+          [pageSize]="pageSize"
+          [pageIndex]="pageNumber() - 1"
+          [hidePageSize]="true"
+          (page)="onPageChange($event)"
+          aria-label="Strony zapisanych ofert"
+          showFirstLastButtons />
+      }
+    }
+  </section>
+</main>

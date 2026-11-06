@@ -69,7 +69,8 @@ public class AdminController : ControllerBase
             _logger.LogWarning("Database seed refresh requested - all users, job offers and applications will be replaced");
 
             await DatabaseSeeder.RefreshSeedAsync(_context, _userManager, _roleManager,
-                DatabaseSeeder.DemoAccountsEnabled(_environment, _configuration));
+                DatabaseSeeder.DemoAccountsEnabled(_environment, _configuration),
+                DatabaseSeeder.AdminPassword(_environment, _configuration));
 
             _logger.LogInformation("Database seed refresh completed successfully");
 
@@ -96,14 +97,18 @@ public class AdminController : ControllerBase
     // ale z limitem czasu, żeby zawieszony magazyn nie blokował odpowiedzi w nieskończoność
     private async Task DeleteAllAttachmentFilesAsync()
     {
-        try
+        // załączniki aplikacji i dokumenty profili - wszystkie rekordy zostały usunięte razem z użytkownikami
+        foreach (var prefix in new[] { AttachmentFiles.StorageKeyPrefix, AttachmentFiles.ProfileStorageKeyPrefix })
         {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-            await _fileStorage.DeleteByPrefixAsync(AttachmentFiles.StorageKeyPrefix, timeout.Token);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete attachment files from storage after the seed refresh");
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+                await _fileStorage.DeleteByPrefixAsync(prefix, timeout.Token);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to delete files with prefix {Prefix} from storage after the seed refresh", prefix);
+            }
         }
     }
 }

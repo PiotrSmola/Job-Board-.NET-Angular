@@ -100,4 +100,31 @@ describe('AdminService', () => {
       req.flush(null);
     });
   });
+
+  describe('categories', () => {
+    const body = { name: 'Testowanie', slug: 'testowanie', sortOrder: 3 };
+
+    it('createCategory posts to /api/admin/categories', () => {
+      service.createCategory(body).subscribe();
+      const req = http.expectOne('/api/admin/categories');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(body);
+      req.flush({});
+    });
+
+    it('updateCategory puts to /api/admin/categories/:id', () => {
+      service.updateCategory(4, body).subscribe();
+      const req = http.expectOne('/api/admin/categories/4');
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.body).toEqual(body);
+      req.flush({});
+    });
+
+    it('deleteCategory sends DELETE /api/admin/categories/:id', () => {
+      service.deleteCategory(4).subscribe();
+      const req = http.expectOne('/api/admin/categories/4');
+      expect(req.request.method).toBe('DELETE');
+      req.flush(null);
+    });
+  });
 });

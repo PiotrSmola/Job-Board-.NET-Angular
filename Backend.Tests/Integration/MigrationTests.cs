@@ -11,6 +11,7 @@ namespace Backend.Tests.Integration;
 // Migracje na istniejącej bazie z danymi (własna baza testowa, usuwana na końcu).
 // Dane sprzed migracji wstawiane są surowym SQL-em - bieżący model EF ma już kolumny,
 // których starszy schemat jeszcze nie zawiera.
+[Trait("Category", "Migrations")]
 public class MigrationTests
 {
     private const string InitialMigration = "20251221163425_InitialCreateMySQL";
