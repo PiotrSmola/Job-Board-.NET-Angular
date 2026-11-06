@@ -82,7 +82,8 @@ builder.Services.AddCors(options =>
         policy.WithOrigins("http://localhost:4200")
               .AllowAnyHeader()
               .AllowAnyMethod()
-              .WithExposedHeaders("Pagination");
+              // Content-Disposition - nazwa pobieranego pliku CV
+              .WithExposedHeaders("Pagination", "Content-Disposition");
     });
 });
 
@@ -91,6 +92,20 @@ builder.Services.AddScoped<IJobRepository, JobRepository>();
 builder.Services.AddScoped<IJobApplicationRepository, JobApplicationRepository>();
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
+
+// Magazyn plików CV wg Storage:Provider (Local - katalog na dysku, S3 - magazyn zgodny z S3, np. SeaweedFS);
+// konfiguracja walidowana w jednym miejscu (StorageSettings.Validate)
+builder.Services.AddOptions<StorageSettings>()
+    .Bind(builder.Configuration.GetSection(StorageSettings.SectionName))
+    .PostConfigure<IHostEnvironment>((settings, environment) => settings.Validate(environment));
+
+builder.Services.AddSingleton<IFileStorage>(sp =>
+{
+    var settings = sp.GetRequiredService<IOptions<StorageSettings>>().Value;
+    return settings.UsesS3
+        ? new S3FileStorage(settings.S3, sp.GetRequiredService<ILogger<S3FileStorage>>())
+        : new LocalFileStorage(settings.LocalPath!);
+});
 
 // Uprawnienia do zasobów (admin - wszystko, pracodawca - zasoby swojej firmy) sprawdzane w jednym miejscu
 builder.Services.AddHttpContextAccessor();
@@ -146,6 +161,11 @@ if (resolvedJwtSettings.UsesDevelopmentSecret)
     app.Logger.LogWarning(
         "JwtSettings:Secret is not configured - using the built-in development key. Never use it outside local development.");
 }
+
+// wczesna walidacja magazynu plików (zła konfiguracja przerywa start) i przygotowanie katalogu / bucketu
+var resolvedStorageSettings = app.Services.GetRequiredService<IOptions<StorageSettings>>().Value;
+await app.Services.GetRequiredService<IFileStorage>().InitializeAsync();
+app.Logger.LogInformation("File storage: {Provider}", resolvedStorageSettings.Provider);
 
 // seedowanie bazy danych
 using (var scope = app.Services.CreateScope())

@@ -18,6 +18,9 @@ public class JobBoardFactory : WebApplicationFactory<Program>
     public string ConnectionString { get; }
     public string DatabaseName { get; }
 
+    // katalog plików (Storage:Provider = Local) - osobny dla każdej fabryki, usuwany razem z bazą
+    public string StoragePath { get; }
+
     public JobBoardFactory(
         string environment = "Development",
         string? jwtSecret = TestJwtSecret,
@@ -27,12 +30,15 @@ public class JobBoardFactory : WebApplicationFactory<Program>
         _environment = environment;
         ConnectionString = TestDatabase.NewConnectionString(out var databaseName);
         DatabaseName = databaseName;
+        StoragePath = Path.Combine(Path.GetTempPath(), "jobboard-tests", databaseName);
 
         _settings = new Dictionary<string, string?>
         {
             ["ConnectionStrings:DefaultConnection"] = ConnectionString,
             ["JwtSettings:Secret"] = jwtSecret ?? string.Empty,
-            ["Admin:AllowSeedRefresh"] = allowSeedRefresh ? "true" : "false"
+            ["Admin:AllowSeedRefresh"] = allowSeedRefresh ? "true" : "false",
+            ["Storage:Provider"] = "Local",
+            ["Storage:LocalPath"] = StoragePath
         };
 
         // brak wartości = domyślne zachowanie seedera (konta demo tylko w Development)
@@ -52,11 +58,23 @@ public class JobBoardFactory : WebApplicationFactory<Program>
         builder.ConfigureLogging(logging => logging.ClearProviders());
     }
 
-    // Zwalnia aplikację i usuwa bazę testową
+    // Nadpisanie ustawień przed startem aplikacji (np. magazyn S3 albo zła konfiguracja magazynu)
+    public JobBoardFactory WithSetting(string key, string? value)
+    {
+        _settings[key] = value;
+        return this;
+    }
+
+    // Zwalnia aplikację, usuwa bazę testową i katalog plików
     public async Task DisposeAndDropDatabaseAsync()
     {
         await DisposeAsync();
         await MySqlConnection.ClearAllPoolsAsync();
         await TestDatabase.DropAsync(ConnectionString);
+
+        if (Directory.Exists(StoragePath))
+        {
+            Directory.Delete(StoragePath, recursive: true);
+        }
     }
 }
