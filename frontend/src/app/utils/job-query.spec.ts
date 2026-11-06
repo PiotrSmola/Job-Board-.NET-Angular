@@ -101,9 +101,9 @@ describe('job query helpers', () => {
       expect(params.companyId).toBeNull();
     });
 
-    it('limits skills to 15 unique names of 1-50 characters', () => {
+    it('limits the skills filter to 10 unique names of 1-50 characters', () => {
       const many = Array.from({ length: 20 }, (_, i) => `S${i}`).join(',');
-      expect(fromUrl(`skills=${many}`).skills.length).toBe(15);
+      expect(fromUrl(`skills=${many}`).skills.length).toBe(10);
       expect(fromUrl('skills=Angular,angular,%20Angular%20').skills).toEqual(['Angular']);
       expect(fromUrl(`skills=${'x'.repeat(51)},ok`).skills).toEqual(['ok']);
     });

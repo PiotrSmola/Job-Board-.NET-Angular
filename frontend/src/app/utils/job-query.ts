@@ -4,6 +4,8 @@ import { ALL_CONTRACT_FLAGS } from './job-labels';
 
 export const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
 export const MAX_SKILLS = 15;
+/** Filtr po umiejętnościach przyjmuje ich mniej niż oferta (limit API: 10 w parametrze skills). */
+export const MAX_FILTER_SKILLS = 10;
 export const MAX_SKILL_LENGTH = 50;
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -149,7 +151,7 @@ function enumList<T extends number>(raw: string | null, allowed: readonly T[]): 
 function skillList(raw: string | null): string[] {
   let skills: string[] = [];
   for (const part of (raw ?? '').split(',')) {
-    skills = addSkill(skills, part);
+    skills = addSkill(skills, part, MAX_FILTER_SKILLS);
   }
   return skills;
 }

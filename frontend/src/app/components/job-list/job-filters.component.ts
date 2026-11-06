@@ -16,7 +16,7 @@ import { getActiveFilters } from '../../utils/active-filters';
 import {
   CONTRACT_TYPE_OPTIONS, CURRENCY_OPTIONS, SENIORITY_OPTIONS, WORK_TYPE_OPTIONS, hasFlag, labelWithCount, setFlag
 } from '../../utils/job-labels';
-import { MAX_SKILLS } from '../../utils/job-query';
+import { MAX_FILTER_SKILLS } from '../../utils/job-query';
 import { SkillsInputComponent } from '../shared/skills-input.component';
 
 /** Zmiana filtrów zgłaszana rodzicowi; `replace` – nie dodawaj wpisu do historii (pisanie w polach tekstowych). */
@@ -72,7 +72,7 @@ export class JobFiltersComponent {
   readonly filterChange = output<FilterChange>();
   readonly clear = output<void>();
 
-  readonly maxSkills = MAX_SKILLS;
+  readonly maxSkills = MAX_FILTER_SKILLS;
   readonly currencyOptions = CURRENCY_OPTIONS;
   readonly sortOptions: { value: JobOrderBy; label: string }[] = [
     { value: 'newest', label: 'Najnowsze' },
@@ -212,7 +212,7 @@ export class JobFiltersComponent {
   }
 
   addSkill(name: string, event: MatCheckboxChange): void {
-    if (event.checked && this.params().skills.length < MAX_SKILLS) {
+    if (event.checked && this.params().skills.length < MAX_FILTER_SKILLS) {
       this.setSkills([...this.params().skills, name]);
     }
   }
