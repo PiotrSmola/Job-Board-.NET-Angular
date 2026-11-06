@@ -20,8 +20,13 @@ using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Domyślny limit treści żądania: 1 MB (endpointy z plikami podnoszą go [RequestSizeLimit] - RequestBodyLimitMiddleware)
-builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = RequestBodyLimitMiddleware.DefaultLimit);
+// Domyślny limit treści żądania: 1 MB (endpointy z plikami podnoszą go [RequestSizeLimit] - RequestBodyLimitMiddleware);
+// bez nagłówka Server (nie zdradza serwera i jego wersji)
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = RequestBodyLimitMiddleware.DefaultLimit;
+    options.AddServerHeader = false;
+});
 
 // Konfiguracja bazy danych MySQL
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -281,6 +286,9 @@ using (var scope = app.Services.CreateScope())
 // potoku (limity żądań per IP); middleware nie rzuca wyjątków
 app.UseForwardedHeaders();
 
+// nosniff dla wszystkich odpowiedzi API, no-store dla odpowiedzi z danymi użytkownika (także błędów - przed obsługą wyjątków)
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
 // obsługa wyjątków (obejmuje resztę potoku); zaraz za nią błędy klienta
 // przy odczycie żądania (BadHttpRequestException) - ich kod statusu i log Warning zamiast 500 i Error
 app.UseExceptionHandler();
@@ -289,14 +297,19 @@ app.UseMiddleware<ClientRequestErrorMiddleware>();
 // limit treści żądania dopasowanego endpointu (domyślnie 1 MB, upload załączników 26 MB) - przed odczytem treści
 app.UseMiddleware<RequestBodyLimitMiddleware>();
 
-app.UseSwagger();
-app.UseSwaggerUI(c =>
+// Swagger w Development albo po jawnym włączeniu (Swagger:Enabled=true - lokalny stack Dockera, SWAGGER_ENABLED w .env)
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Job Board API v1");
-    c.RoutePrefix = "swagger";
-});
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Job Board API v1");
+        c.RoutePrefix = "swagger";
+    });
+}
 
-app.UseHttpsRedirection();
+// bez UseHttpsRedirection - backend działa po HTTP (kontener za nginx, lokalnie http://localhost:5285); przekierowanie
+// bez skonfigurowanego portu HTTPS tylko ostrzegało w logach
 
 app.UseCors("AllowAngularApp");
 

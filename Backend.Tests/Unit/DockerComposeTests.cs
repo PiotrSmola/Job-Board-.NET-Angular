@@ -86,6 +86,17 @@ public class DockerComposeTests
         Assert.Contains("S3_SECRET_KEY=", envExample);
     }
 
+    [Fact]
+    public void Backend_EnablesSwaggerByDefaultWithOverride()
+    {
+        // backend w środowisku Production udostępnia Swaggera tylko po jawnym Swagger:Enabled; SWAGGER_ENABLED=false wyłącza
+        var backend = ServiceBlock(File.ReadAllText(RepositoryFiles.Find("docker-compose.yml")), "backend");
+
+        Assert.Contains("ASPNETCORE_ENVIRONMENT: Production", backend);
+        Assert.Contains("Swagger__Enabled: ${SWAGGER_ENABLED:-true}", backend);
+        Assert.Contains("SWAGGER_ENABLED=true", File.ReadAllText(RepositoryFiles.Find(".env.example")));
+    }
+
     // Treść usługi (od "  name:" do następnej usługi albo sekcji najwyższego poziomu)
     private static string ServiceBlock(string compose, string service)
     {

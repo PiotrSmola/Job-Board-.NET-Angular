@@ -64,7 +64,7 @@ function New-RandomSecret([int]$Length) {
     return $sb.ToString()
 }
 
-# hasło do bazy, sekret JWT, klucze S3, ALLOW_SEED_REFRESH i SEED_DEMO_ACCOUNTS zachowujemy z poprzedniego .env
+# hasło do bazy, sekret JWT, klucze S3, ALLOW_SEED_REFRESH, SEED_DEMO_ACCOUNTS i SWAGGER_ENABLED zachowujemy z poprzedniego .env
 $dbPassword = Get-EnvValue 'DB_PASSWORD' 'jobboard'
 $jwtSecret = Get-EnvValue 'JWT_SECRET' ''
 if (-not $jwtSecret) {
@@ -89,6 +89,7 @@ if (-not $s3AccessKey -or -not $s3SecretKey) {
 }
 $allowSeedRefresh = Get-EnvValue 'ALLOW_SEED_REFRESH' ''
 $seedDemoAccounts = Get-EnvValue 'SEED_DEMO_ACCOUNTS' ''
+$swaggerEnabled = Get-EnvValue 'SWAGGER_ENABLED' ''
 
 # docker compose wymaga JWT_SECRET i kluczy S3 już przy "down" (interpolacja całego pliku), a .env może ich jeszcze nie mieć
 $env:JWT_SECRET = $jwtSecret
@@ -109,6 +110,7 @@ try {
         "S3_ACCESS_KEY=$s3AccessKey" + "S3_SECRET_KEY=$s3SecretKey"
     if ($allowSeedRefresh) { $envLines += "ALLOW_SEED_REFRESH=$allowSeedRefresh" }
     if ($seedDemoAccounts) { $envLines += "SEED_DEMO_ACCOUNTS=$seedDemoAccounts" }
+    if ($swaggerEnabled) { $envLines += "SWAGGER_ENABLED=$swaggerEnabled" }
     [System.IO.File]::WriteAllLines((Join-Path $PSScriptRoot '.env'), $envLines, [System.Text.UTF8Encoding]::new($false))
 
     docker compose up -d --build
@@ -119,5 +121,9 @@ try {
 
 Write-Host ''
 Write-Host "Frontend: http://localhost:$($ports.FRONTEND_PORT)"
-Write-Host "Swagger:  http://localhost:$($ports.BACKEND_PORT)/swagger"
+if ($swaggerEnabled -eq 'false') {
+    Write-Host 'Swagger:  wyłączony (SWAGGER_ENABLED=false)'
+} else {
+    Write-Host "Swagger:  http://localhost:$($ports.BACKEND_PORT)/swagger"
+}
 Write-Host "MySQL:    localhost:$($ports.DB_PORT) (root / $dbPassword)"

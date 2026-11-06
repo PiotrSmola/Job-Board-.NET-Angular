@@ -109,6 +109,15 @@ public class DockerUpScriptTests
     }
 
     [Fact]
+    public void Script_KeepsSwaggerEnabledFromPreviousEnvFile()
+    {
+        var script = File.ReadAllText(RepositoryFiles.Find("docker-up.ps1"));
+
+        Assert.Contains("Get-EnvValue 'SWAGGER_ENABLED'", script);
+        Assert.Contains("\"SWAGGER_ENABLED=$swaggerEnabled\"", script);
+    }
+
+    [Fact]
     public void Script_GeneratesAndKeepsS3Keys()
     {
         // klucze magazynu plików: zachowane z .env, generowane (20 i 40 znaków) tylko gdy brak, ustawione w env dla "down"

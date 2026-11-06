@@ -63,6 +63,8 @@ services:
       Admin__AllowSeedRefresh: ${ALLOW_SEED_REFRESH:-true}
       # lokalny stack demo: konta demo kandydatów i pracodawców ze znanymi hasłami (README); false - tylko konta adminów
       Seed__DemoAccounts: ${SEED_DEMO_ACCOUNTS:-true}
+      # lokalny stack demo: Swagger UI pod /swagger (poza Development wyłączony, o ile nie włączono go jawnie)
+      Swagger__Enabled: ${SWAGGER_ENABLED:-true}
       # pliki załączników aplikacji w usłudze storage (SeaweedFS, bucket tworzony przy starcie backendu); klucze z .env
       Storage__Provider: S3
       Storage__S3__ServiceUrl: http://storage:8333
