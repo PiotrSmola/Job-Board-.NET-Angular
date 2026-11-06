@@ -2,13 +2,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { Observable, of, throwError } from 'rxjs';
-import { JobDetailComponent } from './job-detail.component';
+import { MatDialog, MatDialogRef } from '@angular/material/dialog';
+import { Observable, Subject, of, throwError } from 'rxjs';
+import { ApplyDialogComponent, CV_UPLOAD_FAILED_MESSAGE, JobDetailComponent } from './job-detail.component';
 import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
-import { ApplicationStatus } from '../../models/job-application.model';
+import { ApplicationStatus, CvUploadEvent } from '../../models/job-application.model';
 
 const JOB: JobOffer = {
   id: 5, title: 'Angular Developer', company: 'Acme', companyId: 1, description: 'Opis', salaryMin: 1000, salaryMax: 2000,
@@ -25,6 +26,7 @@ describe('JobDetailComponent', () => {
   let getJob: ReturnType<typeof vi.fn>;
   let checkIfApplied: ReturnType<typeof vi.fn>;
   let applyToJob: ReturnType<typeof vi.fn>;
+  let uploadCv: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
   let authenticated: boolean;
@@ -49,6 +51,7 @@ describe('JobDetailComponent', () => {
     employer = false;
     checkIfApplied = vi.fn().mockReturnValue(of({ hasApplied: false }));
     applyToJob = vi.fn();
+    uploadCv = vi.fn();
     snackBarOpen = vi.fn();
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -59,7 +62,7 @@ describe('JobDetailComponent', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: '5' })) } },
         { provide: JobService, useValue: { getJob } },
-        { provide: JobApplicationService, useValue: { checkIfApplied, applyToJob } },
+        { provide: JobApplicationService, useValue: { checkIfApplied, applyToJob, uploadCv } },
         { provide: AuthService, useValue: { isAuthenticated: () => authenticated, isAdmin: () => admin, isEmployer: () => employer } },
         { provide: MatSnackBar, useValue: { open: snackBarOpen } }
       ]
@@ -310,5 +313,185 @@ describe('JobDetailComponent', () => {
       expect(snackBarOpen).not.toHaveBeenCalled();
       expect(alertSpy).not.toHaveBeenCalled();
     });
+  });
+
+  describe('applying with a CV', () => {
+    const CV = new File(['%PDF-'], 'cv.pdf', { type: 'application/pdf' });
+
+    function text(): string {
+      fixture.detectChanges();
+      return (fixture.nativeElement as HTMLElement).textContent ?? '';
+    }
+
+    it('submits the application first and then uploads the CV to the returned application', () => {
+      create();
+      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
+      uploadCv.mockReturnValue(of<CvUploadEvent>({ type: 'done', application: { id: 42 } as never }));
+
+      component.applyToJob('Notatka', CV);
+
+      expect(applyToJob).toHaveBeenCalledWith({ jobOfferId: 5, note: 'Notatka' });
+      expect(uploadCv).toHaveBeenCalledWith(42, CV);
+      expect(applyToJob.mock.invocationCallOrder[0]).toBeLessThan(uploadCv.mock.invocationCallOrder[0]);
+      expect(component.applying).toBe(false);
+      expect(component.cvUploadProgress).toBeNull();
+      expect(snackBarOpen).toHaveBeenCalledTimes(1);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja wysłana pomyślnie! CV zostało dołączone.');
+    });
+
+    it('does not upload anything without a CV', () => {
+      create();
+      applyToJob.mockReturnValue(of({ id: 42 }));
+
+      component.applyToJob('', null);
+
+      expect(uploadCv).not.toHaveBeenCalled();
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja wysłana pomyślnie!');
+    });
+
+    it('shows the upload progress while the CV is being sent', () => {
+      create();
+      const events = new Subject<CvUploadEvent>();
+      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
+      uploadCv.mockReturnValue(events);
+
+      component.applyToJob('', CV);
+      expect(component.applying).toBe(true);
+      expect(component.hasApplied).toBe(true);
+      expect(text()).toContain('Wysyłanie CV… 0%');
+
+      events.next({ type: 'progress', percent: 60 });
+      expect(component.cvUploadProgress).toBe(60);
+      expect(text()).toContain('Wysyłanie CV… 60%');
+
+      events.next({ type: 'progress', percent: 100 });
+      expect(text()).toContain('Przetwarzanie CV…');
+      expect(snackBarOpen).not.toHaveBeenCalled();
+
+      events.next({ type: 'done', application: { id: 42 } as never });
+      events.complete();
+      expect(text()).toContain('Już aplikowałeś');
+      expect(text()).not.toContain('Wysyłanie CV');
+    });
+
+    it('cancels a pending CV upload when the page is destroyed', () => {
+      create();
+      const events = new Subject<CvUploadEvent>();
+      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
+      uploadCv.mockReturnValue(events);
+
+      component.applyToJob('', CV);
+      expect(events.observed).toBe(true);
+
+      fixture.destroy();
+
+      expect(events.observed).toBe(false);
+    });
+
+    it('keeps the submitted application and explains how to add the CV later when the upload fails', () => {
+      create();
+      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
+      uploadCv.mockReturnValue(throwError(() => httpError(400, { message: 'Unsupported file type - upload a PDF or DOCX file' })));
+
+      component.applyToJob('', CV);
+
+      expect(component.hasApplied).toBe(true);
+      expect(component.applicationStatus).toBe(ApplicationStatus.Submitted);
+      expect(component.applying).toBe(false);
+      expect(component.cvUploadProgress).toBeNull();
+      expect(snackBarOpen).toHaveBeenCalledTimes(1);
+      expect(snackBarOpen.mock.calls[0][0]).toBe(CV_UPLOAD_FAILED_MESSAGE);
+      expect(CV_UPLOAD_FAILED_MESSAGE)
+        .toBe('Aplikacja złożona, ale nie udało się dołączyć CV – możesz dodać je w Moich aplikacjach');
+      expect(text()).toContain('Już aplikowałeś');
+    });
+
+    it('reports the partial success also when the API does not return the application id', () => {
+      create();
+      applyToJob.mockReturnValue(of(null));
+
+      component.applyToJob('', CV);
+
+      expect(uploadCv).not.toHaveBeenCalled();
+      expect(component.hasApplied).toBe(true);
+      expect(snackBarOpen.mock.calls[0][0]).toBe(CV_UPLOAD_FAILED_MESSAGE);
+    });
+
+    it('does not upload the CV when the application itself is rejected', () => {
+      create();
+      applyToJob.mockReturnValue(throwError(() => httpError(400, { message: 'You have already applied to this job' })));
+
+      component.applyToJob('', CV);
+
+      expect(uploadCv).not.toHaveBeenCalled();
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Już aplikowałeś na tę ofertę');
+    });
+
+    it('mentions the reactivation and the CV after applying again', () => {
+      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
+      create();
+      applyToJob.mockReturnValue(of({ id: 3, status: ApplicationStatus.Submitted }));
+      uploadCv.mockReturnValue(of<CvUploadEvent>({ type: 'done', application: { id: 3 } as never }));
+
+      component.applyToJob('', CV);
+
+      expect(uploadCv).toHaveBeenCalledWith(3, CV);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja została złożona ponownie! CV zostało dołączone.');
+    });
+
+    it('passes the note and the CV chosen in the dialog to applyToJob', () => {
+      create();
+      const dialog = (component as unknown as { dialog: MatDialog }).dialog;
+      vi.spyOn(dialog, 'open').mockReturnValue({
+        afterClosed: () => of({ confirmed: true, note: 'Cześć', cvFile: CV })
+      } as never);
+      const apply = vi.spyOn(component, 'applyToJob').mockImplementation(() => undefined);
+
+      component.openApplyDialog();
+
+      expect(apply).toHaveBeenCalledWith('Cześć', CV);
+    });
+
+    it('does not apply when the dialog is cancelled', () => {
+      create();
+      const dialog = (component as unknown as { dialog: MatDialog }).dialog;
+      vi.spyOn(dialog, 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
+      const apply = vi.spyOn(component, 'applyToJob');
+
+      component.openApplyDialog();
+
+      expect(apply).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('ApplyDialogComponent', () => {
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ApplyDialogComponent],
+      providers: [{ provide: MatDialogRef, useValue: { close: vi.fn() } }]
+    }).compileComponents();
+  });
+
+  it('offers an optional CV picker next to the note', () => {
+    const fixture = TestBed.createComponent(ApplyDialogComponent);
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+
+    expect(root.querySelector('textarea')).not.toBeNull();
+    expect(root.querySelector('app-cv-upload input[type="file"]')).not.toBeNull();
+    expect(root.textContent).toContain('Dołącz CV (opcjonalnie)');
+  });
+
+  it('returns the note and the chosen CV (or null) as the dialog result', () => {
+    const fixture = TestBed.createComponent(ApplyDialogComponent);
+    const dialog = fixture.componentInstance;
+
+    expect(dialog.result()).toEqual({ confirmed: true, note: '', cvFile: null });
+
+    const file = new File(['x'], 'cv.docx');
+    dialog.note = 'Hej';
+    dialog.cvFile = file;
+    expect(dialog.result()).toEqual({ confirmed: true, note: 'Hej', cvFile: file });
   });
 });

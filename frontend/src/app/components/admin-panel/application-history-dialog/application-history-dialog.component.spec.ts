@@ -26,6 +26,7 @@ describe('ApplicationHistoryDialogComponent', () => {
   let fixture: ComponentFixture<ApplicationHistoryDialogComponent>;
   let component: ApplicationHistoryDialogComponent;
   let getApplication: ReturnType<typeof vi.fn>;
+  let downloadCv: ReturnType<typeof vi.fn>;
 
   function create(response: Observable<JobApplication>, data: JobApplication = APPLICATION): void {
     getApplication.mockReturnValue(response);
@@ -46,12 +47,13 @@ describe('ApplicationHistoryDialogComponent', () => {
 
   beforeEach(async () => {
     getApplication = vi.fn();
+    downloadCv = vi.fn().mockReturnValue(of(undefined));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
       imports: [ApplicationHistoryDialogComponent],
       providers: [
-        { provide: JobApplicationService, useValue: { getApplication } },
+        { provide: JobApplicationService, useValue: { getApplication, downloadCv } },
         { provide: MAT_DIALOG_DATA, useValue: APPLICATION }
       ]
     }).compileComponents();
@@ -139,6 +141,50 @@ describe('ApplicationHistoryDialogComponent', () => {
 
       const buttons = Array.from(root().querySelectorAll('mat-dialog-actions button')).map(b => b.textContent?.trim());
       expect(buttons).toEqual(['Zamknij']);
+    });
+  });
+
+  describe('CV', () => {
+    const WITH_CV: JobApplication = { ...APPLICATION, hasCv: true, cvFileName: 'jan-cv.docx', cvSize: 2048, cvUploadedAt: '2026-01-02T10:00:00Z' };
+
+    it('says that the candidate did not attach a CV and offers no download', () => {
+      create(of({ ...APPLICATION, history: HISTORY }));
+
+      expect(root().querySelector('.cv')?.textContent).toContain('Kandydat nie dołączył CV');
+      expect(root().querySelector('.download-cv')).toBeNull();
+    });
+
+    it('shows the CV name and size and downloads it', () => {
+      create(of({ ...WITH_CV, history: HISTORY }), WITH_CV);
+
+      expect(root().querySelector('.cv')?.textContent).toContain('jan-cv.docx (2 KB)');
+      root().querySelector<HTMLButtonElement>('.download-cv')!.click();
+
+      expect(downloadCv).toHaveBeenCalledWith(7, 'jan-cv.docx');
+      expect(component.downloadingCv()).toBe(false);
+    });
+
+    it('shows the translated error when the download fails', () => {
+      downloadCv.mockReturnValue(throwError(() => httpError(404, { message: 'Application not found' })));
+      create(of({ ...WITH_CV, history: HISTORY }), WITH_CV);
+
+      component.downloadCv();
+
+      const error = root().querySelector('.cv-error');
+      expect(error?.textContent).toContain('Aplikacja nie została znaleziona');
+      expect(error?.getAttribute('role')).toBe('alert');
+    });
+
+    it('stops a pending download when the dialog is closed', () => {
+      const pending = new Subject<void>();
+      downloadCv.mockReturnValue(pending);
+      create(of({ ...WITH_CV, history: HISTORY }), WITH_CV);
+
+      component.downloadCv();
+      expect(root().querySelector<HTMLButtonElement>('.download-cv')!.disabled).toBe(true);
+      fixture.destroy();
+
+      expect(pending.observed).toBe(false);
     });
   });
 });

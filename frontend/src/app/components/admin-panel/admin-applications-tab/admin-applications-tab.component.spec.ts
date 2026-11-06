@@ -52,6 +52,7 @@ describe('AdminApplicationsTabComponent', () => {
   let component: AdminApplicationsTabComponent;
   let getAllApplications: ReturnType<typeof vi.fn>;
   let deleteApplication: ReturnType<typeof vi.fn>;
+  let downloadCv: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
   let confirmSpy: ReturnType<typeof vi.spyOn>;
   let dialogOpen: ReturnType<typeof vi.fn>;
@@ -71,6 +72,7 @@ describe('AdminApplicationsTabComponent', () => {
   beforeEach(async () => {
     getAllApplications = vi.fn();
     deleteApplication = vi.fn().mockReturnValue(of(undefined));
+    downloadCv = vi.fn().mockReturnValue(of(undefined));
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -80,7 +82,7 @@ describe('AdminApplicationsTabComponent', () => {
     await TestBed.configureTestingModule({
       imports: [AdminApplicationsTabComponent],
       providers: [
-        { provide: JobApplicationService, useValue: { getAllApplications, deleteApplication } },
+        { provide: JobApplicationService, useValue: { getAllApplications, deleteApplication, downloadCv } },
         { provide: MatDialog, useValue: { open: dialogOpen } }
       ]
     }).compileComponents();
@@ -624,5 +626,71 @@ describe('AdminApplicationsTabComponent', () => {
     const text = component.formatDate(new Date('2026-03-05T10:30:00Z'));
     expect(text).toContain('2026');
     expect(text.toLowerCase()).toContain('marca');
+  });
+
+  describe('CV download', () => {
+    const CV_FIELDS = { hasCv: true, cvFileName: 'jan-cv.pdf', cvSize: 1024, cvUploadedAt: '2026-01-02T10:00:00Z' };
+
+    function createWith(mode: PanelMode, applications: JobApplication[]): void {
+      getAllApplications.mockReturnValue(of({ ...page(0, applications.length), result: applications }));
+      fixture = TestBed.createComponent(AdminApplicationsTabComponent);
+      fixture.componentRef.setInput('mode', mode);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+    }
+
+    function downloadButtons(): HTMLButtonElement[] {
+      fixture.detectChanges();
+      return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('button.download-cv'));
+    }
+
+    it.each<PanelMode>(['admin', 'employer'])('%s: shows a labelled download button only for applications with a CV', mode => {
+      createWith(mode, [{ ...makeApplication(1), ...CV_FIELDS }, makeApplication(2)]);
+
+      const buttons = downloadButtons();
+      expect(buttons.length).toBe(1);
+      expect(buttons[0].getAttribute('aria-label')).toBe('Pobierz CV: jan-cv.pdf');
+    });
+
+    it('downloads the CV with the stored file name as a fallback', () => {
+      createWith('employer', [{ ...makeApplication(1), ...CV_FIELDS }]);
+
+      downloadButtons()[0].click();
+
+      expect(downloadCv).toHaveBeenCalledWith(1, 'jan-cv.pdf');
+      expect(component.downloadingCvId()).toBeNull();
+    });
+
+    it('disables the button while the file is being downloaded', () => {
+      const pending = new Subject<void>();
+      downloadCv.mockReturnValue(pending);
+      createWith('admin', [{ ...makeApplication(1), ...CV_FIELDS }]);
+
+      component.downloadCv(component.applications()[0]);
+
+      expect(downloadButtons()[0].disabled).toBe(true);
+      pending.next();
+      pending.complete();
+      expect(downloadButtons()[0].disabled).toBe(false);
+    });
+
+    it('alerts the translated API message when the download fails', () => {
+      downloadCv.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { message: 'Application not found' } })));
+      createWith('admin', [{ ...makeApplication(1), ...CV_FIELDS }]);
+
+      component.downloadCv(component.applications()[0]);
+
+      expect(alertSpy).toHaveBeenCalledWith('Aplikacja nie została znaleziona');
+      expect(component.downloadingCvId()).toBeNull();
+    });
+
+    it('does not alert when the interceptor handles 403', () => {
+      downloadCv.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+      createWith('employer', [{ ...makeApplication(1), ...CV_FIELDS }]);
+
+      component.downloadCv(component.applications()[0]);
+
+      expect(alertSpy).not.toHaveBeenCalled();
+    });
   });
 });

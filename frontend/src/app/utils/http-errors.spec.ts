@@ -38,7 +38,15 @@ describe('http-errors', () => {
       ['Company name is already taken', 'Ta nazwa firmy jest już zajęta'],
       ['Company must be approved before publishing offers', 'Firma musi zostać zatwierdzona, zanim opublikujesz ofertę'],
       ['Company has job offers or members', 'Nie można usunąć firmy, która ma oferty lub członków zespołu'],
-      ['Job offer has applications - close it instead', 'Oferta ma aplikacje – zamiast usuwać, zamknij ją.']
+      ['Job offer has applications - close it instead', 'Oferta ma aplikacje – zamiast usuwać, zamknij ją.'],
+      ['Unsupported file type - upload a PDF or DOCX file', 'Nieobsługiwany typ pliku – prześlij plik PDF lub DOCX'],
+      ['File is too large - maximum size is 5 MB', 'Plik jest za duży – maksymalny rozmiar to 5 MB'],
+      ['File is empty', 'Plik jest pusty'],
+      ['Invalid multipart form data', 'Nie udało się odczytać przesłanego pliku'],
+      ['CV cannot be changed in the current application status', 'Na tym etapie rekrutacji nie można już zmienić CV'],
+      ['CV not found', 'Nie znaleziono CV tej aplikacji'],
+      ['CV was changed by another request', 'CV zostało w międzyczasie zmienione – odśwież dane'],
+      ["No file uploaded - send it in the 'file' form field", 'Nie wybrano pliku do przesłania']
     ])('translates the known API message "%s"', (message, expected) => {
       expect(getApiErrorMessage(httpError(400, { message }), FALLBACK)).toBe(expected);
     });
@@ -55,6 +63,10 @@ describe('http-errors', () => {
     it('returns a generic text for ValidationProblemDetails', () => {
       const body = { title: 'One or more validation errors occurred.', status: 400, errors: { SalaryMin: ['bad'] } };
       expect(getApiErrorMessage(httpError(400, body), FALLBACK)).toBe('Przesłane dane są nieprawidłowe');
+    });
+
+    it('returns the CV size message for 413 Payload Too Large without a body', () => {
+      expect(getApiErrorMessage(httpError(413), FALLBACK)).toBe('Plik jest za duży – maksymalny rozmiar to 5 MB');
     });
 
     it('returns a connection message for status 0', () => {

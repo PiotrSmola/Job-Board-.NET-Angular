@@ -1,8 +1,8 @@
 import { TestBed } from '@angular/core/testing';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, HttpEventType, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { JobApplicationService } from './job-application.service';
-import { ApplicationStatus, JobApplication } from '../models/job-application.model';
+import { ApplicationStatus, CvUploadEvent, JobApplication } from '../models/job-application.model';
 import { ApplicationParams } from '../models/application-params.model';
 import { PaginatedResult } from '../models/pagination.model';
 
@@ -156,6 +156,163 @@ describe('JobApplicationService', () => {
       const req = http.expectOne('/api/jobapplications/6/withdraw');
       expect(req.request.method).toBe('POST');
       req.flush(APPLICATION);
+    });
+  });
+
+  describe('CV', () => {
+    it('uploadCv puts the file as multipart form data and emits progress and the updated application', () => {
+      const file = new File(['%PDF-1.7'], 'moje cv.pdf', { type: 'application/pdf' });
+      const events: CvUploadEvent[] = [];
+      let completed = false;
+      service.uploadCv(6, file).subscribe({ next: e => events.push(e), complete: () => (completed = true) });
+
+      const req = http.expectOne('/api/jobapplications/6/cv');
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.reportProgress).toBe(true);
+      const body = req.request.body as FormData;
+      expect(body).toBeInstanceOf(FormData);
+      expect((body.get('file') as File).name).toBe('moje cv.pdf');
+
+      req.event({ type: HttpEventType.Sent });
+      req.event({ type: HttpEventType.UploadProgress, loaded: 25, total: 100 });
+      req.event({ type: HttpEventType.UploadProgress, loaded: 100, total: 100 });
+      const updated = { ...APPLICATION, id: 6, hasCv: true, cvFileName: 'moje cv.pdf', cvSize: 8, cvUploadedAt: '2026-01-02T10:00:00Z' };
+      req.flush(updated);
+
+      expect(events).toEqual([
+        { type: 'progress', percent: 25 },
+        { type: 'progress', percent: 100 },
+        { type: 'done', application: updated }
+      ]);
+      expect(completed).toBe(true);
+    });
+
+    it('uploadCv reports 0 % when the total size is unknown', () => {
+      const events: CvUploadEvent[] = [];
+      service.uploadCv(6, new File(['x'], 'cv.pdf')).subscribe(e => events.push(e));
+
+      const req = http.expectOne('/api/jobapplications/6/cv');
+      req.event({ type: HttpEventType.UploadProgress, loaded: 10 });
+      req.flush(APPLICATION);
+
+      expect(events[0]).toEqual({ type: 'progress', percent: 0 });
+      expect(events[events.length - 1].type).toBe('done');
+    });
+
+    it('uploadCv passes API errors through', () => {
+      let error: HttpErrorResponse | undefined;
+      service.uploadCv(6, new File(['x'], 'cv.pdf')).subscribe({ error: e => (error = e) });
+
+      http.expectOne('/api/jobapplications/6/cv')
+        .flush({ message: 'File is too large - maximum size is 5 MB' }, { status: 400, statusText: 'Bad Request' });
+
+      expect(error?.status).toBe(400);
+      expect(error?.error).toEqual({ message: 'File is too large - maximum size is 5 MB' });
+    });
+
+    it('deleteCv sends DELETE to /:id/cv', () => {
+      service.deleteCv(6).subscribe();
+      const req = http.expectOne('/api/jobapplications/6/cv');
+      expect(req.request.method).toBe('DELETE');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+    });
+
+    describe('downloadCv', () => {
+      let createObjectURL: ReturnType<typeof vi.fn>;
+      let downloads: { href: string; download: string }[];
+
+      beforeEach(() => {
+        vi.useFakeTimers();
+        createObjectURL = vi.fn().mockReturnValue('blob:cv');
+        Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+        downloads = [];
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+          downloads.push({ href: this.href, download: this.download });
+        });
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+      });
+
+      it('requests the file as a blob and saves it under the name from Content-Disposition', () => {
+        let done = false;
+        service.downloadCv(6, 'fallback.pdf').subscribe(() => (done = true));
+
+        const req = http.expectOne('/api/jobapplications/6/cv');
+        expect(req.request.method).toBe('GET');
+        expect(req.request.responseType).toBe('blob');
+        const blob = new Blob(['%PDF-'], { type: 'application/pdf' });
+        req.flush(blob, { headers: { 'Content-Disposition': "attachment; filename*=UTF-8''%C5%BC%C3%B3%C5%82w.pdf" } });
+
+        expect(done).toBe(true);
+        expect(createObjectURL).toHaveBeenCalledWith(blob);
+        expect(downloads).toEqual([{ href: 'blob:cv', download: 'żółw.pdf' }]);
+      });
+
+      it('falls back to the given file name when the header is not exposed', () => {
+        service.downloadCv(6, 'moje-cv.docx').subscribe();
+
+        http.expectOne('/api/jobapplications/6/cv').flush(new Blob(['PK']));
+
+        expect(downloads[0].download).toBe('moje-cv.docx');
+      });
+
+      it('uses "cv" when neither the header nor the fallback name is available', () => {
+        service.downloadCv(6).subscribe();
+
+        http.expectOne('/api/jobapplications/6/cv').flush(new Blob(['PK']));
+
+        expect(downloads[0].download).toBe('cv');
+      });
+
+      // FileReader (parsowanie treści błędu) działa asynchronicznie – te testy działają na prawdziwych timerach
+      async function waitFor(condition: () => boolean): Promise<void> {
+        for (let i = 0; i < 200 && !condition(); i++) {
+          await new Promise(resolve => setTimeout(resolve, 5));
+        }
+      }
+
+      it('does not save anything when the request fails', async () => {
+        vi.useRealTimers();
+        let error: HttpErrorResponse | undefined;
+        service.downloadCv(6, 'cv.pdf').subscribe({ error: e => (error = e) });
+
+        http.expectOne('/api/jobapplications/6/cv').flush(new Blob([]), { status: 404, statusText: 'Not Found' });
+
+        await waitFor(() => error !== undefined);
+        expect(error?.status).toBe(404);
+        expect(createObjectURL).not.toHaveBeenCalled();
+        expect(downloads).toEqual([]);
+      });
+
+      it('parses the JSON error body sent as a Blob so the API message can be shown', async () => {
+        vi.useRealTimers();
+        let error: HttpErrorResponse | undefined;
+        service.downloadCv(6, 'cv.pdf').subscribe({ error: e => (error = e) });
+
+        http.expectOne('/api/jobapplications/6/cv').flush(
+          new Blob([JSON.stringify({ message: 'Application not found' })], { type: 'application/json' }),
+          { status: 404, statusText: 'Not Found' }
+        );
+
+        await waitFor(() => error !== undefined);
+        expect(error).toBeInstanceOf(HttpErrorResponse);
+        expect(error?.status).toBe(404);
+        expect(error?.error).toEqual({ message: 'Application not found' });
+      });
+
+      it('sanitizes a malicious file name from the header before saving', () => {
+        service.downloadCv(6).subscribe();
+
+        http.expectOne('/api/jobapplications/6/cv').flush(new Blob(['x']), {
+          headers: { 'Content-Disposition': "attachment; filename*=UTF-8''..%2F..%2Fstartup%5Cevil%0A.pdf" }
+        });
+
+        expect(downloads[0].download).toBe('evil.pdf');
+        expect(downloads[0].href).toBe('blob:cv');
+      });
     });
   });
 

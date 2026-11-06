@@ -14,6 +14,7 @@ import {
   RECRUITER_STATUS_OPTIONS,
   WITHDRAWABLE_STATUSES,
   calendarDaysUntil,
+  canChangeCv,
   canWithdraw,
   formatExpiresSoon,
   getApplicationStatusPresentation,
@@ -55,6 +56,18 @@ describe('status-labels', () => {
     [ApplicationStatus.Withdrawn, false]
   ])('canWithdraw(%s) is %s', (status, expected) => {
     expect(canWithdraw(status)).toBe(expected);
+  });
+
+  it.each([
+    [ApplicationStatus.Submitted, true],
+    [ApplicationStatus.InReview, true],
+    [ApplicationStatus.Interview, true],
+    [ApplicationStatus.Offered, true],
+    [ApplicationStatus.Hired, false],
+    [ApplicationStatus.Rejected, false],
+    [ApplicationStatus.Withdrawn, false]
+  ])('canChangeCv(%s) is %s', (status, expected) => {
+    expect(canChangeCv(status)).toBe(expected);
   });
 
   describe('formatExpiresSoon', () => {
