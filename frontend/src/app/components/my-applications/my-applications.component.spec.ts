@@ -5,16 +5,16 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatDialog } from '@angular/material/dialog';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { MyApplicationsComponent } from './my-applications.component';
-import { CvDialogComponent } from './cv-dialog.component';
+import { ATTACHMENTS_UPLOAD_ABORTED, AttachmentsDialogComponent } from './attachments-dialog.component';
 import { JobApplicationService } from '../../services/job-application.service';
-import { ApplicationStatus, JobApplication } from '../../models/job-application.model';
+import { ApplicationAttachment, ApplicationStatus, AttachmentKind, JobApplication } from '../../models/job-application.model';
 
 function makeApplication(id: number, status = ApplicationStatus.Submitted): JobApplication {
   return {
     id, jobOfferId: id * 10, userId: 'u1', userEmail: 'jan@example.com', userFullName: 'Jan Kowalski',
     jobTitle: `Oferta ${id}`, company: 'Acme', companyId: 1, note: null, appliedAt: new Date('2026-01-01T10:00:00Z'),
     status, statusChangedAt: '2026-01-01T10:00:00Z',
-    hasCv: false, cvFileName: null, cvSize: null, cvUploadedAt: null
+    attachments: [], attachmentsTotalSize: 0
   };
 }
 
@@ -32,8 +32,8 @@ describe('MyApplicationsComponent', () => {
   let getMyApplications: ReturnType<typeof vi.fn>;
   let getApplication: ReturnType<typeof vi.fn>;
   let withdraw: ReturnType<typeof vi.fn>;
-  let downloadCv: ReturnType<typeof vi.fn>;
-  let deleteCv: ReturnType<typeof vi.fn>;
+  let downloadAttachment: ReturnType<typeof vi.fn>;
+  let deleteAttachment: ReturnType<typeof vi.fn>;
   let dialogOpen: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
@@ -58,8 +58,8 @@ describe('MyApplicationsComponent', () => {
       ...makeApplication(id, ApplicationStatus.Withdrawn),
       history: [...HISTORY, { status: ApplicationStatus.Withdrawn, changedAt: '2026-01-03T10:00:00Z', comment: null, changedBy: null }]
     }));
-    downloadCv = vi.fn().mockReturnValue(of(undefined));
-    deleteCv = vi.fn().mockReturnValue(of(undefined));
+    downloadAttachment = vi.fn().mockReturnValue(of(undefined));
+    deleteAttachment = vi.fn().mockReturnValue(of(undefined));
     dialogOpen = vi.fn().mockReturnValue({ afterClosed: () => of(undefined) });
     snackBarOpen = vi.fn();
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
@@ -70,7 +70,7 @@ describe('MyApplicationsComponent', () => {
       imports: [MyApplicationsComponent],
       providers: [
         provideRouter([]),
-        { provide: JobApplicationService, useValue: { getMyApplications, getApplication, withdraw, downloadCv, deleteCv } },
+        { provide: JobApplicationService, useValue: { getMyApplications, getApplication, withdraw, downloadAttachment, deleteAttachment } },
         { provide: MatDialog, useValue: { open: dialogOpen } },
         { provide: MatSnackBar, useValue: { open: snackBarOpen } }
       ]
@@ -287,155 +287,241 @@ describe('MyApplicationsComponent', () => {
     expect(navigate).toHaveBeenCalledWith(['/jobs', 20]);
   });
 
-  describe('CV', () => {
-    const CV_FIELDS = { hasCv: true, cvFileName: 'moje-cv.pdf', cvSize: 350 * 1024, cvUploadedAt: '2026-01-02T10:00:00Z' };
+  describe('attachments', () => {
+    const CV: ApplicationAttachment = { id: 11, kind: AttachmentKind.Cv, fileName: 'moje-cv.pdf', size: 350 * 1024, uploadedAt: '2026-01-02T10:00:00Z' };
+    const LETTER: ApplicationAttachment = { id: 12, kind: AttachmentKind.CoverLetter, fileName: 'list.docx', size: 2048, uploadedAt: '2026-01-03T10:00:00Z' };
 
-    function withCv(id: number, status = ApplicationStatus.Submitted): JobApplication {
-      return { ...makeApplication(id, status), ...CV_FIELDS };
+    function withAttachments(id: number, status = ApplicationStatus.Submitted, attachments = [CV, LETTER]): JobApplication {
+      return {
+        ...makeApplication(id, status),
+        attachments,
+        attachmentsTotalSize: attachments.reduce((sum, a) => sum + a.size, 0)
+      };
     }
 
-    function cvCell(index: number): HTMLElement {
-      return root().querySelectorAll<HTMLElement>('td.mat-column-cv')[index];
+    function cell(index: number): HTMLElement {
+      return root().querySelectorAll<HTMLElement>('td.mat-column-attachments')[index];
     }
 
-    it('shows the CV name, size and upload date', () => {
-      create(of([withCv(1), makeApplication(2)]));
+    function labels(index: number): (string | null)[] {
+      return Array.from(cell(index).querySelectorAll('button')).map(b => b.getAttribute('aria-label'));
+    }
 
-      expect(cvCell(0).textContent).toContain('moje-cv.pdf');
-      expect(cvCell(0).textContent).toContain('350 KB');
-      expect(cvCell(0).textContent).toContain('02.01.2026');
-      expect(cvCell(1).textContent).toContain('Brak');
+    it('has an "Załączniki" column instead of the single CV column', () => {
+      create();
+
+      expect(component.displayedColumns).toContain('attachments');
+      expect(component.displayedColumns).not.toContain('cv');
+      expect(Array.from(root().querySelectorAll('th')).map(th => th.textContent?.trim())).toContain('Załączniki');
     });
 
-    it('labels the icon buttons with the action and the file name', () => {
-      create(of([withCv(1), makeApplication(2)]));
+    it('lists the kind, name, size and date of every attachment', () => {
+      create(of([withAttachments(1), makeApplication(2)]));
 
-      const labels = (index: number) => Array.from(cvCell(index).querySelectorAll('button')).map(b => b.getAttribute('aria-label'));
-      expect(labels(0)).toEqual(['Pobierz CV: moje-cv.pdf', 'Zmień CV: moje-cv.pdf', 'Usuń CV: moje-cv.pdf']);
-      expect(labels(1)).toEqual(['Dodaj CV do aplikacji: Oferta 2']);
+      const items = Array.from(cell(0).querySelectorAll('li'));
+      expect(items.map(li => li.querySelector('.file-name')?.textContent)).toEqual(['moje-cv.pdf', 'list.docx']);
+      expect(items.map(li => li.querySelector('.meta')?.textContent)).toEqual([
+        'CV · 350 KB · 02.01.2026', 'List motywacyjny · 2 KB · 03.01.2026'
+      ]);
+      expect(cell(1).querySelector('.empty')?.textContent).toBe('Brak');
     });
 
-    it('offers changing the CV only in the statuses the API allows, but always the download', () => {
+    it('labels the buttons with the action, the kind and the file name', () => {
+      create(of([withAttachments(1), makeApplication(2)]));
+
+      expect(labels(0)).toEqual([
+        'Pobierz CV: moje-cv.pdf', 'Usuń CV: moje-cv.pdf',
+        'Pobierz List motywacyjny: list.docx', 'Usuń List motywacyjny: list.docx',
+        'Dodaj załączniki do aplikacji: Oferta 1'
+      ]);
+      expect(labels(1)).toEqual(['Dodaj załączniki do aplikacji: Oferta 2']);
+    });
+
+    it('offers adding only in the statuses the API allows, but deleting and downloading always', () => {
       const statuses = [
         ApplicationStatus.Submitted, ApplicationStatus.InReview, ApplicationStatus.Interview, ApplicationStatus.Offered,
         ApplicationStatus.Hired, ApplicationStatus.Rejected, ApplicationStatus.Withdrawn
       ];
-      create(of(statuses.map((status, i) => withCv(i + 1, status))));
+      create(of(statuses.map((status, i) => withAttachments(i + 1, status, [CV]))));
 
-      const counts = statuses.map((_, i) => cvCell(i).querySelectorAll('button').length);
-      expect(counts).toEqual([3, 3, 3, 3, 1, 1, 1]);
+      const adds = statuses.map((_, i) => cell(i).querySelectorAll('button.add-attachments').length);
+      expect(adds).toEqual([1, 1, 1, 1, 0, 0, 0]);
+      const others = statuses.map((_, i) => cell(i).querySelectorAll('.download-button, .delete-button').length);
+      expect(others).toEqual([2, 2, 2, 2, 2, 2, 2]);
     });
 
-    it('downloads the CV with the stored file name as a fallback', () => {
-      create(of([withCv(1)]));
+    it('does not offer adding when the application already has 10 attachments', () => {
+      const ten = Array.from({ length: 10 }, (_, i) => ({ ...CV, id: 100 + i, fileName: `plik-${i}.pdf` }));
+      create(of([withAttachments(1, ApplicationStatus.Submitted, ten)]));
 
-      component.downloadCv(component.applications[0]);
-
-      expect(downloadCv).toHaveBeenCalledWith(1, 'moje-cv.pdf');
-      expect(component.downloadingCvId).toBeNull();
+      expect(component.canAddAttachments(component.applications[0])).toBe(false);
+      expect(cell(0).querySelector('button.add-attachments')).toBeNull();
     });
 
-    it('marks the row as downloading until the file arrives', () => {
-      create(of([withCv(1)]));
+    it('downloads an attachment of the right application', () => {
+      create(of([withAttachments(1)]));
+
+      cell(0).querySelectorAll<HTMLButtonElement>('.download-button')[1].click();
+
+      expect(downloadAttachment).toHaveBeenCalledWith(1, LETTER);
+    });
+
+    it('marks the download button with aria-disabled until the file arrives', () => {
+      create(of([withAttachments(1)]));
       const pending = new Subject<void>();
-      downloadCv.mockReturnValue(pending);
+      downloadAttachment.mockReturnValue(pending);
+      const button = cell(0).querySelector<HTMLButtonElement>('.download-button')!;
 
-      component.downloadCv(component.applications[0]);
-      expect(component.downloadingCvId).toBe(1);
-      expect(cvCell(0).querySelector<HTMLButtonElement>('button.cv-file')!.disabled).toBe(true);
+      button.click();
+      expect(cell(0).querySelector('.download-button')?.getAttribute('aria-disabled')).toBe('true');
+      expect(button.disabled).toBe(false);
 
       pending.next();
       pending.complete();
-      expect(component.downloadingCvId).toBeNull();
+      expect(cell(0).querySelector('.download-button')?.getAttribute('aria-disabled')).toBeNull();
     });
 
     it('shows the translated API message when the download fails', () => {
-      create(of([withCv(1)]));
-      downloadCv.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { message: 'Application not found' } })));
+      create(of([withAttachments(1)]));
+      downloadAttachment.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { message: 'Attachment not found' } })));
 
-      component.downloadCv(component.applications[0]);
+      cell(0).querySelector<HTMLButtonElement>('.download-button')!.click();
 
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja nie została znaleziona');
-      expect(component.downloadingCvId).toBeNull();
+      expect(cell(0).querySelector('[role="alert"]')?.textContent).toBe('Nie znaleziono załącznika');
     });
 
-    it('deletes the CV after confirmation and clears the CV fields', () => {
-      create(of([withCv(1)]));
+    it('deletes an attachment after confirmation and updates the list and the total size', () => {
+      create(of([withAttachments(1)]));
 
-      component.deleteCv(component.applications[0]);
+      cell(0).querySelectorAll<HTMLButtonElement>('.delete-button')[0].click();
 
       expect(confirmSpy).toHaveBeenCalled();
-      expect(deleteCv).toHaveBeenCalledWith(1);
-      expect(component.applications[0]).toMatchObject({ hasCv: false, cvFileName: null, cvSize: null, cvUploadedAt: null });
-      expect(snackBarOpen.mock.calls[0][0]).toBe('CV zostało usunięte');
-      expect(cvCell(0).textContent).toContain('Brak');
+      expect(deleteAttachment).toHaveBeenCalledWith(1, 11);
+      expect(component.applications[0].attachments).toEqual([LETTER]);
+      expect(component.applications[0].attachmentsTotalSize).toBe(2048);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Załącznik został usunięty');
+      expect(Array.from(cell(0).querySelectorAll('.file-name')).map(e => e.textContent)).toEqual(['list.docx']);
     });
 
-    it('does not delete the CV when the confirmation is declined', () => {
-      create(of([withCv(1)]));
+    it('allows deleting an attachment of a withdrawn application (right to erasure)', () => {
+      create(of([withAttachments(1, ApplicationStatus.Withdrawn, [CV])]));
+
+      cell(0).querySelector<HTMLButtonElement>('.delete-button')!.click();
+
+      expect(deleteAttachment).toHaveBeenCalledWith(1, 11);
+      expect(component.applications[0].attachments).toEqual([]);
+      expect(cell(0).querySelector('.empty')?.textContent).toBe('Brak');
+    });
+
+    it('moves the focus to the next attachment after deleting one', () => {
+      create(of([withAttachments(1)]));
+
+      cell(0).querySelectorAll<HTMLButtonElement>('.delete-button')[0].click();
+      root();
+
+      expect(document.activeElement?.getAttribute('aria-label')).toBe('Usuń List motywacyjny: list.docx');
+    });
+
+    it('moves the focus to the empty-list text after deleting the last attachment', () => {
+      create(of([withAttachments(1, ApplicationStatus.Submitted, [CV])]));
+
+      cell(0).querySelector<HTMLButtonElement>('.delete-button')!.click();
+      root();
+
+      expect(document.activeElement).toBe(cell(0).querySelector('.empty'));
+    });
+
+    it('does not delete when the confirmation is declined', () => {
+      create(of([withAttachments(1)]));
       confirmSpy.mockReturnValue(false);
 
-      component.deleteCv(component.applications[0]);
+      cell(0).querySelector<HTMLButtonElement>('.delete-button')!.click();
 
-      expect(deleteCv).not.toHaveBeenCalled();
-      expect(component.applications[0].hasCv).toBe(true);
+      expect(deleteAttachment).not.toHaveBeenCalled();
+      expect(component.applications[0].attachments.length).toBe(2);
     });
 
-    it('keeps the CV and shows the translated message when deleting is rejected', () => {
-      create(of([withCv(1)]));
-      deleteCv.mockReturnValue(throwError(() => new HttpErrorResponse({
-        status: 400, error: { message: 'CV cannot be changed in the current application status' }
-      })));
-
-      component.deleteCv(component.applications[0]);
-
-      expect(component.applications[0].hasCv).toBe(true);
-      expect(component.deletingCvId).toBeNull();
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Na tym etapie rekrutacji nie można już zmienić CV');
-    });
-
-    it('opens the CV dialog and puts the updated application into the list', () => {
+    it('opens the attachments dialog as an ARIA modal and puts the updated application into the list', () => {
       create();
-      const updated = { ...withCv(1), statusChangedAt: '2026-01-05T10:00:00Z' };
+      const updated = withAttachments(1);
       dialogOpen.mockReturnValue({ afterClosed: () => of(updated) });
 
       const original = component.applications[0];
-      component.openCvDialog(original);
+      cell(0).querySelector<HTMLButtonElement>('button.add-attachments')!.click();
 
-      expect(dialogOpen).toHaveBeenCalledWith(CvDialogComponent, expect.objectContaining({ data: original }));
-      expect(component.applications[0].cvFileName).toBe('moje-cv.pdf');
-      expect(snackBarOpen.mock.calls[0][0]).toBe('CV zostało dołączone do aplikacji');
+      expect(dialogOpen).toHaveBeenCalledWith(AttachmentsDialogComponent, expect.objectContaining({ data: original, ariaModal: true }));
+      expect(component.applications[0].attachments).toEqual([CV, LETTER]);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Załączniki zostały dodane do aplikacji');
+      expect(getApplication).not.toHaveBeenCalled();
     });
 
-    it('reports a replaced CV', () => {
-      create(of([withCv(1)]));
-      dialogOpen.mockReturnValue({ afterClosed: () => of({ ...withCv(1), cvFileName: 'nowe.docx' }) });
-
-      component.openCvDialog(component.applications[0]);
-
-      expect(component.applications[0].cvFileName).toBe('nowe.docx');
-      expect(snackBarOpen.mock.calls[0][0]).toBe('CV zostało zastąpione');
-    });
-
-    it('leaves the list unchanged when the CV dialog is cancelled', () => {
+    it('leaves the list unchanged when the dialog is cancelled', () => {
       create();
       dialogOpen.mockReturnValue({ afterClosed: () => of(undefined) });
 
-      component.openCvDialog(component.applications[0]);
+      component.openAttachmentsDialog(component.applications[0]);
 
-      expect(component.applications[0].hasCv).toBe(false);
+      expect(component.applications[0].attachments).toEqual([]);
       expect(snackBarOpen).not.toHaveBeenCalled();
+      expect(getApplication).not.toHaveBeenCalled();
+    });
+
+    it('refreshes the application from the server after an aborted upload (the server may have saved the files)', () => {
+      create();
+      dialogOpen.mockReturnValue({ afterClosed: () => of(ATTACHMENTS_UPLOAD_ABORTED) });
+      getApplication.mockReturnValue(of({ ...withAttachments(1, ApplicationStatus.Submitted, [CV]), history: HISTORY }));
+
+      component.openAttachmentsDialog(component.applications[0]);
+
+      expect(getApplication).toHaveBeenCalledWith(1);
+      expect(component.applications[0].attachments).toEqual([CV]);
+      expect(component.applications[0].history).toBeUndefined();
+      expect(component.histories[1]).toEqual(HISTORY);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Przerwano wysyłanie załączników');
+      expect(Array.from(cell(0).querySelectorAll('.file-name')).map(e => e.textContent)).toEqual(['moje-cv.pdf']);
+    });
+
+    it('tells the user to reload when refreshing after an abort fails', () => {
+      create();
+      dialogOpen.mockReturnValue({ afterClosed: () => of(ATTACHMENTS_UPLOAD_ABORTED) });
+      getApplication.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      component.openAttachmentsDialog(component.applications[0]);
+
+      expect(snackBarOpen.mock.calls.map(call => call[0])).toEqual([
+        'Przerwano wysyłanie załączników', 'Nie udało się odświeżyć aplikacji – odśwież stronę'
+      ]);
     });
 
     it('stops listening to a pending download when the page is destroyed', () => {
-      create(of([withCv(1)]));
+      create(of([withAttachments(1)]));
       const pending = new Subject<void>();
-      downloadCv.mockReturnValue(pending);
+      downloadAttachment.mockReturnValue(pending);
 
-      component.downloadCv(component.applications[0]);
+      cell(0).querySelector<HTMLButtonElement>('.download-button')!.click();
       fixture.destroy();
 
       expect(pending.observed).toBe(false);
+    });
+
+    it('stops listening to the refresh after an abort when the page is destroyed', () => {
+      create();
+      const refresh = new Subject<JobApplication>();
+      dialogOpen.mockReturnValue({ afterClosed: () => of(ATTACHMENTS_UPLOAD_ABORTED) });
+      getApplication.mockReturnValue(refresh);
+
+      component.openAttachmentsDialog(component.applications[0]);
+      fixture.destroy();
+
+      expect(refresh.observed).toBe(false);
+    });
+
+    it('renders markup in attachment names as text', () => {
+      const name = '<img src=x onerror="window.__pwned=true">.pdf';
+      create(of([withAttachments(1, ApplicationStatus.Submitted, [{ ...CV, fileName: name }])]));
+
+      expect(cell(0).querySelector('.file-name')?.textContent).toBe(name);
+      expect(cell(0).querySelector('img')).toBeNull();
     });
   });
 });

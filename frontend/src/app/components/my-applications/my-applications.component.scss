@@ -110,38 +110,17 @@
     font-size: 0.875rem;
   }
 
-  .cv-cell {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .cv-info {
+  .attachments-cell {
     display: flex;
     flex-direction: column;
-    min-width: 0;
-  }
+    align-items: flex-start;
+    gap: 4px;
+    min-width: 220px;
+    max-width: 280px;
 
-  .cv-file {
-    max-width: 200px;
-    justify-content: flex-start;
-  }
-
-  .cv-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  // #b0b0b0 na #1e1e1e – kontrast ok. 9:1 (WCAG AA)
-  .cv-meta,
-  .no-cv {
-    color: #b0b0b0;
-    font-size: 0.8rem;
-  }
-
-  .cv-meta {
-    padding-left: 12px;
+    app-attachment-list {
+      align-self: stretch;
+    }
   }
 
   .actions-cell {

@@ -11,13 +11,19 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatDialog } from '@angular/material/dialog';
 import { JobApplicationService } from '../../services/job-application.service';
-import { ApplicationStatus, ApplicationStatusHistoryEntry, JobApplication } from '../../models/job-application.model';
+import { ApplicationAttachment, ApplicationStatus, ApplicationStatusHistoryEntry, JobApplication } from '../../models/job-application.model';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
-import { canChangeCv, canWithdraw, getApplicationStatusPresentation, StatusPresentation } from '../../utils/status-labels';
-import { formatFileSize } from '../../utils/cv-file';
+import { canAddAttachments, canWithdraw, getApplicationStatusPresentation, StatusPresentation } from '../../utils/status-labels';
+import { ATTACHMENTS_MAX_COUNT } from '../../utils/attachments';
 import { StatusChipComponent } from '../shared/status-chip.component';
 import { StatusTimelineComponent } from '../shared/status-timeline.component';
-import { CvDialogComponent } from './cv-dialog.component';
+import { AttachmentListComponent } from '../shared/attachment-list.component';
+import {
+  ATTACHMENTS_DIALOG_CONFIG,
+  ATTACHMENTS_UPLOAD_ABORTED,
+  AttachmentsDialogComponent,
+  AttachmentsDialogResult
+} from './attachments-dialog.component';
 
 @Component({
   selector: 'app-my-applications',
@@ -32,7 +38,8 @@ import { CvDialogComponent } from './cv-dialog.component';
     MatProgressSpinnerModule,
     MatTooltipModule,
     StatusChipComponent,
-    StatusTimelineComponent
+    StatusTimelineComponent,
+    AttachmentListComponent
   ],
   templateUrl: './my-applications.component.html',
   styleUrl: './my-applications.component.scss'
@@ -46,11 +53,12 @@ export class MyApplicationsComponent implements OnInit {
   private destroyRef = inject(DestroyRef);
 
   applications: JobApplication[] = [];
-  displayedColumns: string[] = ['jobTitle', 'company', 'location', 'status', 'appliedAt', 'note', 'cv', 'actions'];
+  displayedColumns: string[] = ['jobTitle', 'company', 'location', 'status', 'appliedAt', 'note', 'attachments', 'actions'];
   loading = false;
   withdrawingId: number | null = null;
-  downloadingCvId: number | null = null;
-  deletingCvId: number | null = null;
+
+  /** Wiersze śledzone po id – podmiana aplikacji (np. po usunięciu załącznika) nie odtwarza wiersza, więc fokus zostaje. */
+  readonly trackById = (_: number, application: JobApplication): number => application.id;
 
   /** Aplikacja z rozwiniętą historią (null = żadna). */
   expandedId: number | null = null;
@@ -89,66 +97,59 @@ export class MyApplicationsComponent implements OnInit {
     return canWithdraw(application.status);
   }
 
-  canChangeCv(application: JobApplication): boolean {
-    return canChangeCv(application.status);
+  /** Dodawanie załączników: dozwolony status i wolne miejsce w limicie liczby plików (usuwać można zawsze). */
+  canAddAttachments(application: JobApplication): boolean {
+    return canAddAttachments(application.status) && application.attachments.length < ATTACHMENTS_MAX_COUNT;
   }
 
-  formatFileSize(bytes: number | null): string {
-    return formatFileSize(bytes);
-  }
+  /** Dodanie załączników w dialogu z paskiem postępu. */
+  openAttachmentsDialog(application: JobApplication): void {
+    const dialogRef = this.dialog.open<AttachmentsDialogComponent, JobApplication, AttachmentsDialogResult>(
+      AttachmentsDialogComponent, { ...ATTACHMENTS_DIALOG_CONFIG, data: application });
 
-  /** Dodanie lub zmiana CV w dialogu z paskiem postępu. */
-  openCvDialog(application: JobApplication): void {
-    const hadCv = application.hasCv;
-    const dialogRef = this.dialog.open(CvDialogComponent, { width: '520px', data: application });
-
-    dialogRef.afterClosed().pipe(takeUntilDestroyed(this.destroyRef)).subscribe((updated: JobApplication | undefined) => {
-      if (!updated) return;
-      this.replaceApplication(updated);
-      this.cdr.detectChanges();
-      this.notify(hadCv ? 'CV zostało zastąpione' : 'CV zostało dołączone do aplikacji');
-    });
-  }
-
-  downloadCv(application: JobApplication): void {
-    this.downloadingCvId = application.id;
-    this.cdr.detectChanges();
-    this.applicationService.downloadCv(application.id, application.cvFileName).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => {
-        this.downloadingCvId = null;
-        this.cdr.detectChanges();
-      },
-      error: (error) => {
-        console.error('Error downloading CV:', error);
-        this.downloadingCvId = null;
-        this.cdr.detectChanges();
-        if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Nie udało się pobrać CV'));
-        }
+    dialogRef.afterClosed().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(result => {
+      if (result === ATTACHMENTS_UPLOAD_ABORTED) {
+        // przerwanie w fazie przetwarzania – serwer mógł już zapisać pliki, więc bierzemy stan z serwera
+        this.notify('Przerwano wysyłanie załączników');
+        this.refreshApplication(application.id);
+        return;
       }
+      if (!result) return;
+      this.replaceApplication(result);
+      this.cdr.detectChanges();
+      this.notify('Załączniki zostały dodane do aplikacji');
     });
   }
 
-  deleteCv(application: JobApplication): void {
-    if (!confirm(`Czy na pewno chcesz usunąć CV „${application.cvFileName}” z aplikacji na stanowisko „${application.jobTitle}”?`)) {
-      return;
-    }
+  /** Załącznik usunięty w liście – aktualizujemy aplikację bez ponownego pobierania. */
+  onAttachmentDeleted(applicationId: number, attachment: ApplicationAttachment): void {
+    const current = this.applications.find(app => app.id === applicationId);
+    if (!current) return;
 
-    this.deletingCvId = application.id;
+    this.replaceApplication({
+      ...current,
+      attachments: current.attachments.filter(a => a.id !== attachment.id),
+      attachmentsTotalSize: Math.max(0, current.attachmentsTotalSize - attachment.size)
+    });
     this.cdr.detectChanges();
-    this.applicationService.deleteCv(application.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => {
-        this.replaceApplication({ ...application, hasCv: false, cvFileName: null, cvSize: null, cvUploadedAt: null });
-        this.deletingCvId = null;
+    this.notify('Załącznik został usunięty');
+  }
+
+  private refreshApplication(id: number): void {
+    this.applicationService.getApplication(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (details) => {
+        // szczegóły zawierają też historię – od razu aktualizujemy jej cache
+        const { history, ...application } = details;
+        this.replaceApplication(application);
+        if (history) {
+          this.histories = { ...this.histories, [id]: history };
+        }
         this.cdr.detectChanges();
-        this.notify('CV zostało usunięte');
       },
       error: (error) => {
-        console.error('Error deleting CV:', error);
-        this.deletingCvId = null;
-        this.cdr.detectChanges();
+        console.error('Error refreshing application:', error);
         if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Nie udało się usunąć CV'));
+          this.notify(getApiErrorMessage(error, 'Nie udało się odświeżyć aplikacji – odśwież stronę'));
         }
       }
     });

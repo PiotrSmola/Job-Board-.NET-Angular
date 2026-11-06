@@ -13,7 +13,7 @@
   @if (!loading && applications.length > 0) {
     <mat-card class="table-card">
       <div class="table-container">
-        <table mat-table [dataSource]="applications" multiTemplateDataRows class="applications-table">
+        <table mat-table [dataSource]="applications" [trackBy]="trackById" multiTemplateDataRows class="applications-table">
           <ng-container matColumnDef="jobTitle">
             <th mat-header-cell *matHeaderCellDef>Stanowisko</th>
             <td mat-cell *matCellDef="let application">
@@ -67,59 +67,26 @@
             </td>
           </ng-container>
 
-          <ng-container matColumnDef="cv">
-            <th mat-header-cell *matHeaderCellDef>CV</th>
+          <ng-container matColumnDef="attachments">
+            <th mat-header-cell *matHeaderCellDef>Załączniki</th>
             <td mat-cell *matCellDef="let application">
-              <div class="cv-cell">
-                @if (application.hasCv) {
-                  <div class="cv-info">
-                    <button
-                      mat-button
-                      class="cv-file"
-                      (click)="downloadCv(application)"
-                      [disabled]="downloadingCvId === application.id"
-                      [matTooltip]="'Pobierz CV: ' + application.cvFileName"
-                      [attr.aria-label]="'Pobierz CV: ' + application.cvFileName">
-                      @if (downloadingCvId === application.id) {
-                        <mat-spinner diameter="18"></mat-spinner>
-                      } @else {
-                        <mat-icon aria-hidden="true">download</mat-icon>
-                      }
-                      <span class="cv-name" aria-hidden="true">{{ application.cvFileName }}</span>
-                    </button>
-                    <span class="cv-meta">
-                      {{ formatFileSize(application.cvSize) }}
-                      @if (application.cvUploadedAt) {
-                        · {{ application.cvUploadedAt | date: 'dd.MM.yyyy' }}
-                      }
-                    </span>
-                  </div>
-                } @else {
-                  <span class="no-cv">Brak</span>
-                }
-                @if (canChangeCv(application)) {
+              <div class="attachments-cell">
+                <app-attachment-list
+                  [applicationId]="application.id"
+                  [attachments]="application.attachments"
+                  [allowDelete]="true"
+                  [showDate]="true"
+                  (deleted)="onAttachmentDeleted(application.id, $event)" />
+                @if (canAddAttachments(application)) {
                   <button
-                    mat-icon-button
-                    (click)="openCvDialog(application)"
-                    [matTooltip]="application.hasCv ? 'Zmień CV' : 'Dodaj CV'"
-                    [attr.aria-label]="application.hasCv ? 'Zmień CV: ' + application.cvFileName : 'Dodaj CV do aplikacji: ' + application.jobTitle">
-                    <mat-icon aria-hidden="true">{{ application.hasCv ? 'sync' : 'upload_file' }}</mat-icon>
+                    mat-stroked-button
+                    type="button"
+                    class="add-attachments"
+                    (click)="openAttachmentsDialog(application)"
+                    [attr.aria-label]="'Dodaj załączniki do aplikacji: ' + application.jobTitle">
+                    <mat-icon aria-hidden="true">attach_file</mat-icon>
+                    Dodaj
                   </button>
-                  @if (application.hasCv) {
-                    <button
-                      mat-icon-button
-                      color="warn"
-                      (click)="deleteCv(application)"
-                      [disabled]="deletingCvId === application.id"
-                      matTooltip="Usuń CV"
-                      [attr.aria-label]="'Usuń CV: ' + application.cvFileName">
-                      @if (deletingCvId === application.id) {
-                        <mat-spinner diameter="24"></mat-spinner>
-                      } @else {
-                        <mat-icon aria-hidden="true">delete_outline</mat-icon>
-                      }
-                    </button>
-                  }
                 }
               </div>
             </td>
