@@ -8,12 +8,12 @@ Wymagany Docker Desktop (Docker Compose v2).
 .\docker-up.ps1
 ```
 
-Skrypt buduje obrazy i uruchamia cztery kontenery: MySQL, magazyn plików załączników aplikacji (SeaweedFS z API zgodnym z S3, bez publikowanych portów - dostępny tylko dla backendu w sieci compose), backend (ASP.NET Core) i frontend (Angular serwowany przez nginx, który przekazuje `/api` do backendu). Domyślne porty to 4200 (frontend), 5285 (backend / Swagger) i 3306 (MySQL) - jeśli któryś jest zajęty, wybierany jest kolejny wolny. Wybrane porty zapisywane są do `.env` i wypisywane na koniec.
+Skrypt buduje obrazy i uruchamia pięć kontenerów: MySQL, magazyn plików załączników aplikacji (SeaweedFS z API zgodnym z S3, bez publikowanych portów - dostępny tylko dla backendu w sieci compose), Mailpit (lokalna skrzynka, do której trafiają wszystkie e-maile aplikacji - patrz „Konto użytkownika i e-maile”), backend (ASP.NET Core) i frontend (Angular serwowany przez nginx, który przekazuje `/api` do backendu). Domyślne porty to 4200 (frontend), 5285 (backend / Swagger), 3306 (MySQL) i 8025 (UI Mailpita) - jeśli któryś jest zajęty, wybierany jest kolejny wolny. Wybrane porty zapisywane są do `.env` i wypisywane na koniec.
 
 Preferowane porty można zmienić parametrami:
 
 ```powershell
-.\docker-up.ps1 -FrontendPort 8080 -BackendPort 8081 -DbPort 3310
+.\docker-up.ps1 -FrontendPort 8080 -BackendPort 8081 -DbPort 3310 -MailpitPort 8026
 ```
 
 > **Uwaga:** stack z `docker-compose.yml` jest przeznaczony wyłącznie do lokalnego uruchomienia (demo). Konta demo (tabela niżej) i root MySQL mają znane hasła, a admin może z panelu wyczyścić bazę, dlatego wszystkie porty są publikowane tylko na `127.0.0.1` - aplikacja nie jest dostępna z innych komputerów w sieci. Nie wystawiaj go publicznie bez zmiany haseł i wyłączenia `ALLOW_SEED_REFRESH`.
@@ -27,6 +27,7 @@ Zmienne w `.env`:
 - `JWT_SECRET` - sekret do podpisywania tokenów JWT (min. 32 znaki). Wymagany: bez niego `docker compose` nie wystartuje. `docker-up.ps1` przy pierwszym uruchomieniu generuje losowy 64-znakowy sekret i zapisuje go w `.env`, przy kolejnych zachowuje istniejący (zmiana sekretu unieważnia zalogowane sesje).
 - `S3_ACCESS_KEY`, `S3_SECRET_KEY` - klucze dostępu do magazynu plików załączników (SeaweedFS, usługa `storage`). Wymagane: bez nich `docker compose` nie wystartuje. `docker-up.ps1` generuje losowe (20 i 40 znaków alfanumerycznych) i zachowuje istniejące, jeśli są ciągami co najmniej 16 liter i cyfr - inne zastępuje nowymi z ostrzeżeniem. Własne wartości: tylko litery i cyfry, min. 16 znaków (są wstawiane do pliku konfiguracyjnego S3 generowanego przy starcie kontenera, więc ich zmiana działa po restarcie stacku).
 - `ALLOW_SEED_REFRESH` - czy admin może z panelu zresetować dane demo (`POST /api/admin/refresh-seed` usuwa **wszystkich** użytkowników, firmy, oferty i aplikacje i odtwarza dane startowe). W lokalnym stacku Dockera domyślnie `true`; ustaw `false`, żeby wyłączyć. Poza Dockerem reset działa tylko w środowisku Development albo po ustawieniu `Admin:AllowSeedRefresh=true`.
+- `MAILPIT_PORT` - port UI Mailpita na `127.0.0.1` (domyślnie 8025, `docker-up.ps1` wybiera wolny). Serwer SMTP Mailpita (1025) nie jest publikowany - korzysta z niego tylko backend w sieci compose. Linki w e-mailach prowadzą do `http://localhost:${FRONTEND_PORT}` (`Frontend__BaseUrl`).
 - `SEED_DEMO_ACCOUNTS` - czy seeder tworzy konta demo kandydatów i pracodawców (tabela niżej). W lokalnym stacku Dockera domyślnie `true` (`Seed__DemoAccounts`); ustaw `false`, żeby powstały tylko konta adminów. Poza Dockerem konta demo powstają tylko w środowisku Development, chyba że jawnie ustawiono `Seed:DemoAccounts` (`true`/`false` ma pierwszeństwo). `docker-up.ps1` zachowuje wartość z `.env`.
 
 ## Konta testowe
@@ -144,6 +145,47 @@ Backend zapisuje pliki przez `IFileStorage`, wybierany ustawieniem `Storage:Prov
 
 Niepełna konfiguracja S3 albo nieznany dostawca przerywają start aplikacji czytelnym błędem. W stacku Dockera backend używa `S3` z usługą `storage` (SeaweedFS 4.50): przy każdym starcie kontenera generowany jest plik konfiguracyjny S3 SeaweedFS (`-s3.config`) z jedną tożsamością o kluczach `S3_ACCESS_KEY` / `S3_SECRET_KEY` z `.env`, więc magazyn nie przyjmuje żądań bez podpisu. Uruchomienie lokalne i testy używają domyślnie `Local`.
 
+## Konto użytkownika i e-maile
+
+Każdy zalogowany ma stronę „Moje konto” (`/account`): profil (imię, nazwisko, telefon, nagłówek, lokalizacja, LinkedIn, opis), zmianę hasła, usunięcie konta (potwierdzone hasłem) i ustawienia powiadomień; kandydat dodatkowo dokumenty profilu (np. domyślne CV) i „Zapisane oferty” (`/saved-jobs`, serduszka na liście i w szczegółach oferty).
+
+| Endpoint | Kto | Wynik |
+| --- | --- | --- |
+| `GET/PUT /api/account/profile` | zalogowany | profil (`email`, `emailConfirmed`, `roles`, `createdAt` i pola profilu); e-mail nie jest zmieniany |
+| `POST /api/account/change-password` `{ currentPassword, newPassword }` | zalogowany | `200` z nowym tokenem (stare tokeny tracą ważność) |
+| `DELETE /api/account` `{ password }` | kandydat, pracodawca | `204`; usuwa konto z aplikacjami, załącznikami, dokumentami, zapisanymi ofertami i plikami; admin i ostatni członek firmy z ofertami - `400` |
+| `GET/PUT /api/account/notifications` | zalogowany | `{ applicationStatusChanged, newApplication, companyReview }` (domyślnie `true`) |
+| `GET/POST /api/account/documents`, `GET/DELETE /api/account/documents/{id}` | kandydat | dokumenty profilu: upload jak załączniki aplikacji (te same typy, 5 MB na plik), najwyżej 10 dokumentów i 25 MB na profil; `POST` zwraca `201` z pełną listą |
+| `POST /api/jobapplications/{id}/attachments/from-profile` `{ documentIds }` | właściciel aplikacji | `201`; kopie dokumentów profilu jako załączniki (limity i statusy jak przy uploadzie) |
+| `PUT/DELETE /api/saved-jobs/{jobId}`, `GET /api/saved-jobs`, `GET /api/saved-jobs/ids` | kandydat | zapisane oferty (idempotentne `204`; lista od najnowszych z paginacją, także wygasłe i zamknięte oferty) |
+| `POST /api/auth/confirm-email` `{ userId, token }` | każdy | `204`; zły lub wygasły link - `400` |
+| `POST /api/auth/resend-confirmation` | zalogowany | `204`; adres już potwierdzony - `400` |
+| `POST /api/auth/forgot-password` `{ email }` | każdy | zawsze `202` (nie ujawnia, czy konto istnieje) |
+| `POST /api/auth/reset-password` `{ email, token, newPassword }` | każdy | `204`; zły lub wygasły link - `400`, słabe hasło - `400` z błędami walidacji |
+
+- **Potwierdzenie adresu**: rejestracja wysyła e-mail z linkiem `<frontend>/confirm-email?userId=…&token=…` (ważny 3 dni, ponowne wysłanie z banera). Niepotwierdzony adres niczego nie blokuje - frontend pokazuje tylko baner (`emailConfirmed` w odpowiedzi logowania i rejestracji).
+- **Reset hasła**: link `<frontend>/reset-password?email=…&token=…` jest ważny 1 godzinę i działa raz. Reset, zmiana hasła i usunięcie konta zmieniają security stamp - wcześniej wydane tokeny JWT dostają `401`. Reset potwierdza też adres e-mail i zdejmuje blokadę konta. Tokeny w linkach są zakodowane Base64Url (`+`, `/` i `=` psułyby się w adresie).
+- **Powiadomienia** (wg ustawień): kandydat - potwierdzenie złożenia aplikacji i zmiana jej statusu (z komentarzem rekrutera), pracodawcy firmy - nowa aplikacja (bez danych kandydata) i decyzja admina o firmie. E-maile bezpieczeństwa (potwierdzenie, reset) są wysyłane zawsze.
+- Błędne hasło przy zmianie hasła i usuwaniu konta liczy się do blokady konta tak jak przy logowaniu (`423` po 5 próbach).
+- **Limity**: `forgot-password` (per adres IP) i `resend-confirmation` (per użytkownik) - 5 żądań na 15 minut (`RateLimiting:AccountEmails`), potem `429` z `Retry-After`; dodatkowo najwyżej 3 e-maile resetu hasła na konto na godzinę. Upload dokumentów profilu i `from-profile` liczą się do limitu uploadów. Logowanie i rejestracja nie mają limitu żądań (jest tylko blokada konta po nieudanych logowaniach). W stacku Dockera backend widzi adres nginx, więc limit per IP jest wspólny dla całego lokalnego stacku.
+
+### Wysyłka e-maili (outbox) i Mailpit
+
+E-mail nie jest wysyłany w trakcie żądania: trafia do tabeli `EmailMessages` w tej samej transakcji co zdarzenie (np. rejestracja, zmiana statusu aplikacji), a wysyła go w tle `EmailOutboxProcessor` przez SMTP (MailKit). Nieudana próba jest ponawiana z rosnącym opóźnieniem (30 s, 60 s, … do 1 h; najwyżej 8 prób, trwałe odrzucenie przez serwer kończy próby od razu) - status, liczba prób i ostatni błąd są w tabeli. Po wysłaniu (albo ostatecznym błędzie) treść wiadomości jest czyszczona, a wpisy starsze niż 30 dni są usuwane. Wysyłkę obsługuje jedna instancja backendu.
+
+W stacku Dockera wszystkie e-maile trafiają do Mailpita - otwórz `http://localhost:8025` (port wypisuje `docker-up.ps1`), żeby zobaczyć np. link potwierdzający albo link resetu hasła. Nic nie jest wysyłane na zewnątrz.
+
+| Ustawienie | Znaczenie |
+| --- | --- |
+| `Frontend:BaseUrl` | adres frontendu w linkach (domyślnie `http://localhost:4200`; musi być absolutnym adresem http(s)) |
+| `Email:Smtp:Host`, `Email:Smtp:Port` | serwer SMTP; bez hosta e-maile czekają w outboksie (ostrzeżenie w logu) |
+| `Email:Smtp:Security` | `None` (np. Mailpit), `StartTls`, `SslOnConnect`, `StartTlsWhenAvailable`, `Auto` (domyślnie) |
+| `Email:Smtp:UserName`, `Email:Smtp:Password` | opcjonalne uwierzytelnianie |
+| `Email:FromAddress`, `Email:FromName` | nadawca (domyślnie `no-reply@jobboard.local`, „Job Board”) |
+| `Email:Outbox:*` | `PollIntervalSeconds` (10), `BatchSize` (20), `MaxAttempts` (8), `InitialRetryDelaySeconds` (30), `MaxRetryDelaySeconds` (3600), `SendTimeoutSeconds` (30), `RetentionDays` (30) |
+
+Klucze Data Protection, którymi podpisywane są tokeny w linkach, są przechowywane w bazie (tabela `DataProtectionKeys`), więc linki działają także po przebudowie kontenera backendu (bez szyfrowania kluczy - ostrzeżenie `No XML encryptor configured` w logu przy starcie; projekt jest lokalny).
+
 ## Uruchomienie lokalne (bez Dockera)
 
 Wymagane wersje:
@@ -153,7 +195,7 @@ Wymagane wersje:
 - **Angular 22** (Angular CLI 22, Angular Material 22, TypeScript 6.0, testy Vitest).
 - **MySQL 8.4** (LTS).
 
-Backend: `dotnet run` w katalogu `Backend` (wymaga MySQL na `localhost:3306`). W środowisku Development, gdy nie podano `JwtSettings:Secret`, używany jest wbudowany klucz deweloperski; w innych środowiskach sekret jest wymagany (np. zmienna `JwtSettings__Secret`). Pliki załączników trafiają domyślnie do `Backend/storage` (patrz „Magazyn plików”). Frontend: `npm start` w katalogu `frontend` - `ng serve` przekazuje `/api` do `http://localhost:5285` (`frontend/proxy.conf.json`).
+Backend: `dotnet run` w katalogu `Backend` (wymaga MySQL na `localhost:3306`). W środowisku Development, gdy nie podano `JwtSettings:Secret`, używany jest wbudowany klucz deweloperski; w innych środowiskach sekret jest wymagany (np. zmienna `JwtSettings__Secret`). Pliki załączników trafiają domyślnie do `Backend/storage` (patrz „Magazyn plików”). E-maile są wysyłane tylko po ustawieniu `Email:Smtp:Host` - np. z lokalnym Mailpitem (`docker run -p 8025:8025 -p 1025:1025 axllent/mailpit:v1.31.1`): `Email__Smtp__Host=localhost`, `Email__Smtp__Port=1025`, `Email__Smtp__Security=None`. Frontend: `npm start` w katalogu `frontend` - `ng serve` przekazuje `/api` do `http://localhost:5285` (`frontend/proxy.conf.json`).
 
 ## Testy
 
@@ -169,3 +211,5 @@ Testy integracyjne wymagają działającego serwera MySQL. Każda fabryka tworzy
 Przykład: `JOBBOARD_TEST_CONNECTION="Server=localhost;Port=3306;User=root;Password=secret;AllowPublicKeyRetrieval=true;" dotnet test`.
 
 Testy integracyjne zapisują pliki załączników w magazynie `Local` w katalogu tymczasowym osobnym dla każdej fabryki (usuwanym razem z bazą); fabryka testowa podnosi limity uploadów (`RateLimiting:Uploads:PermitLimit` i `ConcurrencyLimit`), a testy limitów używają wartości domyślnych. Testy `S3FileStorage` wymagają magazynu zgodnego z S3 i są pomijane, dopóki nie ustawiono `JOBBOARD_TEST_S3_URL` (np. `http://localhost:8333`; klucze opcjonalnie w `JOBBOARD_TEST_S3_ACCESS_KEY` / `JOBBOARD_TEST_S3_SECRET_KEY`) - każdy test tworzy i usuwa własny bucket.
+
+Fabryka testowa zastępuje wysyłkę SMTP atrapą (`FakeEmailSender` - testy czytają z niej wysłane e-maile, dekodują linki i używają ich w API) i podnosi limit `RateLimiting:AccountEmails`. Test prawdziwej wysyłki SMTP (`MailpitSmtpTests`) wymaga Mailpita i jest pomijany, dopóki nie ustawiono `JOBBOARD_TEST_MAILPIT_URL` (adres API Mailpita, np. `http://localhost:8025`; SMTP na porcie 1025 tego samego hosta).
