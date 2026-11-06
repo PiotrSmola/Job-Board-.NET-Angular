@@ -77,9 +77,9 @@ public sealed class S3FileStorageTests : IAsyncLifetime
 
     private async Task<string?> ReadTextAsync(string key)
     {
-        await using var stream = await Storage.OpenReadAsync(key);
-        if (stream == null) return null;
-        using var reader = new StreamReader(stream);
+        await using var file = await Storage.OpenReadAsync(key);
+        if (file == null) return null;
+        using var reader = new StreamReader(file.Content);
         return await reader.ReadToEndAsync();
     }
 
@@ -89,8 +89,8 @@ public sealed class S3FileStorageTests : IAsyncLifetime
         await Storage.InitializeAsync();
         await Storage.InitializeAsync();
 
-        await SaveTextAsync("cv/1/a.pdf", "content");
-        Assert.Equal("content", await ReadTextAsync("cv/1/a.pdf"));
+        await SaveTextAsync("attachments/1/a.pdf", "content");
+        Assert.Equal("content", await ReadTextAsync("attachments/1/a.pdf"));
     }
 
     [S3Fact]
@@ -98,14 +98,28 @@ public sealed class S3FileStorageTests : IAsyncLifetime
     {
         await Storage.InitializeAsync();
 
-        await SaveTextAsync("cv/1/a.pdf", "first");
-        await SaveTextAsync("cv/1/a.pdf", "second");
-        Assert.Equal("second", await ReadTextAsync("cv/1/a.pdf"));
+        await SaveTextAsync("attachments/1/a.pdf", "first");
+        await SaveTextAsync("attachments/1/a.pdf", "second");
+        Assert.Equal("second", await ReadTextAsync("attachments/1/a.pdf"));
 
-        await Storage.DeleteAsync("cv/1/a.pdf");
+        await Storage.DeleteAsync("attachments/1/a.pdf");
 
-        Assert.Null(await ReadTextAsync("cv/1/a.pdf"));
-        await Storage.DeleteAsync("cv/1/a.pdf");
+        Assert.Null(await ReadTextAsync("attachments/1/a.pdf"));
+        await Storage.DeleteAsync("attachments/1/a.pdf");
+    }
+
+    [S3Fact]
+    public async Task OpenRead_ReportsTheObjectLengthFromTheResponse()
+    {
+        await Storage.InitializeAsync();
+        await SaveTextAsync("attachments/1/len.pdf", "123456789");
+
+        await using var file = await Storage.OpenReadAsync("attachments/1/len.pdf");
+
+        Assert.NotNull(file);
+        Assert.Equal(9, file!.Length);
+        // strumień odpowiedzi S3 nie jest przewijalny - rozmiar pochodzi z nagłówka Content-Length
+        Assert.False(file.Content.CanSeek);
     }
 
     [S3Fact]
@@ -117,28 +131,48 @@ public sealed class S3FileStorageTests : IAsyncLifetime
 
         using (var input = new MemoryStream(content))
         {
-            await Storage.SaveAsync("cv/2/big.pdf", input, "application/pdf");
+            await Storage.SaveAsync("attachments/2/big.pdf", input, "application/pdf");
         }
 
-        await using var stream = await Storage.OpenReadAsync("cv/2/big.pdf");
-        Assert.NotNull(stream);
+        await using var file = await Storage.OpenReadAsync("attachments/2/big.pdf");
+        Assert.NotNull(file);
+        Assert.Equal(content.Length, file!.Length);
         using var copy = new MemoryStream();
-        await stream.CopyToAsync(copy);
+        await file.Content.CopyToAsync(copy);
         Assert.Equal(content, copy.ToArray());
+    }
+
+    [S3Fact]
+    public async Task ManyFilesOfOneApplication_CanBeSavedInParallelAndDeletedByPrefix()
+    {
+        await Storage.InitializeAsync();
+
+        await Task.WhenAll(Enumerable.Range(0, 10).Select(i => SaveTextAsync($"attachments/3/{i}.pdf", $"file {i}")));
+
+        for (var i = 0; i < 10; i++)
+        {
+            Assert.Equal($"file {i}", await ReadTextAsync($"attachments/3/{i}.pdf"));
+        }
+
+        await Storage.DeleteByPrefixAsync("attachments/");
+        for (var i = 0; i < 10; i++)
+        {
+            Assert.Null(await ReadTextAsync($"attachments/3/{i}.pdf"));
+        }
     }
 
     [S3Fact]
     public async Task DeleteByPrefix_RemovesOnlyMatchingObjects()
     {
         await Storage.InitializeAsync();
-        await SaveTextAsync("cv/1/a.pdf", "a");
-        await SaveTextAsync("cv/2/b.docx", "b");
+        await SaveTextAsync("attachments/1/a.pdf", "a");
+        await SaveTextAsync("attachments/2/b.docx", "b");
         await SaveTextAsync("other/c.txt", "c");
 
-        await Storage.DeleteByPrefixAsync("cv/");
+        await Storage.DeleteByPrefixAsync("attachments/");
 
-        Assert.Null(await ReadTextAsync("cv/1/a.pdf"));
-        Assert.Null(await ReadTextAsync("cv/2/b.docx"));
+        Assert.Null(await ReadTextAsync("attachments/1/a.pdf"));
+        Assert.Null(await ReadTextAsync("attachments/2/b.docx"));
         Assert.Equal("c", await ReadTextAsync("other/c.txt"));
     }
 }

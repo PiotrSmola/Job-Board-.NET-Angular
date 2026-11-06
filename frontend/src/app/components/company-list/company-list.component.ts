@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -36,6 +36,7 @@ import { getApiErrorMessage } from '../../utils/http-errors';
     MatSelectModule
   ],
   templateUrl: './company-list.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './company-list.component.scss'
 })
 export class CompanyListComponent {

@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, ChangeDetectorRef, OnDestroy } from '@angular/core';
+import { Component, inject, OnInit, ChangeDetectorRef, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -40,6 +40,7 @@ import { Subject, debounceTime, filter, takeUntil } from 'rxjs';
     SaveJobButtonComponent
   ],
   templateUrl: './job-list.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './job-list.component.scss'
 })
 export class JobListComponent implements OnInit, OnDestroy {

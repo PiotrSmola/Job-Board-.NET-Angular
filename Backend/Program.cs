@@ -1,4 +1,7 @@
+using System.Globalization;
+using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 using Backend.Data;
 using Backend.Interfaces;
 using Backend.Models;
@@ -7,12 +10,16 @@ using Backend.Services;
 using Backend.Settings;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Domyślny limit treści żądania: 1 MB (endpointy z plikami podnoszą go [RequestSizeLimit] - RequestBodyLimitMiddleware)
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = RequestBodyLimitMiddleware.DefaultLimit);
 
 // Konfiguracja bazy danych MySQL
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -82,7 +89,7 @@ builder.Services.AddCors(options =>
         policy.WithOrigins("http://localhost:4200")
               .AllowAnyHeader()
               .AllowAnyMethod()
-              // Content-Disposition - nazwa pobieranego pliku CV
+              // Content-Disposition - nazwa pobieranego załącznika
               .WithExposedHeaders("Pagination", "Content-Disposition");
     });
 });
@@ -93,7 +100,7 @@ builder.Services.AddScoped<IJobApplicationRepository, JobApplicationRepository>(
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 
-// Magazyn plików CV wg Storage:Provider (Local - katalog na dysku, S3 - magazyn zgodny z S3, np. SeaweedFS);
+// Magazyn plików załączników wg Storage:Provider (Local - katalog na dysku, S3 - magazyn zgodny z S3, np. SeaweedFS);
 // konfiguracja walidowana w jednym miejscu (StorageSettings.Validate)
 builder.Services.AddOptions<StorageSettings>()
     .Bind(builder.Configuration.GetSection(StorageSettings.SectionName))
@@ -110,6 +117,60 @@ builder.Services.AddSingleton<IFileStorage>(sp =>
 // Uprawnienia do zasobów (admin - wszystko, pracodawca - zasoby swojej firmy) sprawdzane w jednym miejscu
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserAccess, CurrentUserAccess>();
+
+// Ograniczanie liczby żądań: polityka "uploads" (upload załączników) - osobny limit dla każdego zalogowanego
+// użytkownika (okno stałe od pierwszego żądania, bez kolejki) i wspólny limit równoległych uploadów (bez kolejki);
+// przekroczenie -> 429 z komunikatem API, po wyczerpaniu okna z Retry-After = czas do końca okna (UploadRateLimiter).
+// Limitery nieaktywnych użytkowników są usuwane przez PartitionedRateLimiter (brak nieograniczonego cache'u).
+builder.Services.AddOptions<RateLimitingSettings>()
+    .Bind(builder.Configuration.GetSection(RateLimitingSettings.SectionName))
+    .PostConfigure(settings => settings.Validate());
+
+// wspólny dla wszystkich użytkowników limit równoległych uploadów (singleton zwalniany razem z kontenerem DI)
+builder.Services.AddKeyedSingleton<RateLimiter>(RateLimitingSettings.UploadsPolicy, (sp, _) =>
+    new ConcurrencyLimiter(new ConcurrencyLimiterOptions
+    {
+        PermitLimit = sp.GetRequiredService<IOptions<RateLimitingSettings>>().Value.Uploads.ConcurrencyLimit,
+        QueueLimit = 0
+    }));
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy(RateLimitingSettings.UploadsPolicy, httpContext =>
+    {
+        var services = httpContext.RequestServices;
+        var concurrency = services.GetRequiredKeyedService<RateLimiter>(RateLimitingSettings.UploadsPolicy);
+        var limit = services.GetRequiredService<IOptions<RateLimitingSettings>>().Value.Uploads;
+        // endpoint wymaga zalogowania - adres IP tylko obronnie, gdyby polityka trafiła na endpoint anonimowy
+        var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                           ?? "ip:" + httpContext.Connection.RemoteIpAddress;
+
+        return RateLimitPartition.Get(partitionKey, _ => new UploadRateLimiter(
+            limit.PermitLimit,
+            TimeSpan.FromSeconds(limit.WindowSeconds),
+            concurrency,
+            TimeProvider.System));
+    });
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter =
+                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+        }
+
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new { message = RateLimitingSettings.RejectedMessage }, cancellationToken);
+    };
+});
+
+// Nieobsłużone wyjątki -> 500 {message} bez szczegółów (GlobalExceptionHandler), także w Development;
+// BadHttpRequestException -> jego kod statusu (np. 413 {message:"Request body too large"})
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 // Kontrolery - odpowiedzi to wyłącznie DTO (bez cykli nawigacji encji EF)
 builder.Services.AddControllers();
@@ -136,19 +197,10 @@ builder.Services.AddSwaggerGen(options =>
         Description = "JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token."
     });
 
-    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    // Microsoft.OpenApi 2.x - wymaganie wskazuje schemat przez referencję do dokumentu
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
     {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
+        [new OpenApiSecuritySchemeReference("Bearer", document)] = []
     });
 });
 
@@ -167,13 +219,23 @@ var resolvedStorageSettings = app.Services.GetRequiredService<IOptions<StorageSe
 await app.Services.GetRequiredService<IFileStorage>().InitializeAsync();
 app.Logger.LogInformation("File storage: {Provider}", resolvedStorageSettings.Provider);
 
+// wczesna walidacja limitów żądań (zła konfiguracja przerywa start)
+_ = app.Services.GetRequiredService<IOptions<RateLimitingSettings>>().Value;
+
 // seedowanie bazy danych
 using (var scope = app.Services.CreateScope())
 {
     await DatabaseSeeder.SeedAsync(scope.ServiceProvider);
 }
 
-// konfiguracja potoku HTTP
+// konfiguracja potoku HTTP - obsługa wyjątków jako pierwsza (obejmuje cały potok); zaraz za nią błędy klienta
+// przy odczycie żądania (BadHttpRequestException) - ich kod statusu i log Warning zamiast 500 i Error
+app.UseExceptionHandler();
+app.UseMiddleware<ClientRequestErrorMiddleware>();
+
+// limit treści żądania dopasowanego endpointu (domyślnie 1 MB, upload załączników 26 MB) - przed odczytem treści
+app.UseMiddleware<RequestBodyLimitMiddleware>();
+
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -187,6 +249,9 @@ app.UseCors("AllowAngularApp");
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// po uwierzytelnieniu - limit liczony per użytkownik; anonim dostaje 401, zanim zostanie policzony
+app.UseRateLimiter();
 
 app.MapControllers();
 

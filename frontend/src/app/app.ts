@@ -1,4 +1,4 @@
-import { Component, ComponentRef, ViewContainerRef, effect, inject, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ComponentRef, ViewContainerRef, effect, inject, viewChild } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { NavbarComponent } from './components/navbar/navbar.component';
 import { AuthService } from './services/auth.service';
@@ -9,6 +9,7 @@ import { AuthService } from './services/auth.service';
   imports: [RouterOutlet, NavbarComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss',
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: true
 })
 export class App {

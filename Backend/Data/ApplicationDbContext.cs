@@ -16,6 +16,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<JobOffer> JobOffers { get; set; }
     public DbSet<JobApplication> JobApplications { get; set; }
     public DbSet<ApplicationStatusHistory> ApplicationStatusHistories { get; set; }
+    public DbSet<ApplicationAttachment> ApplicationAttachments { get; set; }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -85,11 +86,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.Status).HasConversion<int>();
             entity.Property(e => e.StatusChangedAt).IsConcurrencyToken();
 
-            // CV - kolumny nullable (istniejące aplikacje nie mają CV)
-            entity.Property(e => e.CvFileKey).HasMaxLength(300);
-            entity.Property(e => e.CvFileName).HasMaxLength(255);
-            entity.Property(e => e.CvContentType).HasMaxLength(100);
-
             // jedna aplikacja użytkownika na ofertę (chroni też przed równoległymi żądaniami)
             entity.HasIndex(e => new { e.JobOfferId, e.UserId }).IsUnique();
 
@@ -102,6 +98,25 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .WithOne(e => e.JobApplication)
                 .HasForeignKey(e => e.JobApplicationId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // załączniki usuwane razem z aplikacją (pliki w magazynie usuwa kod po zatwierdzeniu zmian)
+            entity.HasMany(e => e.Attachments)
+                .WithOne(e => e.JobApplication)
+                .HasForeignKey(e => e.JobApplicationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ApplicationAttachment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Kind).HasConversion<int>();
+            entity.Property(e => e.FileKey).IsRequired().HasMaxLength(300);
+            entity.Property(e => e.FileName).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.ContentType).IsRequired().HasMaxLength(100);
+
+            // klucz pliku w magazynie wskazuje dokładnie jeden załącznik
+            entity.HasIndex(e => e.FileKey).IsUnique();
+            entity.HasIndex(e => e.JobApplicationId);
         });
 
         builder.Entity<ApplicationStatusHistory>(entity =>

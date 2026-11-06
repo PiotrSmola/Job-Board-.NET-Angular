@@ -1,6 +1,6 @@
-import { Component, inject, ChangeDetectorRef } from '@angular/core';
+import { Component, inject, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { AbstractControl, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -199,6 +199,7 @@ function isSameLocalDay(a: Date, b: Date): boolean {
       </button>
     </mat-dialog-actions>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     mat-dialog-content {
       min-width: 500px;
@@ -316,7 +317,7 @@ export class JobDialogComponent {
     // domyślnie Active – jak w API (oferta od razu opublikowana); bez prawa publikacji – szkic
     status: [this.canPublish ? JobOfferStatus.Active : JobOfferStatus.Draft, [Validators.required]],
     expiresAt: [null as Date | null]
-  }, { validators: [this.salaryRangeValidator, group => this.expiresAtValidator(group as FormGroup)] });
+  }, { validators: [this.salaryRangeValidator, (group: AbstractControl) => this.expiresAtValidator(group as FormGroup)] });
 
   constructor() {
     if (!this.isAdmin) {

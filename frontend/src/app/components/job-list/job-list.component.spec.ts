@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
-import { provideRouter, Router } from '@angular/router';
+import { provideRouter, Router, UrlTree } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
 import { JobListComponent } from './job-list.component';
 import { JobService } from '../../services/job.service';
@@ -423,13 +423,18 @@ describe('JobListComponent', () => {
 
     it('clicking the company link does not open the offer details', () => {
       createWithCompanies();
-      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const router = TestBed.inject(Router);
+      const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+      // routerLink nawiguje przez navigateByUrl - test nie rejestruje trasy profilu firmy
+      const navigateByUrl = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
       const viewDetails = vi.spyOn(component, 'viewJobDetails');
 
       root().querySelector<HTMLAnchorElement>('a.company-link')!.click();
 
       expect(viewDetails).not.toHaveBeenCalled();
       expect(navigate).not.toHaveBeenCalledWith(['/jobs', 1]);
+      expect(navigateByUrl).toHaveBeenCalledTimes(1);
+      expect(router.serializeUrl(navigateByUrl.mock.calls[0][0] as UrlTree)).toBe('/companies/7');
     });
 
     it('clicking elsewhere on the card still opens the offer details', () => {
