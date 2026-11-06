@@ -63,6 +63,13 @@ describe('http-errors', () => {
       expect(getApiErrorMessage(httpError(400, { message }), FALLBACK)).toBe(expected);
     });
 
+    it('translates the account lockout (423) of the password change and account deletion', () => {
+      const message = 'Account is temporarily locked due to too many failed login attempts';
+
+      expect(getApiErrorMessage(httpError(423, { message }), FALLBACK))
+        .toBe('Konto zostało tymczasowo zablokowane po zbyt wielu nieudanych próbach. Spróbuj ponownie za kilka minut.');
+    });
+
     it('translates a known message also for a 409 conflict', () => {
       const error = httpError(409, { message: 'Application status was changed by another request' });
       expect(getApiErrorMessage(error, FALLBACK)).toBe('Status aplikacji został w międzyczasie zmieniony – odśwież dane');

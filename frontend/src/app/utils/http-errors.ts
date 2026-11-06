@@ -52,6 +52,9 @@ const KNOWN_API_MESSAGES: Record<string, string> = {
   'Invalid or expired confirmation link': 'Link potwierdzający jest nieprawidłowy lub wygasł',
   'Email is already confirmed': 'Adres e-mail jest już potwierdzony',
   'Invalid or expired reset link': 'Link do zmiany hasła jest nieprawidłowy lub wygasł',
+  // 423 – zbyt wiele błędnych haseł (logowanie, zmiana hasła, usunięcie konta)
+  'Account is temporarily locked due to too many failed login attempts':
+    'Konto zostało tymczasowo zablokowane po zbyt wielu nieudanych próbach. Spróbuj ponownie za kilka minut.',
   // dokumenty profilu i dołączanie ich do aplikacji
   'A profile can have at most 10 documents': 'Profil może mieć maksymalnie 10 dokumentów',
   'Total size of profile documents cannot exceed 25 MB': 'Łączny rozmiar dokumentów profilu nie może przekroczyć 25 MB',
