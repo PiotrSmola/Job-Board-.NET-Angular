@@ -179,4 +179,21 @@ describe('ProfileTabComponent', () => {
 
     expect(saving.observed).toBe(false);
   });
+
+  // Znak NEL (U+0085): JS nie uznaje go za biały znak, .NET tak - imię złożone z samego takiego znaku przechodzi
+  // walidację formularza, a API odpowiada 400 ValidationProblem (pokazywany jest ogólny komunikat, nic się nie psuje)
+  it('lets a name made of a single U+0085 character through the client check (the API rejects it with 400)', () => {
+    create();
+    updateProfile.mockReturnValue(throwError(() => new HttpErrorResponse({
+      status: 400,
+      error: { title: 'One or more validation errors occurred.', status: 400, errors: { FirstName: ['The FirstName field is required.'] } }
+    })));
+
+    type('firstName', '\u0085');
+    submit();
+
+    expect(updateProfile).toHaveBeenCalledWith(expect.objectContaining({ firstName: '\u0085'.trim() }));
+    expect(root().querySelector('.error[role="alert"]')?.textContent).toBe('Przesłane dane są nieprawidłowe');
+    expect(input('firstName').value).toBe('\u0085');
+  });
 });
