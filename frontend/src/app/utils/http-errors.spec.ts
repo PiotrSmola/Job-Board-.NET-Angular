@@ -39,14 +39,16 @@ describe('http-errors', () => {
       ['Company must be approved before publishing offers', 'Firma musi zostać zatwierdzona, zanim opublikujesz ofertę'],
       ['Company has job offers or members', 'Nie można usunąć firmy, która ma oferty lub członków zespołu'],
       ['Job offer has applications - close it instead', 'Oferta ma aplikacje – zamiast usuwać, zamknij ją.'],
-      ['Unsupported file type - upload a PDF or DOCX file', 'Nieobsługiwany typ pliku – prześlij plik PDF lub DOCX'],
+      ['Unsupported file type - upload a PDF, DOCX, PNG or JPEG file', 'Nieobsługiwany typ pliku – prześlij plik PDF, DOCX, PNG lub JPEG'],
       ['File is too large - maximum size is 5 MB', 'Plik jest za duży – maksymalny rozmiar to 5 MB'],
       ['File is empty', 'Plik jest pusty'],
-      ['Invalid multipart form data', 'Nie udało się odczytać przesłanego pliku'],
-      ['CV cannot be changed in the current application status', 'Na tym etapie rekrutacji nie można już zmienić CV'],
-      ['CV not found', 'Nie znaleziono CV tej aplikacji'],
-      ['CV was changed by another request', 'CV zostało w międzyczasie zmienione – odśwież dane'],
-      ["No file uploaded - send it in the 'file' form field", 'Nie wybrano pliku do przesłania']
+      ['Total size of attachments cannot exceed 25 MB', 'Łączny rozmiar załączników nie może przekroczyć 25 MB'],
+      ['An application can have at most 10 attachments', 'Aplikacja może mieć maksymalnie 10 załączników'],
+      ["No file uploaded - send files in the 'files' form field", 'Nie wybrano plików do przesłania'],
+      ['Invalid multipart form data', 'Nie udało się odczytać przesłanych plików'],
+      ['Attachments cannot be added in the current application status', 'Na tym etapie rekrutacji nie można już dodawać załączników'],
+      ['Attachment not found', 'Nie znaleziono załącznika'],
+      ['Too many requests - try again later', 'Zbyt wiele żądań – spróbuj ponownie za kilka minut']
     ])('translates the known API message "%s"', (message, expected) => {
       expect(getApiErrorMessage(httpError(400, { message }), FALLBACK)).toBe(expected);
     });
@@ -65,8 +67,19 @@ describe('http-errors', () => {
       expect(getApiErrorMessage(httpError(400, body), FALLBACK)).toBe('Przesłane dane są nieprawidłowe');
     });
 
-    it('returns the CV size message for 413 Payload Too Large without a body', () => {
-      expect(getApiErrorMessage(httpError(413), FALLBACK)).toBe('Plik jest za duży – maksymalny rozmiar to 5 MB');
+    it('returns the request size message for 413 Payload Too Large without a body (e.g. from nginx)', () => {
+      expect(getApiErrorMessage(httpError(413), FALLBACK)).toBe('Przesyłane pliki są za duże – maksymalnie 5 MB na plik i 25 MB łącznie');
+      expect(getApiErrorMessage(httpError(413, '<html>413 Request Entity Too Large</html>'), FALLBACK))
+        .toBe('Przesyłane pliki są za duże – maksymalnie 5 MB na plik i 25 MB łącznie');
+    });
+
+    it.each([null, '', { message: 'Too many requests - try again later' }, '<html>429</html>'])(
+      'returns the rate limit message for 429 Too Many Requests with the body %j', body => {
+        expect(getApiErrorMessage(httpError(429, body), FALLBACK)).toBe('Zbyt wiele żądań – spróbuj ponownie za kilka minut');
+      });
+
+    it('does not leak the unexpected error message of a 500 response', () => {
+      expect(getApiErrorMessage(httpError(500, { message: 'An unexpected error occurred' }), FALLBACK)).toBe(FALLBACK);
     });
 
     it('returns a connection message for status 0', () => {

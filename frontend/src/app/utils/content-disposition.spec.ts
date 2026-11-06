@@ -66,7 +66,7 @@ describe('content-disposition', () => {
       expect(resolveDownloadFileName('attachment; filename=a.pdf', 'b.pdf')).toBe('a.pdf');
     });
 
-    it('falls back to the given name (cvFileName) when the header is missing', () => {
+    it('falls back to the given name (attachment fileName from the DTO) when the header is missing', () => {
       expect(resolveDownloadFileName(null, 'moje-cv.docx')).toBe('moje-cv.docx');
     });
 
@@ -75,7 +75,7 @@ describe('content-disposition', () => {
     });
 
     it('uses the default name when nothing else is available', () => {
-      expect(resolveDownloadFileName(null, null)).toBe('cv');
+      expect(resolveDownloadFileName(null, null)).toBe('zalacznik');
       expect(resolveDownloadFileName('attachment', '  ', 'plik')).toBe('plik');
     });
   });

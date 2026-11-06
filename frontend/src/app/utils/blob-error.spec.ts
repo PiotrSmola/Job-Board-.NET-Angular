@@ -5,7 +5,7 @@ function blobError(status: number, body: unknown): HttpErrorResponse {
   return new HttpErrorResponse({
     status,
     statusText: 'Error',
-    url: '/api/jobapplications/1/cv',
+    url: '/api/jobapplications/1/attachments/2',
     headers: new HttpHeaders({ 'X-Test': '1' }),
     error: body
   });
@@ -20,7 +20,7 @@ describe('parseBlobErrorBody', () => {
     expect(parsed).not.toBe(error);
     expect(parsed.error).toEqual({ message: 'Application not found' });
     expect(parsed.status).toBe(404);
-    expect(parsed.url).toBe('/api/jobapplications/1/cv');
+    expect(parsed.url).toBe('/api/jobapplications/1/attachments/2');
     expect(parsed.headers.get('X-Test')).toBe('1');
   });
 

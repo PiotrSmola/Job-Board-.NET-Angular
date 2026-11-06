@@ -29,11 +29,11 @@ export function getFileNameFromContentDisposition(header: string | null | undefi
   return null;
 }
 
-/** Nazwa do zapisu pliku: z nagłówka, potem `fallback` (np. `cvFileName` z DTO), na końcu `defaultName`. */
+/** Nazwa do zapisu pliku: z nagłówka, potem `fallback` (np. `fileName` załącznika z DTO), na końcu `defaultName`. */
 export function resolveDownloadFileName(
   header: string | null | undefined,
   fallback: string | null | undefined,
-  defaultName = 'cv'
+  defaultName = 'zalacznik'
 ): string {
   return getFileNameFromContentDisposition(header) ?? sanitizeFileName(fallback ?? null) ?? defaultName;
 }

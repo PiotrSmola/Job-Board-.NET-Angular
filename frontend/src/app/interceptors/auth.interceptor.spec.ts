@@ -312,9 +312,9 @@ describe('authInterceptor', () => {
       storeSession(token);
       init();
 
-      http.get('/api/jobapplications/1/cv', { responseType: 'blob' }).subscribe();
+      http.get('/api/jobapplications/1/attachments/2', { responseType: 'blob' }).subscribe();
 
-      const req = controller.expectOne('/api/jobapplications/1/cv');
+      const req = controller.expectOne('/api/jobapplications/1/attachments/2');
       expect(req.request.headers.get('Authorization')).toBe(`Bearer ${token}`);
       req.flush(new Blob(['%PDF-']));
     });
@@ -336,8 +336,8 @@ describe('authInterceptor', () => {
       const auth = TestBed.inject(AuthService);
 
       let status: number | undefined;
-      http.get('/api/jobapplications/1/cv', { responseType: 'blob' }).subscribe({ error: e => (status = e.status) });
-      controller.expectOne('/api/jobapplications/1/cv').flush(new Blob([]), { status: 401, statusText: 'Unauthorized' });
+      http.get('/api/jobapplications/1/attachments/2', { responseType: 'blob' }).subscribe({ error: e => (status = e.status) });
+      controller.expectOne('/api/jobapplications/1/attachments/2').flush(new Blob([]), { status: 401, statusText: 'Unauthorized' });
 
       expect(status).toBe(401);
       expect(auth.isAuthenticated()).toBe(false);

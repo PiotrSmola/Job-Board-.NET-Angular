@@ -2,9 +2,11 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpEventType, HttpParams } from '@angular/common/http';
 import { Observable, catchError, filter, from, map, switchMap, throwError } from 'rxjs';
 import {
+  ApplicationAttachment,
   ApplicationCheck,
+  AttachmentUploadEvent,
+  AttachmentUploadItem,
   CreateJobApplication,
-  CvUploadEvent,
   JobApplication,
   UpdateApplicationStatus
 } from '../models/job-application.model';
@@ -56,18 +58,22 @@ export class JobApplicationService {
   }
 
   /**
-   * Dołączenie lub zastąpienie CV (właściciel, statusy jak przy wycofaniu).
-   * Emituje postęp wysyłania, a na końcu zaktualizowaną aplikację.
+   * Dołączenie załączników jednym żądaniem multipart (właściciel, statusy Submitted–Offered):
+   * pola `files` i równoległa lista `kinds`. API zapisuje wszystkie pliki albo żaden.
+   * Emituje postęp wysyłania, a na końcu zaktualizowaną aplikację. Rezygnacja z subskrypcji przerywa żądanie.
    */
-  uploadCv(id: number, file: File): Observable<CvUploadEvent> {
+  uploadAttachments(id: number, items: readonly AttachmentUploadItem[]): Observable<AttachmentUploadEvent> {
     const formData = new FormData();
-    formData.append('file', file, file.name);
+    for (const { file, kind } of items) {
+      formData.append('files', file, file.name);
+      formData.append('kinds', String(kind));
+    }
 
-    return this.http.put<JobApplication>(`${this.API_URL}/${id}/cv`, formData, {
+    return this.http.post<JobApplication>(`${this.API_URL}/${id}/attachments`, formData, {
       observe: 'events',
       reportProgress: true
     }).pipe(
-      map((event): CvUploadEvent | null => {
+      map((event): AttachmentUploadEvent | null => {
         if (event.type === HttpEventType.UploadProgress) {
           const percent = event.total ? Math.round((event.loaded / event.total) * 100) : 0;
           return { type: 'progress', percent: Math.min(percent, 100) };
@@ -77,24 +83,25 @@ export class JobApplicationService {
         }
         return null;
       }),
-      filter((event): event is CvUploadEvent => event !== null)
+      filter((event): event is AttachmentUploadEvent => event !== null)
     );
   }
 
-  /** Usunięcie CV z aplikacji (właściciel). */
-  deleteCv(id: number): Observable<void> {
-    return this.http.delete<void>(`${this.API_URL}/${id}/cv`);
+  /** Usunięcie załącznika (właściciel, w każdym statusie aplikacji). */
+  deleteAttachment(id: number, attachmentId: number): Observable<void> {
+    return this.http.delete<void>(`${this.API_URL}/${id}/attachments/${attachmentId}`);
   }
 
   /**
-   * Pobiera CV (właściciel, admin, pracodawca firmy oferty) i zapisuje je na dysku.
-   * Nazwa pliku z nagłówka Content-Disposition, w drugiej kolejności `fallbackFileName` (np. `cvFileName` z DTO).
+   * Pobiera załącznik (właściciel, admin, pracodawca firmy oferty) i zapisuje go na dysku.
+   * Nazwa pliku z nagłówka Content-Disposition, w drugiej kolejności `fileName` z DTO.
    * Błąd ma treść sparsowaną z JSON (dla responseType 'blob' przychodzi jako Blob), więc działa getApiErrorMessage.
    */
-  downloadCv(id: number, fallbackFileName: string | null = null): Observable<void> {
-    return this.http.get(`${this.API_URL}/${id}/cv`, { observe: 'response', responseType: 'blob' }).pipe(
+  downloadAttachment(id: number, attachment: Pick<ApplicationAttachment, 'id' | 'fileName'>): Observable<void> {
+    const url = `${this.API_URL}/${id}/attachments/${attachment.id}`;
+    return this.http.get(url, { observe: 'response', responseType: 'blob' }).pipe(
       map(response => {
-        const fileName = resolveDownloadFileName(response.headers.get('Content-Disposition'), fallbackFileName);
+        const fileName = resolveDownloadFileName(response.headers.get('Content-Disposition'), attachment.fileName);
         saveBlobAsFile(response.body ?? new Blob(), fileName);
       }),
       catchError((error: unknown) => error instanceof HttpErrorResponse

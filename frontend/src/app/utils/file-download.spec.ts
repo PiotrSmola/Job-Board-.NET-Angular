@@ -1,4 +1,4 @@
-import { saveBlobAsFile } from './file-download';
+import { OBJECT_URL_REVOKE_DELAY_MS, saveBlobAsFile } from './file-download';
 
 describe('saveBlobAsFile', () => {
   let createObjectURL: ReturnType<typeof vi.fn>;
@@ -39,13 +39,20 @@ describe('saveBlobAsFile', () => {
     expect(document.querySelector('a[download]')).toBeNull();
   });
 
-  it('revokes the object URL after the download has started', () => {
+  it('revokes the object URL about 30 s after the download has started (not in the next tick)', () => {
     saveBlobAsFile(new Blob(['x']), 'cv.pdf');
+    expect(OBJECT_URL_REVOKE_DELAY_MS).toBe(30_000);
+
+    vi.advanceTimersByTime(0);
     expect(revokeObjectURL).not.toHaveBeenCalled();
 
-    vi.runAllTimers();
+    vi.advanceTimersByTime(29_999);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
 
+    vi.advanceTimersByTime(1);
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/abc');
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('revokes every created object URL exactly once and leaves no pending timers', () => {

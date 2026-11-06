@@ -14,7 +14,7 @@ import {
   RECRUITER_STATUS_OPTIONS,
   WITHDRAWABLE_STATUSES,
   calendarDaysUntil,
-  canChangeCv,
+  canAddAttachments,
   canWithdraw,
   formatExpiresSoon,
   getApplicationStatusPresentation,
@@ -66,8 +66,8 @@ describe('status-labels', () => {
     [ApplicationStatus.Hired, false],
     [ApplicationStatus.Rejected, false],
     [ApplicationStatus.Withdrawn, false]
-  ])('canChangeCv(%s) is %s', (status, expected) => {
-    expect(canChangeCv(status)).toBe(expected);
+  ])('canAddAttachments(%s) is %s', (status, expected) => {
+    expect(canAddAttachments(status)).toBe(expected);
   });
 
   describe('formatExpiresSoon', () => {
