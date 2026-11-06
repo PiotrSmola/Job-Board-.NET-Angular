@@ -3,7 +3,8 @@
 param(
     [int]$FrontendPort = 4200,
     [int]$BackendPort = 5285,
-    [int]$DbPort = 3306
+    [int]$DbPort = 3306,
+    [int]$MailpitPort = 8025
 )
 
 $ErrorActionPreference = 'Stop'
@@ -103,6 +104,7 @@ try {
         FRONTEND_PORT = Get-FreePort $FrontendPort
         BACKEND_PORT  = Get-FreePort $BackendPort
         DB_PORT       = Get-FreePort $DbPort
+        MAILPIT_PORT  = Get-FreePort $MailpitPort
     }
 
     $envLines = @($ports.Keys | ForEach-Object { "$_=$($ports[$_])" }) + "DB_PASSWORD=$dbPassword" + "JWT_SECRET=$jwtSecret" +
@@ -121,3 +123,4 @@ Write-Host ''
 Write-Host "Frontend: http://localhost:$($ports.FRONTEND_PORT)"
 Write-Host "Swagger:  http://localhost:$($ports.BACKEND_PORT)/swagger"
 Write-Host "MySQL:    localhost:$($ports.DB_PORT) (root / $dbPassword)"
+Write-Host "Mailpit:  http://localhost:$($ports.MAILPIT_PORT) (e-maile aplikacji)"
