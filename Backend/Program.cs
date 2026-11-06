@@ -119,11 +119,20 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserAccess, CurrentUserAccess>();
 
 // Ograniczanie liczby żądań: polityka "uploads" (upload załączników) - osobny limit dla każdego zalogowanego
-// użytkownika (okno stałe, bez kolejki), przekroczenie -> 429 z komunikatem API i Retry-After (czas do końca okna).
+// użytkownika (okno stałe od pierwszego żądania, bez kolejki) i wspólny limit równoległych uploadów (bez kolejki);
+// przekroczenie -> 429 z komunikatem API, po wyczerpaniu okna z Retry-After = czas do końca okna (UploadRateLimiter).
 // Limitery nieaktywnych użytkowników są usuwane przez PartitionedRateLimiter (brak nieograniczonego cache'u).
 builder.Services.AddOptions<RateLimitingSettings>()
     .Bind(builder.Configuration.GetSection(RateLimitingSettings.SectionName))
     .PostConfigure(settings => settings.Validate());
+
+// wspólny dla wszystkich użytkowników limit równoległych uploadów (singleton zwalniany razem z kontenerem DI)
+builder.Services.AddKeyedSingleton<RateLimiter>(RateLimitingSettings.UploadsPolicy, (sp, _) =>
+    new ConcurrencyLimiter(new ConcurrencyLimiterOptions
+    {
+        PermitLimit = sp.GetRequiredService<IOptions<RateLimitingSettings>>().Value.Uploads.ConcurrencyLimit,
+        QueueLimit = 0
+    }));
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -131,18 +140,18 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy(RateLimitingSettings.UploadsPolicy, httpContext =>
     {
-        var limit = httpContext.RequestServices.GetRequiredService<IOptions<RateLimitingSettings>>().Value.Uploads;
+        var services = httpContext.RequestServices;
+        var concurrency = services.GetRequiredKeyedService<RateLimiter>(RateLimitingSettings.UploadsPolicy);
+        var limit = services.GetRequiredService<IOptions<RateLimitingSettings>>().Value.Uploads;
         // endpoint wymaga zalogowania - adres IP tylko obronnie, gdyby polityka trafiła na endpoint anonimowy
         var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
                            ?? "ip:" + httpContext.Connection.RemoteIpAddress;
 
-        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = limit.PermitLimit,
-            Window = TimeSpan.FromSeconds(limit.WindowSeconds),
-            QueueLimit = 0,
-            AutoReplenishment = true
-        });
+        return RateLimitPartition.Get(partitionKey, _ => new UploadRateLimiter(
+            limit.PermitLimit,
+            TimeSpan.FromSeconds(limit.WindowSeconds),
+            concurrency,
+            TimeProvider.System));
     });
 
     options.OnRejected = async (context, cancellationToken) =>

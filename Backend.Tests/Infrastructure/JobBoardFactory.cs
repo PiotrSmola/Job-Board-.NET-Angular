@@ -13,6 +13,7 @@ public class JobBoardFactory : WebApplicationFactory<Program>
     public const string TestJwtSecret = "integration-tests-signing-key-0123456789-abcdef";
 
     public const string UploadPermitLimitKey = "RateLimiting:Uploads:PermitLimit";
+    public const string UploadConcurrencyLimitKey = "RateLimiting:Uploads:ConcurrencyLimit";
 
     private readonly string _environment;
     private readonly Dictionary<string, string?> _settings;
@@ -41,9 +42,10 @@ public class JobBoardFactory : WebApplicationFactory<Program>
             ["Admin:AllowSeedRefresh"] = allowSeedRefresh ? "true" : "false",
             ["Storage:Provider"] = "Local",
             ["Storage:LocalPath"] = StoragePath,
-            // testy wgrywają wiele plików jako ten sam użytkownik - limit uploadów podniesiony; testy limitu
-            // ustawiają własną wartość (WithSetting) albo przywracają domyślną (null)
-            [UploadPermitLimitKey] = "100000"
+            // testy wgrywają wiele plików jako ten sam użytkownik, także równolegle - limity uploadów podniesione;
+            // testy limitów ustawiają własne wartości (WithSetting) albo przywracają domyślne (null)
+            [UploadPermitLimitKey] = "100000",
+            [UploadConcurrencyLimitKey] = "1000"
         };
 
         // brak wartości = domyślne zachowanie seedera (konta demo tylko w Development)
