@@ -9,7 +9,7 @@ namespace Backend.Migrations
     /// <inheritdoc />
     public partial class AddCompanies : Migration
     {
-        // Nazwa firmy po normalizacji (jak CompanyNames.Normalize): białe znaki zwinięte do jednej spacji i obcięte
+        // Nazwa firmy po normalizacji (odstępy jak w CompanyNames.Normalize): białe znaki zwinięte do jednej spacji i obcięte
         // na brzegach; pusta nazwa (dane sprzed walidacji) trafia do wspólnej firmy "Unknown company"
         private const string NormalizedCompany =
             "COALESCE(NULLIF(TRIM(REGEXP_REPLACE({0}.`Company`, '[[:space:]]+', ' ')), ''), 'Unknown company')";

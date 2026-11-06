@@ -8,6 +8,7 @@ public class CompanyFormDto
 {
     [Required]
     [MaxLength(200)]
+    [CompanyName]
     public string Name { get; set; } = string.Empty;
 
     [MaxLength(5000)]

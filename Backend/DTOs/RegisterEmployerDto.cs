@@ -8,6 +8,7 @@ public class RegisterEmployerDto : RegisterDto
 {
     [Required]
     [MaxLength(200)]
+    [CompanyName]
     public string CompanyName { get; set; } = string.Empty;
 
     [MaxLength(5000)]

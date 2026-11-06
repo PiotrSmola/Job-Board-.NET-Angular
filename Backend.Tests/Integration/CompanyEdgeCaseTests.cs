@@ -172,4 +172,84 @@ public class CompanyEdgeCaseTests
 
         Assert.Equal(employer.CompanyId, Assert.Single(await AdminFindAsync(name)).Id);
     }
+
+    // --- niewidoczne znaki i akcenty w nazwie firmy ---
+
+    [Theory]
+    [InlineData("​", "")]
+    [InlineData("", "​")]
+    [InlineData("﻿", "⁠")]
+    [InlineData("", "­")]
+    public async Task Company_NameWithInvisibleCharacters_CollidesWithVisibleName(string prefix, string suffix)
+    {
+        var name = ApiFixture.UniqueName("Niewidoczna");
+        await _api.CreateCompanyAsync(name);
+        using var admin = await _api.AdminClientAsync();
+        using var employerClient = _api.CreateClient(await _api.RegisterEmployerAsync());
+        var lookalike = prefix + name.Replace(" ", " ​") + suffix;
+
+        var viaAdminCreate = await admin.PostJsonAsync("/api/admin/companies", new CompanyFormDto { Name = lookalike });
+        var viaEmployerRename = await employerClient.PutJsonAsync("/api/employer/company", new CompanyFormDto { Name = lookalike });
+        var viaRegister = await _api.CreateClient().PostJsonAsync("/api/auth/register-employer", new RegisterEmployerDto
+        {
+            Email = $"zw_{Guid.NewGuid():N}@test.local",
+            Password = "Passw0rd1",
+            FirstName = "A",
+            LastName = "B",
+            CompanyName = lookalike
+        });
+
+        foreach (var response in new[] { viaAdminCreate, viaEmployerRename, viaRegister })
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("Company name is already taken", await response.ReadMessageAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Company_NameWithNonBreakingSpaces_IsStoredWithPlainSpaces()
+    {
+        var name = ApiFixture.UniqueName("Twarda spacja​");
+
+        var company = await _api.CreateCompanyAsync(name);
+
+        Assert.Equal(name.Replace(" ", " ").Replace("​", ""), company.Name);
+    }
+
+    [Theory]
+    [InlineData("​")]
+    [InlineData("​ ﻿")]
+    public async Task Company_NameWithOnlyInvisibleCharacters_ReturnsValidationError(string name)
+    {
+        using var admin = await _api.AdminClientAsync();
+
+        var viaAdminCreate = await admin.PostJsonAsync("/api/admin/companies", new CompanyFormDto { Name = name });
+        var viaRegister = await _api.CreateClient().PostJsonAsync("/api/auth/register-employer", new RegisterEmployerDto
+        {
+            Email = $"zw_{Guid.NewGuid():N}@test.local",
+            Password = "Passw0rd1",
+            FirstName = "A",
+            LastName = "B",
+            CompanyName = name
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, viaAdminCreate.StatusCode);
+        Assert.Contains("Name", await viaAdminCreate.ReadValidationFieldsAsync());
+        Assert.Equal(HttpStatusCode.BadRequest, viaRegister.StatusCode);
+        Assert.Contains("CompanyName", await viaRegister.ReadValidationFieldsAsync());
+    }
+
+    // Unikalność bez akcentów (kolacja utf8mb4_0900_ai_ci) jest zamierzona: "Zażółć" i "Zazolc" to dla użytkownika ta sama marka
+    [Fact]
+    public async Task Company_NameUniquenessIgnoresAccents()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..10];
+        await _api.CreateCompanyAsync($"Zażółć Gęślą {suffix}");
+        using var admin = await _api.AdminClientAsync();
+
+        var response = await admin.PostJsonAsync("/api/admin/companies", new CompanyFormDto { Name = $"ZAZOLC gesla {suffix}" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("Company name is already taken", await response.ReadMessageAsync());
+    }
 }
