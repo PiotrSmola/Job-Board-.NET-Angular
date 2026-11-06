@@ -9,7 +9,8 @@ import { ApplicationStatus, ApplicationStatusHistoryEntry, JobApplication } from
 const APPLICATION: JobApplication = {
   id: 7, jobOfferId: 3, userId: 'u1', userEmail: 'jan@example.com', userFullName: 'Jan Kowalski',
   jobTitle: 'Programista Angular', company: 'Acme', companyId: 1, note: null, appliedAt: new Date('2026-01-01T10:00:00Z'),
-  status: ApplicationStatus.Interview, statusChangedAt: '2026-01-03T10:00:00Z'
+  status: ApplicationStatus.Interview, statusChangedAt: '2026-01-03T10:00:00Z',
+  hasCv: false, cvFileName: null, cvSize: null, cvUploadedAt: null
 };
 
 const HISTORY: ApplicationStatusHistoryEntry[] = [

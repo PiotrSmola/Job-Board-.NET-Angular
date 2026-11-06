@@ -36,7 +36,19 @@ export interface JobApplication {
   jobOffer?: JobOffer;
   /** Tylko w szczegółach aplikacji (GET /{id}) i odpowiedziach na zmianę statusu. */
   history?: ApplicationStatusHistoryEntry[] | null;
+  /** Do aplikacji dołączono CV (pozostałe pola CV są wtedy wypełnione, w przeciwnym razie null). */
+  hasCv: boolean;
+  /** Oryginalna nazwa pliku CV (po sanityzacji przez API). */
+  cvFileName: string | null;
+  /** Rozmiar pliku CV w bajtach. */
+  cvSize: number | null;
+  cvUploadedAt: string | null;
 }
+
+/** Zdarzenie przesyłania CV: postęp w procentach albo zakończenie z zaktualizowaną aplikacją. */
+export type CvUploadEvent =
+  | { type: 'progress'; percent: number }
+  | { type: 'done'; application: JobApplication };
 
 export interface CreateJobApplication {
   jobOfferId: number;

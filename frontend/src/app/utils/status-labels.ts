@@ -93,6 +93,18 @@ export function canWithdraw(status: ApplicationStatus): boolean {
   return WITHDRAWABLE_STATUSES.includes(status);
 }
 
+/** Statusy, w których kandydat może dodać, zmienić lub usunąć CV (zgodnie z API). */
+export const CV_EDITABLE_STATUSES: readonly ApplicationStatus[] = [
+  ApplicationStatus.Submitted,
+  ApplicationStatus.InReview,
+  ApplicationStatus.Interview,
+  ApplicationStatus.Offered
+];
+
+export function canChangeCv(status: ApplicationStatus): boolean {
+  return CV_EDITABLE_STATUSES.includes(status);
+}
+
 export function getApplicationStatusPresentation(status: ApplicationStatus): StatusPresentation {
   return APPLICATION_STATUS_PRESENTATION[status] ?? { label: 'Nieznany', tone: 'neutral' };
 }

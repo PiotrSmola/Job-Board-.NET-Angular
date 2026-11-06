@@ -11,7 +11,8 @@ function makeApplication(id: number, status = ApplicationStatus.Submitted): JobA
   return {
     id, jobOfferId: id * 10, userId: 'u1', userEmail: 'jan@example.com', userFullName: 'Jan Kowalski',
     jobTitle: `Oferta ${id}`, company: 'Acme', companyId: 1, note: null, appliedAt: new Date('2026-01-01T10:00:00Z'),
-    status, statusChangedAt: '2026-01-01T10:00:00Z'
+    status, statusChangedAt: '2026-01-01T10:00:00Z',
+    hasCv: false, cvFileName: null, cvSize: null, cvUploadedAt: null
   };
 }
 

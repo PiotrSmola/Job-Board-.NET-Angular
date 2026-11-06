@@ -24,6 +24,13 @@ const KNOWN_API_MESSAGES: Record<string, string> = {
   'Company has job offers or members': 'Nie można usunąć firmy, która ma oferty lub członków zespołu',
   'Company not found': 'Firma nie została znaleziona',
   'Job offer has applications - close it instead': 'Oferta ma aplikacje – zamiast usuwać, zamknij ją.',
+  // CV
+  'Unsupported file type - upload a PDF or DOCX file': 'Nieobsługiwany typ pliku – prześlij plik PDF lub DOCX',
+  'File is too large - maximum size is 5 MB': 'Plik jest za duży – maksymalny rozmiar to 5 MB',
+  'File is empty': 'Plik jest pusty',
+  'Invalid multipart form data': 'Nie udało się odczytać przesłanego pliku',
+  'CV cannot be changed in the current application status': 'Na tym etapie rekrutacji nie można już zmienić CV',
+  'CV not found': 'Nie znaleziono CV tej aplikacji',
   // m.in. 'Company must be approved before publishing offers'
   ...FORBIDDEN_API_MESSAGES
 };
@@ -38,6 +45,8 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
 
   if (error.status === 0) return 'Brak połączenia z serwerem';
   if (error.status >= 500) return fallback;
+  // Limit rozmiaru żądania serwera (RequestSizeLimit) – odpowiedź bez treści
+  if (error.status === 413) return 'Plik jest za duży – maksymalny rozmiar to 5 MB';
 
   const body = error.error;
   const message = body?.message;
