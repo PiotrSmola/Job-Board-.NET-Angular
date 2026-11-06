@@ -329,19 +329,24 @@ describe('StatsDashboardComponent', () => {
   });
 
   describe('cleanup', () => {
-    it('unsubscribes from the pending data request on destroy and leaves no timers', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] });
+    it('unsubscribes from the pending data request on destroy and leaves no timers of its own', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'requestAnimationFrame', 'cancelAnimationFrame'] });
       try {
         const pending = trackedRequest<ReturnType<typeof adminStatsFixture>>();
         getAdminStats.mockReturnValue(pending.observable);
         await create('admin');
         expect(pending.state.subscribed).toBe(1);
+        // Angular 22 planuje kolejne sprawdzenie zmian na najbliższą klatkę (wyścig setTimeout/requestAnimationFrame
+        // planisty aplikacji, nie komponentu); w liczniku zostaje jeden timer frameworka/Materiala - porównujemy z nim
+        vi.advanceTimersToNextFrame();
+        const timersOfFramework = vi.getTimerCount();
 
         fixture.destroy();
+        vi.advanceTimersToNextFrame();
 
         expect(pending.state.unsubscribed).toBe(1);
         expect(pending.subject.observed).toBe(false);
-        expect(vi.getTimerCount()).toBe(0);
+        expect(vi.getTimerCount()).toBeLessThanOrEqual(timersOfFramework);
       } finally {
         vi.useRealTimers();
       }
