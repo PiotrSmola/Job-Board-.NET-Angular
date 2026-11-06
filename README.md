@@ -90,6 +90,25 @@ Admin i pracodawca (tylko oferty swojej firmy) zarządzają ofertami w panelu (`
 
 Usunięcie oferty (`DELETE /api/jobs/{id}`): admin usuwa ofertę razem z jej aplikacjami, pracodawca tylko ofertę bez żadnych aplikacji (także wycofanych) - ofertę z aplikacjami kandydatów zwraca `400` (`Job offer has applications - close it instead`), można ją natomiast zamknąć.
 
+## Job taxonomy and filters
+
+Every offer can have a category, a seniority level, contract types, a salary currency and period, and up to 15 skills. The job list (`GET /api/jobs`, and `GET /api/jobs/manage` for admins and employers) accepts these optional filters, all combined with AND:
+
+| Parameter | Meaning |
+| --- | --- |
+| `category` / `categoryId` | category slug (`[a-z0-9-]`, up to 100 characters) and/or id |
+| `seniority` | comma-separated levels (`0` intern, `1` junior, `2` mid, `3` senior, `4` lead, `5` manager); any of them matches |
+| `contractTypes` | bit mask (`1` employment, `2` B2B, `4` mandate, `8` specific-task, `16` internship, `0..31`); an offer matches when it has any selected type; `0` means no filter |
+| `workType` | comma-separated work types (`0,1`); a single number or name still works |
+| `skills` | comma-separated skill names (up to 10, 50 characters each, case-insensitive); an offer must have all of them |
+| `currency` | salary currency (`0` PLN, `1` EUR, `2` USD, `3` GBP); `0` is a real filter. `minSalary` / `maxSalary` are compared in the offer's own currency, without conversion |
+
+Invalid or oversized values return `400`. All filters run in SQL; the list loads category and skills in the same query.
+
+`GET /api/jobs/facets` (public, same filter parameters, no paging) returns `total` and the counts for categories, seniority, single contract-type bits, work types and the 20 most common skills. The counts of a facet ignore that facet's own filter (so a user can widen the selection) and apply all the others; values with a zero count are omitted. `GET /api/categories` lists the categories with the number of publicly visible offers, `GET /api/skills?search=&limit=` suggests skills used by publicly visible offers (substring match, prefixes first, then by popularity; `limit` 1-20, default 10). Admins manage categories with `POST/PUT/DELETE /api/admin/categories`; deleting a category keeps its offers and clears their category.
+
+When an offer is created or updated (`PUT` replaces all taxonomy fields), unknown skills are created automatically and matched to existing ones case-insensitively; a skill name cannot contain a comma (it is the list separator in filters). The migration `AddJobTaxonomy` gives existing offers PLN, monthly salaries, no contract types, no level and no category; on startup the demo categories are created when none exist and the demo offers without any taxonomy are filled in.
+
 ## Proces rekrutacji
 
 Każda aplikacja ma status, a każda jego zmiana (także złożenie aplikacji) trafia do historii z datą, autorem i opcjonalnym komentarzem:
