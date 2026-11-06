@@ -1,2 +1,8 @@
 <app-navbar></app-navbar>
+@if (authService.emailConfirmationPending()) {
+  <!-- miejsce o stałej wysokości od pierwszego renderu – doładowany leniwie baner nie przesuwa treści (CLS) -->
+  <div class="email-banner-slot">
+    <ng-container #emailBanner />
+  </div>
+}
 <router-outlet></router-outlet>

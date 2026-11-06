@@ -64,6 +64,16 @@ form {
   }
 }
 
+.forgot-link {
+  text-align: right;
+  margin-top: -8px;
+
+  a {
+    color: #90caf9;
+    font-size: 0.9rem;
+  }
+}
+
 .demo-credentials {
   margin-top: 24px;
   padding: 16px;

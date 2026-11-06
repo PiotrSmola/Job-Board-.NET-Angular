@@ -1,0 +1,47 @@
+<main class="auth-container">
+  <mat-card class="auth-card">
+    <h1>Potwierdzenie adresu e-mail</h1>
+
+    <!-- jeden region przez cały czas – czytnik ogłosi przejście z „potwierdzanie” do wyniku -->
+    <div class="feedback" role="status" aria-live="polite">
+      @switch (state()) {
+        @case ('confirming') {
+          <div class="progress">
+            <mat-spinner diameter="28" aria-hidden="true"></mat-spinner>
+            <p>Potwierdzanie adresu e-mail…</p>
+          </div>
+        }
+        @case ('confirmed') {
+          <p class="success">Adres e-mail został potwierdzony. Dziękujemy!</p>
+        }
+        @case ('error') {
+          <p class="error">{{ error() }}</p>
+        }
+      }
+    </div>
+
+    @if (state() === 'error' && authService.currentUser()) {
+      <div class="actions">
+        <button mat-raised-button color="primary" type="button" (click)="resend()" [disabled]="resending()">
+          {{ resending() ? 'Wysyłanie…' : 'Wyślij nowy link' }}
+        </button>
+      </div>
+      <div class="feedback">
+        <p role="status">{{ resendStatus() }}</p>
+      </div>
+    } @else if (state() === 'error') {
+      <p class="intro">Zaloguj się, aby wysłać nowy link potwierdzający.</p>
+    }
+
+    @if (state() !== 'confirming') {
+      <div class="actions">
+        @if (authService.currentUser()) {
+          <a mat-stroked-button routerLink="/jobs">Przeglądaj oferty</a>
+          <a mat-button routerLink="/account">Moje konto</a>
+        } @else {
+          <a mat-stroked-button routerLink="/login">Zaloguj się</a>
+        }
+      </div>
+    }
+  </mat-card>
+</main>
