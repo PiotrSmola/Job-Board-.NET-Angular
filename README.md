@@ -144,6 +144,24 @@ Backend zapisuje pliki przez `IFileStorage`, wybierany ustawieniem `Storage:Prov
 
 Niepełna konfiguracja S3 albo nieznany dostawca przerywają start aplikacji czytelnym błędem. W stacku Dockera backend używa `S3` z usługą `storage` (SeaweedFS 4.50): przy każdym starcie kontenera generowany jest plik konfiguracyjny S3 SeaweedFS (`-s3.config`) z jedną tożsamością o kluczach `S3_ACCESS_KEY` / `S3_SECRET_KEY` z `.env`, więc magazyn nie przyjmuje żądań bez podpisu. Uruchomienie lokalne i testy używają domyślnie `Local`.
 
+## Statistics
+
+Admins and employers get a "Statystyki" tab (lazy-loaded) with KPI tiles, a daily time series, a recruitment funnel, a table of offers, the median first-response time and a CSV export. Admins see the whole platform, an employer only the offers of his own company (the company comes from the database, never from the request).
+
+| Endpoint | Who | Result |
+| --- | --- | --- |
+| `GET /api/admin/stats?from=&to=` | admin | `range`, `totals` (users by role, companies by status, offers by state, applications by status), daily `series` (`newApplications`, `newJobs`, `newUsers`, `jobViews`), `funnel`, `topJobs` (top 10 of the range), `medianFirstResponseHours` |
+| `GET /api/employer/stats?from=&to=` | employer | `range`, `totals` (offers by state, applications by status, all-time `views`), `series` (`newApplications`, `jobViews`), `funnel`, `jobs` (all company offers with `views`, `applications`, `conversionRate`), `medianFirstResponseHours` |
+| `GET /api/admin/stats/export`, `GET /api/employer/stats/export` | admin / employer | the daily series as CSV (UTF-8 with BOM, `;` separator, Polish header, `Content-Disposition: attachment; filename*=UTF-8''statystyki-YYYY-MM-DD_YYYY-MM-DD.csv`); cells starting with `=`, `+`, `-`, `@`, tab or CR are prefixed with `'` (CSV injection) |
+
+- `from` and `to` are inclusive UTC days (`YYYY-MM-DD`); the default is the last 30 days ending today. `from > to` or a malformed day returns `400` `Invalid date range`, a range longer than 366 days `400` `Date range cannot exceed 366 days`. An employer without a company gets `403` `Employer account is not linked to a company`.
+- `totals` are the current state / all-time values; `series`, `funnel`, `topJobs`, the employer `jobs` table and the median describe the requested range. The series contains every day of the range (missing days are filled with zeros on the server).
+- Funnel: applications submitted in the range that reached a stage, according to the status history. Stages are cumulative (`inReview` counts every application whose history contains InReview, Interview, Offered or Hired, and so on); rejection and withdrawal are not stages.
+- Median first response: hours from submitting an application (submitted in the range) to the first status change made by someone other than the candidate (a note without a status change does not count); `null` when there is no such application. The per-application differences are computed in SQL and only the one or two middle values are read, so the whole set never reaches memory.
+- All aggregations run in SQL (`GROUP BY` on the day, conditional counts); date-range filters use indexes on `JobApplications.AppliedAt`, `JobOffers.CreatedAt` and `AspNetUsers.CreatedAt`.
+- Offer views: `GET /api/jobs/{id}` counts one view per (offer, visitor, UTC day) unless the caller is an admin or a member of the offer's company. The visitor is the user id, or the client IP plus User-Agent for anonymous callers; only an HMAC-SHA256 of it (16 bytes, key derived with HKDF from `JwtSettings:Secret`, so the hash cannot be recomputed without the secret) is stored - never the IP. Counting is two statements in one transaction (`INSERT IGNORE` into `JobOfferViewers`, then `INSERT ... ON DUPLICATE KEY UPDATE` of the daily counter in `JobOfferDailyViews`); a failure is only logged and never breaks the offer response. A background service removes deduplication rows older than yesterday (hourly); the daily aggregates stay.
+- Behind the nginx container the client IP is taken from `X-Forwarded-For` (one hop) only when the request comes from a private network. Anonymous visitors that share an IP and a User-Agent count as one visitor per day, and a client that varies its User-Agent can inflate the counter - it is a popularity metric, not an audit log.
+
 ## Uruchomienie lokalne (bez Dockera)
 
 Wymagane wersje:
