@@ -2,7 +2,7 @@ using System.Threading.RateLimiting;
 
 namespace Backend.Services;
 
-// Limiter polityki "uploads" dla jednego użytkownika:
+// Limiter polityki "uploads" dla jednego użytkownika (polityka "account-emails" używa go bez limitu równoległości):
 // - okno stałe: najwyżej permitLimit żądań w oknie liczonym od pierwszego żądania po wygaśnięciu poprzedniego okna;
 //   odrzucenie podaje RetryAfter = czas do końca bieżącego okna (wbudowany FixedWindowRateLimiter podaje zawsze
 //   pełną długość okna),

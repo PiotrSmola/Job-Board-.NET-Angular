@@ -1,1 +1,16 @@
 // App-level styles
+
+// Miejsce na baner „Potwierdź adres e-mail” – stała wysokość (zmienna dziedziczona przez komponent banera)
+// i to samo tło, więc doładowanie banera niczego nie przesuwa
+.email-banner-slot {
+  --email-banner-height: 56px;
+  height: var(--email-banner-height);
+  background: #2b2410;
+  box-sizing: border-box;
+}
+
+@media (max-width: 600px) {
+  .email-banner-slot {
+    --email-banner-height: 72px;
+  }
+}

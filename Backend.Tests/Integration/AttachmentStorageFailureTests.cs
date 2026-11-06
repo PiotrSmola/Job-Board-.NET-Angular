@@ -227,13 +227,15 @@ public class AttachmentStorageFailureTests : IClassFixture<ProductionRefreshEnab
         var setup = await _attachments.NewSetupAsync();
         using var factory = FactoryWithFailingAttachmentsRepository(afterCommit: true, failExistenceCheck: false);
         using var client = ClientFor(factory, setup.Candidate.Token);
+        // jeden komplet plików - DOCX (ZIP) ma w nagłówkach czas utworzenia, więc ponowne wygenerowanie może się różnić
+        var files = ThreeFiles();
 
-        await AssertServerErrorWithoutDetailsAsync(await client.UploadAttachmentsAsync(setup.Application.Id, ThreeFiles()));
+        await AssertServerErrorWithoutDetailsAsync(await client.UploadAttachmentsAsync(setup.Application.Id, files));
 
         var records = await _attachments.RecordsAsync(setup.Application.Id);
         Assert.Equal(3, records.Count);
         await _attachments.AssertStorageMatchesRecordsAsync(setup.Application.Id);
-        foreach (var (record, expected) in records.OrderBy(r => r.Kind).Zip(ThreeFiles()))
+        foreach (var (record, expected) in records.OrderBy(r => r.Kind).Zip(files))
         {
             var download = await client.DownloadAttachmentAsync(setup.Application.Id, record.Id);
             Assert.Equal(HttpStatusCode.OK, download.StatusCode);

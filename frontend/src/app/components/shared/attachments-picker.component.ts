@@ -5,7 +5,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { ApplicationAttachment, AttachmentKind, AttachmentUploadItem } from '../../models/job-application.model';
 import {
   ATTACHMENT_ACCEPT, ATTACHMENT_KIND_OPTIONS, ATTACHMENTS_MAX_COUNT, defaultAttachmentKind, formatAttachmentsUsage,
-  formatFileSize, selectAttachmentFiles
+  formatFileSize, PROFILE_COUNT_LIMIT_MESSAGE, PROFILE_TOTAL_SIZE_LIMIT_MESSAGE, selectAttachmentFiles
 } from '../../utils/attachments';
 
 let nextId = 0;
@@ -151,6 +151,8 @@ export class AttachmentsPickerComponent {
   readonly statusMessage = input<string | null>(null);
   readonly disabled = input(false);
   readonly label = input('Wybierz pliki');
+  /** Komunikaty limitów: pliki aplikacji (domyślnie) albo dokumenty profilu. */
+  readonly limitContext = input<'application' | 'profile'>('application');
 
   readonly errors = signal<string[]>([]);
   private readonly selectionMessage = signal('');
@@ -203,7 +205,9 @@ export class AttachmentsPickerComponent {
       count: this.count(),
       totalSize: this.totalSize(),
       files: current.map(item => item.file)
-    });
+    }, this.limitContext() === 'profile'
+      ? { count: PROFILE_COUNT_LIMIT_MESSAGE, totalSize: PROFILE_TOTAL_SIZE_LIMIT_MESSAGE }
+      : undefined);
     this.errors.set(errors);
     if (!accepted.length) return;
 

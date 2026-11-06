@@ -7,6 +7,7 @@ import { JobService } from '../../services/job.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
 import { JobParams } from '../../models/job-params.model';
 import { PaginatedResult } from '../../models/pagination.model';
+import { SavedJobsService } from '../../services/saved-jobs.service';
 
 function makeJob(id: number): JobOffer {
   return {
@@ -32,6 +33,8 @@ describe('JobListComponent', () => {
   let getJobs: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
   let consoleLog: ReturnType<typeof vi.spyOn>;
+  let savedJobsEnabled: boolean;
+  let toggle: ReturnType<typeof vi.fn>;
 
   // JobParams jest mutowany przez komponent, więc zapamiętujemy kopię w chwili wywołania
   let calls: JobParams[];
@@ -53,6 +56,8 @@ describe('JobListComponent', () => {
   beforeEach(async () => {
     calls = [];
     getJobs = vi.fn();
+    savedJobsEnabled = false;
+    toggle = vi.fn().mockReturnValue(of(true));
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
     consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -60,7 +65,14 @@ describe('JobListComponent', () => {
 
     await TestBed.configureTestingModule({
       imports: [JobListComponent],
-      providers: [provideRouter([]), { provide: JobService, useValue: { getJobs } }]
+      providers: [
+        provideRouter([]),
+        { provide: JobService, useValue: { getJobs } },
+        {
+          provide: SavedJobsService,
+          useValue: { enabled: () => savedJobsEnabled, isSaved: (id: number) => id === 2, isPending: () => false, ensureLoaded: vi.fn(), toggle }
+        }
+      ]
     }).compileComponents();
   });
 
@@ -444,5 +456,32 @@ describe('JobListComponent', () => {
     expect(component.formatSalary(null, 2000)).toBe('Do 2000 PLN');
     expect(component.getWorkTypeLabel(WorkType.Remote)).toBe('Zdalna');
     expect(component.getWorkTypeLabel(WorkType.Onsite)).toBe('Stacjonarna');
+  });
+
+  describe('saving offers', () => {
+    it('shows a heart toggle per card for a candidate, with the offer title in the label and the saved state', () => {
+      savedJobsEnabled = true;
+      create(of(page(2, 2)));
+
+      const buttons = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('app-save-job-button button'));
+      expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual(['Zapisz ofertę: Oferta 1', 'Usuń z zapisanych: Oferta 2']);
+      expect(buttons.map(b => b.getAttribute('aria-pressed'))).toEqual(['false', 'true']);
+    });
+
+    it('toggling does not open the offer details', () => {
+      savedJobsEnabled = true;
+      create(of(page(1, 1)));
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('app-save-job-button button')!.click();
+
+      expect(toggle).toHaveBeenCalledWith(1);
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('shows no hearts for visitors who cannot save offers', () => {
+      create(of(page(2, 2)));
+      expect((fixture.nativeElement as HTMLElement).querySelector('app-save-job-button button')).toBeNull();
+    });
   });
 });

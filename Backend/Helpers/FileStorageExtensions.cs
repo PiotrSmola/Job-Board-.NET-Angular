@@ -33,4 +33,36 @@ public static class FileStorageExtensions
 
     public static Task DeleteQuietlyAsync(this IFileStorage storage, string? key, ILogger logger) =>
         storage.DeleteQuietlyAsync([key], logger);
+
+    // Kopia pliku pod nowym kluczem (np. dokument profilu dołączany do aplikacji); false - brak pliku źródłowego.
+    // Treść jest buforowana w pamięci (najwyżej maxSize bajtów - większy plik to błąd), bo zapis do S3 wymaga
+    // przewijalnego strumienia z sumą kontrolną, a strumień odczytu S3 jest jednokierunkowy.
+    public static async Task<bool> CopyAsync(this IFileStorage storage, string sourceKey, string destinationKey, string contentType,
+        long maxSize, CancellationToken cancellationToken = default)
+    {
+        using var buffer = new MemoryStream();
+        await using (var source = await storage.OpenReadAsync(sourceKey, cancellationToken))
+        {
+            if (source == null)
+            {
+                return false;
+            }
+
+            var chunk = new byte[81920];
+            int read;
+            while ((read = await source.Content.ReadAsync(chunk, cancellationToken)) > 0)
+            {
+                if (buffer.Length + read > maxSize)
+                {
+                    throw new InvalidDataException($"Stored file {sourceKey} is larger than {maxSize} bytes");
+                }
+
+                buffer.Write(chunk, 0, read);
+            }
+        }
+
+        buffer.Position = 0;
+        await storage.SaveAsync(destinationKey, buffer, contentType, cancellationToken);
+        return true;
+    }
 }

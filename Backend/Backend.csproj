@@ -8,7 +8,11 @@
 
     <ItemGroup>
       <PackageReference Include="AWSSDK.S3" Version="4.0.104.10" />
+      <!-- wysyłka e-maili (SMTP) - zalecana przez Microsoft zamiast przestarzałego System.Net.Mail.SmtpClient -->
+      <PackageReference Include="MailKit" Version="4.18.2" />
       <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.22" />
+      <!-- klucze Data Protection (tokeny linków w e-mailach) w bazie - przetrwają przebudowę kontenera -->
+      <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="9.0.22" />
       <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="9.0.22" />
       <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.22">
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

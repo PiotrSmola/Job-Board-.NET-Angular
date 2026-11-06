@@ -355,7 +355,7 @@ public class AddApplicationAttachmentsMigrationTests
             Assert.Equal("old", application.Note);
             Assert.Empty(application.Attachments);
             Assert.False(check.Database.GetPendingMigrations().Any());
-            Assert.Equal(AddApplicationAttachments, check.Database.GetAppliedMigrations().Last());
+            Assert.Contains(AddApplicationAttachments, check.Database.GetAppliedMigrations());
         });
     }
 }

@@ -5,7 +5,8 @@ using Backend.Tests.Infrastructure;
 
 namespace Backend.Tests.Unit;
 
-// frontend/docker/nginx.conf: 26 MB tylko dla uploadu załączników, reszta API z limitem 1 MB (jak backend)
+// frontend/docker/nginx.conf: 26 MB tylko dla uploadu załączników aplikacji i dokumentów profilu, reszta API z limitem
+// 1 MB (jak backend)
 public class NginxConfigTests
 {
     private sealed record Location(string Modifier, string Pattern, string Body);
@@ -47,8 +48,29 @@ public class NginxConfigTests
         Assert.Contains("proxy_pass http://backend:8080;", location.Body);
     }
 
+    // POST /api/account/documents przyjmuje do 26 MB (3 x 5 MB itd.) - nginx z limitem 1 MB odrzuciłby w stosie
+    // Dockera każdy plik profilu większy niż ~1 MB stroną HTML 413, a frontend pokazałby komunikat o limicie 5 MB
+    [Theory]
+    [InlineData("/api/account/documents")]
+    [InlineData("/api/Account/Documents")]
+    [InlineData("/api/account/documents/")]
+    public void ProfileDocumentUpload_Allows26Megabytes(string path)
+    {
+        var location = Match(ReadLocations(), path);
+
+        Assert.Equal("26m", BodySizeLimit(location));
+        Assert.Equal(AttachmentFiles.MaxRequestSize, 26 * 1024 * 1024);
+        Assert.Contains("proxy_pass http://backend:8080;", location.Body);
+    }
+
     [Theory]
     [InlineData("/api/auth/login")]
+    [InlineData("/api/account/documents/5")]
+    [InlineData("/api/account/documentsx")]
+    [InlineData("/api/account/documents/5/download")]
+    [InlineData("/api/v2/account/documents")]
+    [InlineData("/api/account/profile")]
+    [InlineData("/api/jobapplications/12/attachments/from-profile")]
     [InlineData("/api/jobapplications")]
     [InlineData("/api/jobapplications/12/attachments/5")]
     [InlineData("/api/jobapplications/12/attachmentsx")]
@@ -62,19 +84,22 @@ public class NginxConfigTests
         Assert.Equal(RequestBodyLimitMiddleware.DefaultLimit, 1024 * 1024);
     }
 
+    // każda lokalizacja uploadu (regex) przekazuje do backendu te same nagłówki co /api/ - inaczej backend widziałby
+    // innego klienta (IP, schemat) zależnie od endpointu
     [Fact]
-    public void BothApiLocations_ForwardTheSameProxyHeaders()
+    public void AllApiLocations_ForwardTheSameProxyHeaders()
     {
         var locations = ReadLocations();
         var api = locations.Single(l => l.Pattern == "/api/");
-        var upload = locations.Single(l => l.Modifier.StartsWith('~'));
+        var uploads = locations.Where(l => l.Modifier.StartsWith('~')).ToList();
 
         static string[] ProxyLines(Location l) => l.Body.Split('\n')
             .Select(line => line.Trim())
             .Where(line => line.StartsWith("proxy_", StringComparison.Ordinal))
             .ToArray();
 
-        Assert.Equal(ProxyLines(api), ProxyLines(upload));
+        Assert.NotEmpty(uploads);
+        Assert.All(uploads, upload => Assert.Equal(ProxyLines(api), ProxyLines(upload)));
         Assert.Contains("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;", ProxyLines(api));
     }
 }

@@ -8,6 +8,13 @@ export const ATTACHMENT_ALLOWED_EXTENSIONS: readonly string[] = ['.pdf', '.docx'
 /** Wartość atrybutu `accept` pola wyboru plików. */
 export const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_EXTENSIONS.join(',');
 
+/** Komunikat przekroczenia limitu liczby plików aplikacji. */
+export const APPLICATION_COUNT_LIMIT_MESSAGE = `Aplikacja może mieć maksymalnie ${ATTACHMENTS_MAX_COUNT} załączników`;
+/** Ten sam limit dla dokumentów profilu (10 plików, 25 MB łącznie). */
+export const PROFILE_COUNT_LIMIT_MESSAGE = `Profil może mieć maksymalnie ${ATTACHMENTS_MAX_COUNT} dokumentów`;
+export const PROFILE_TOTAL_SIZE_LIMIT_MESSAGE = 'Łączny rozmiar dokumentów profilu nie może przekroczyć 25 MB';
+const APPLICATION_TOTAL_SIZE_LIMIT_MESSAGE = 'Łączny rozmiar załączników nie może przekroczyć 25 MB';
+
 export const ATTACHMENT_KIND_LABELS: Record<AttachmentKind, string> = {
   [AttachmentKind.Cv]: 'CV',
   [AttachmentKind.CoverLetter]: 'List motywacyjny',
@@ -52,7 +59,8 @@ export interface AttachmentSelection {
  */
 export function selectAttachmentFiles(
   files: readonly File[],
-  current: { count: number; totalSize: number; files?: readonly File[] }
+  current: { count: number; totalSize: number; files?: readonly File[] },
+  messages: { count: string; totalSize: string } = { count: APPLICATION_COUNT_LIMIT_MESSAGE, totalSize: APPLICATION_TOTAL_SIZE_LIMIT_MESSAGE }
 ): AttachmentSelection {
   const accepted: File[] = [];
   const errors: string[] = [];
@@ -62,8 +70,8 @@ export function selectAttachmentFiles(
   for (const file of files) {
     const error = validateAttachmentFile(file)
       ?? (isSameFileListed(file, [...(current.files ?? []), ...accepted]) ? 'Ten plik jest już na liście' : null)
-      ?? (count >= ATTACHMENTS_MAX_COUNT ? `Aplikacja może mieć maksymalnie ${ATTACHMENTS_MAX_COUNT} załączników` : null)
-      ?? (totalSize + file.size > ATTACHMENTS_MAX_TOTAL_SIZE ? 'Łączny rozmiar załączników nie może przekroczyć 25 MB' : null);
+      ?? (count >= ATTACHMENTS_MAX_COUNT ? messages.count : null)
+      ?? (totalSize + file.size > ATTACHMENTS_MAX_TOTAL_SIZE ? messages.totalSize : null);
 
     if (error) {
       errors.push(`${file.name}: ${error}`);
