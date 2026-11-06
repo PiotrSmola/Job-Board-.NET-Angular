@@ -9,7 +9,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDividerModule } from '@angular/material/divider';
-import { MatDialog, MatDialogConfig, MatDialogModule } from '@angular/material/dialog';
+import { MAT_DIALOG_DATA, MatDialog, MatDialogConfig, MatDialogModule } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -18,7 +18,7 @@ import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
-import { ApplicationStatus, AttachmentUploadItem, JobApplication } from '../../models/job-application.model';
+import { ApplicationAttachment, ApplicationStatus, AttachmentUploadItem, JobApplication } from '../../models/job-application.model';
 import { getApplicationStatusPresentation, getJobState, StatusPresentation } from '../../utils/status-labels';
 import { StatusChipComponent } from '../shared/status-chip.component';
 import { AttachmentsPickerComponent } from '../shared/attachments-picker.component';
@@ -32,6 +32,11 @@ export const ATTACHMENTS_UPLOAD_FAILED_MESSAGE =
 
 /** Konfiguracja dialogu aplikowania (modalny dla czytników ekranu, miejsce na listę plików). */
 export const APPLY_DIALOG_CONFIG: MatDialogConfig = { width: '600px', maxWidth: '95vw', ariaModal: true };
+
+/** Dane dialogu aplikowania: załączniki, które aplikacja już ma (ponowne aplikowanie po wycofaniu je zachowuje). */
+export interface ApplyDialogData {
+  existing: readonly ApplicationAttachment[];
+}
 
 /** Wynik dialogu aplikowania (undefined = anulowano). */
 export interface ApplyDialogResult {
@@ -62,7 +67,7 @@ export interface ApplyDialogResult {
         <textarea matInput [(ngModel)]="note" rows="4" placeholder="Dlaczego jesteś idealnym kandydatem..."></textarea>
       </mat-form-field>
       <p>Dołącz CV, list motywacyjny lub inne pliki (opcjonalnie):</p>
-      <app-attachments-picker [(items)]="attachments" />
+      <app-attachments-picker [(items)]="attachments" [existing]="existing" />
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close>Anuluj</button>
@@ -76,6 +81,8 @@ export interface ApplyDialogResult {
   `]
 })
 export class ApplyDialogComponent {
+  /** Limity (10 plików, 25 MB) i domyślny rodzaj nowych plików liczone łącznie z tymi załącznikami. */
+  readonly existing = inject<ApplyDialogData | null>(MAT_DIALOG_DATA, { optional: true })?.existing ?? [];
   note = '';
   attachments: AttachmentUploadItem[] = [];
 
@@ -119,6 +126,8 @@ export class JobDetailComponent implements OnInit {
   hasApplied = false;
   /** Status aplikacji bieżącego użytkownika (także wycofanej); null = nie aplikował. */
   applicationStatus: ApplicationStatus | null = null;
+  /** Załączniki wycofanej aplikacji – zostają po ponownym aplikowaniu, więc dialog liczy limity razem z nimi. */
+  private withdrawnAttachments: readonly ApplicationAttachment[] = [];
   checkingApplication = false;
   applying = false;
   /** Postęp wysyłania załączników po złożeniu aplikacji (null = nic nie jest wysyłane). */
@@ -209,6 +218,12 @@ export class JobDetailComponent implements OnInit {
       next: (result) => {
         this.hasApplied = result.hasApplied;
         this.applicationStatus = result.status ?? null;
+        this.withdrawnAttachments = [];
+        if (this.hasWithdrawn && result.applicationId) {
+          // przycisk „Aplikuj ponownie” czeka (checkingApplication) na załączniki wycofanej aplikacji
+          this.loadWithdrawnAttachments(result.applicationId);
+          return;
+        }
         this.checkingApplication = false;
         this.cdr.detectChanges();
       },
@@ -221,10 +236,27 @@ export class JobDetailComponent implements OnInit {
     });
   }
 
+  private loadWithdrawnAttachments(applicationId: number): void {
+    this.applicationService.getApplication(applicationId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (application) => {
+        this.withdrawnAttachments = application.attachments ?? [];
+        this.checkingApplication = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        // bez listy dialog liczy tylko nowe pliki – limity łączne i tak sprawdza serwer
+        console.error('Error loading the withdrawn application:', error);
+        this.checkingApplication = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
   openApplyDialog(): void {
     if (!this.job) return;
 
-    const dialogRef = this.dialog.open(ApplyDialogComponent, APPLY_DIALOG_CONFIG);
+    const data: ApplyDialogData = { existing: this.hasWithdrawn ? this.withdrawnAttachments : [] };
+    const dialogRef = this.dialog.open(ApplyDialogComponent, { ...APPLY_DIALOG_CONFIG, data });
 
     dialogRef.afterClosed().subscribe((result: ApplyDialogResult | undefined) => {
       if (result?.confirmed && this.job) {
