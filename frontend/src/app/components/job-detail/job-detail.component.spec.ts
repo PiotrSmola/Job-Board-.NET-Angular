@@ -838,6 +838,34 @@ describe('ApplyDialogComponent', () => {
       expect(root.querySelector('.error-line')?.textContent).toContain('b.pdf');
     });
 
+    it('counts the kept attachments and the chosen profile documents together', () => {
+      profileDocuments = [
+        { id: 7, kind: AttachmentKind.Other, fileName: 'portfolio.pdf', size: 2 * 1024 * 1024, uploadedAt: '2026-01-01T10:00:00Z' }
+      ];
+      const fixture = createWith([SAVED_CV]);
+      const root = fixture.nativeElement as HTMLElement;
+
+      root.querySelector<HTMLInputElement>('app-profile-documents-picker input[type="checkbox"]')!.click();
+      fixture.detectChanges();
+
+      const usage = root.querySelector('app-attachments-picker .usage')?.textContent;
+      expect(usage).toContain('plików: 2 z 10');
+      expect(usage).toContain('Wykorzystano 6 MB z 25 MB');
+    });
+
+    it('blocks a profile document that would exceed the limits together with the kept attachments', () => {
+      profileDocuments = [
+        { id: 7, kind: AttachmentKind.Other, fileName: 'portfolio.pdf', size: 1024, uploadedAt: '2026-01-01T10:00:00Z' }
+      ];
+      const kept = Array.from({ length: 10 }, (_, i): ApplicationAttachment => ({ ...SAVED_CV, id: 40 + i, fileName: `plik${i}.pdf`, size: 1024 }));
+      const fixture = createWith(kept);
+
+      // picker dokumentów profilu też liczy zachowane załączniki – jedenasty plik się nie zmieści
+      const checkbox = (fixture.nativeElement as HTMLElement)
+        .querySelector<HTMLInputElement>('app-profile-documents-picker input[type="checkbox"]')!;
+      expect(checkbox.disabled).toBe(true);
+    });
+
     it('rejects a file that would exceed 25 MB together with the kept attachments', () => {
       const kept = Array.from({ length: 6 }, (_, i): ApplicationAttachment => ({ ...SAVED_CV, id: 30 + i, fileName: `plik${i}.pdf` }));
       const fixture = createWith(kept);
