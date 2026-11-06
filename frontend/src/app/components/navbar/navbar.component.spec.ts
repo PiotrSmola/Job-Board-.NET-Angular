@@ -154,6 +154,33 @@ describe('NavbarComponent', () => {
     });
   });
 
+  describe('account links in the user menu', () => {
+    async function menuLinks(): Promise<{ text: string; href: string | null }[]> {
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('nav button')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      return Array.from(document.querySelectorAll<HTMLAnchorElement>('a[mat-menu-item]')).map(a => ({
+        text: a.textContent?.replace(/\s+/g, ' ').trim().replace(/^\S+ /, '') ?? '',
+        href: a.getAttribute('href')
+      }));
+    }
+
+    it('offers "Moje konto" and "Zapisane oferty" to a candidate', async () => {
+      create('User');
+
+      expect(await menuLinks()).toEqual([
+        { text: 'Moje konto', href: '/account' },
+        { text: 'Zapisane oferty', href: '/saved-jobs' }
+      ]);
+    });
+
+    it.each(['Employer', 'Admin'] as const)('offers only "Moje konto" to %s', async role => {
+      create(role);
+
+      expect(await menuLinks()).toEqual([{ text: 'Moje konto', href: '/account' }]);
+    });
+  });
+
   it('reacts to a logout: the logged-out links appear', () => {
     create('User');
     expect(linkTexts()).toContain('Moje Aplikacje');

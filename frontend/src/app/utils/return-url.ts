@@ -8,8 +8,8 @@ export function getSafeReturnUrl(returnUrl: string | null | undefined): string |
   // Znaki sterujące (np. tabulator/nowa linia) bywają usuwane przez przeglądarkę z URL-a
   if (/[\u0000-\u001f\u007f]/.test(returnUrl)) return null;
 
-  // Powrót na stronę logowania/rejestracji nie ma sensu
-  if (/^\/(login|register)(?=[/?#]|$)/.test(returnUrl)) return null;
+  // Powrót na stronę logowania/rejestracji ani na strony z jednorazowym tokenem w URL nie ma sensu
+  if (/^\/(login|register|forgot-password|reset-password|confirm-email)(?=[/?#]|$)/.test(returnUrl)) return null;
 
   return returnUrl;
 }

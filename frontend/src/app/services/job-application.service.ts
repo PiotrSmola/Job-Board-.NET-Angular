@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpErrorResponse, HttpEventType, HttpParams } from '@angular/common/http';
-import { Observable, catchError, filter, from, map, switchMap, throwError } from 'rxjs';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable, map } from 'rxjs';
 import {
   ApplicationAttachment,
   ApplicationCheck,
@@ -13,9 +13,7 @@ import {
 import { ApplicationParams } from '../models/application-params.model';
 import { PaginatedResult } from '../models/pagination.model';
 import { toPaginatedResult } from '../utils/pagination';
-import { resolveDownloadFileName } from '../utils/content-disposition';
-import { saveBlobAsFile } from '../utils/file-download';
-import { parseBlobErrorBody } from '../utils/blob-error';
+import { downloadFile, mapUploadEvents } from '../utils/http-transfer';
 
 @Injectable({
   providedIn: 'root'
@@ -73,17 +71,7 @@ export class JobApplicationService {
       observe: 'events',
       reportProgress: true
     }).pipe(
-      map((event): AttachmentUploadEvent | null => {
-        if (event.type === HttpEventType.UploadProgress) {
-          const percent = event.total ? Math.round((event.loaded / event.total) * 100) : 0;
-          return { type: 'progress', percent: Math.min(percent, 100) };
-        }
-        if (event.type === HttpEventType.Response && event.body) {
-          return { type: 'done', application: event.body };
-        }
-        return null;
-      }),
-      filter((event): event is AttachmentUploadEvent => event !== null)
+      mapUploadEvents((application: JobApplication): AttachmentUploadEvent => ({ type: 'done', application }))
     );
   }
 
@@ -98,16 +86,15 @@ export class JobApplicationService {
    * Błąd ma treść sparsowaną z JSON (dla responseType 'blob' przychodzi jako Blob), więc działa getApiErrorMessage.
    */
   downloadAttachment(id: number, attachment: Pick<ApplicationAttachment, 'id' | 'fileName'>): Observable<void> {
-    const url = `${this.API_URL}/${id}/attachments/${attachment.id}`;
-    return this.http.get(url, { observe: 'response', responseType: 'blob' }).pipe(
-      map(response => {
-        const fileName = resolveDownloadFileName(response.headers.get('Content-Disposition'), attachment.fileName);
-        saveBlobAsFile(response.body ?? new Blob(), fileName);
-      }),
-      catchError((error: unknown) => error instanceof HttpErrorResponse
-        ? from(parseBlobErrorBody(error)).pipe(switchMap(parsed => throwError(() => parsed)))
-        : throwError(() => error))
-    );
+    return downloadFile(this.http, `${this.API_URL}/${id}/attachments/${attachment.id}`, attachment.fileName);
+  }
+
+  /**
+   * Dołączenie kopii dokumentów z profilu kandydata (te same limity, statusy i reguły właściciela co przy uploadzie).
+   * Zwraca zaktualizowaną aplikację.
+   */
+  attachFromProfile(id: number, documentIds: readonly number[]): Observable<JobApplication> {
+    return this.http.post<JobApplication>(`${this.API_URL}/${id}/attachments/from-profile`, { documentIds: [...documentIds] });
   }
 
   getAllApplications(applicationParams: ApplicationParams): Observable<PaginatedResult<JobApplication>> {

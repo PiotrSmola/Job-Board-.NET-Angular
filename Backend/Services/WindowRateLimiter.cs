@@ -2,7 +2,7 @@ using System.Threading.RateLimiting;
 
 namespace Backend.Services;
 
-// Limiter jednej partycji (użytkownika albo adresu IP) polityk "uploads", "auth" i "public-lists":
+// Limiter jednej partycji (użytkownika albo adresu IP) polityk "uploads", "auth", "public-lists" i "account-emails":
 // - okno stałe: najwyżej permitLimit żądań w oknie liczonym od pierwszego żądania po wygaśnięciu poprzedniego okna;
 //   odrzucenie podaje RetryAfter = czas do końca bieżącego okna (wbudowany FixedWindowRateLimiter podaje zawsze
 //   pełną długość okna),

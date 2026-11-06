@@ -1,11 +1,13 @@
+using System.ComponentModel.DataAnnotations;
 using System.Net;
+using System.Reflection;
 using Backend.DTOs;
 using Backend.Helpers;
 using Backend.Tests.Infrastructure;
 
 namespace Backend.Tests.Integration;
 
-// Limity długości e-maila (256 - kolumna Identity) i hasła (128 - koszt haszowania) w każdym DTO z danymi logowania:
+// Limity długości e-maila (256 - kolumna Identity) i hasła (100 - koszt haszowania, jak we frontendzie) w każdym DTO z danymi logowania:
 // za długa wartość to 400 z błędem walidacji pola, zanim dojdzie do bazy albo haszowania (wcześniej e-mail > 256 dawał 500)
 [Collection(ApiCollection.Name)]
 public class AuthInputLimitsTests
@@ -50,11 +52,33 @@ public class AuthInputLimitsTests
     }
 
     [Fact]
-    public void Limits_Are256CharactersForEmailAnd128ForPassword()
+    public void Limits_Are256CharactersForEmailAnd100ForPassword()
     {
         Assert.Equal(256, CredentialLimits.MaxEmailLength);
-        Assert.Equal(128, CredentialLimits.MaxPasswordLength);
+        Assert.Equal(100, CredentialLimits.MaxPasswordLength);
         Assert.Equal(300, EmailOfLength(300).Length);
+    }
+
+    // każde wejściowe pole z hasłem (logowanie, rejestracja, zmiana i reset hasła, usunięcie konta) i z e-mailem ma ten sam
+    // limit z CredentialLimits - frontend waliduje hasło tym samym limitem (PASSWORD_MAX_LENGTH)
+    [Fact]
+    public void EveryCredentialField_UsesTheSharedLimits()
+    {
+        var fields = typeof(LoginDto).Assembly.GetTypes()
+            .Where(t => t.Namespace == typeof(LoginDto).Namespace)
+            .SelectMany(t => t.GetProperties())
+            .Select(p => (Property: p, MaxLength: p.GetCustomAttribute<MaxLengthAttribute>()?.Length))
+            .ToList();
+        // DTO nie mają haseł w odpowiedziach - każde pole hasła jest wejściem; e-mail także w odpowiedziach (bez limitu)
+        var passwords = fields.Where(f => f.Property.Name.EndsWith("Password", StringComparison.Ordinal)).ToList();
+        var emails = fields.Where(f => f.Property.Name == "Email" && f.MaxLength != null).ToList();
+
+        Assert.True(passwords.Count >= 6, $"Expected the password fields, found {passwords.Count}");
+        Assert.All(passwords, f => Assert.Equal(CredentialLimits.MaxPasswordLength, f.MaxLength));
+        Assert.True(emails.Count >= 4, $"Expected the e-mail fields, found {emails.Count}");
+        Assert.All(emails, f => Assert.Equal(CredentialLimits.MaxEmailLength, f.MaxLength));
+        Assert.Equal(CredentialLimits.MaxPasswordLength,
+            FrontendSource.Number(FrontendSource.Read("frontend/src/app/utils/password.ts"), "PASSWORD_MAX_LENGTH"));
     }
 
     [Theory]
@@ -84,21 +108,21 @@ public class AuthInputLimitsTests
     [Fact]
     public async Task Register_WithTooLongPassword_ReturnsBadRequest()
     {
-        await AssertFieldRejectedAsync("/api/auth/register", NewRegisterDto(password: "Aa1" + new string('x', 126)), "Password");
-        await AssertFieldRejectedAsync("/api/auth/register-employer", NewEmployerDto(password: "Aa1" + new string('x', 126)), "Password");
+        await AssertFieldRejectedAsync("/api/auth/register", NewRegisterDto(password: "Aa1" + new string('x', 98)), "Password");
+        await AssertFieldRejectedAsync("/api/auth/register-employer", NewEmployerDto(password: "Aa1" + new string('x', 98)), "Password");
     }
 
     [Fact]
     public async Task Login_WithTooLongPassword_ReturnsBadRequest()
     {
         await AssertFieldRejectedAsync("/api/auth/login",
-            new LoginDto { Email = TestUsers.UserEmail, Password = new string('x', 129) }, "Password");
+            new LoginDto { Email = TestUsers.UserEmail, Password = new string('x', 101) }, "Password");
     }
 
     [Fact]
     public async Task EmailAndPasswordAtTheLimits_AreAccepted()
     {
-        var dto = NewRegisterDto(EmailOfLength(256), "Aa1" + new string('x', 125));
+        var dto = NewRegisterDto(EmailOfLength(256), "Aa1" + new string('x', 97));
         using var client = _api.CreateClient();
 
         var registered = await client.PostJsonAsync("/api/auth/register", dto);

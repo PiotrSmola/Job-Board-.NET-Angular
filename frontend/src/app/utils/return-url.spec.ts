@@ -8,7 +8,8 @@ describe('getSafeReturnUrl', () => {
     '/my-applications#section',
     '/',
     '/loginfoo', // tylko dokładnie /login i /register są odrzucane
-    '/registered/1'
+    '/registered/1',
+    '/reset-passwords'
   ])('accepts internal path %s', url => {
     expect(getSafeReturnUrl(url)).toBe(url);
   });
@@ -52,7 +53,10 @@ describe('getSafeReturnUrl', () => {
     '/login/',
     '/login#x',
     '/register',
-    '/register?x=1'
+    '/register?x=1',
+    '/forgot-password',
+    '/reset-password?email=a%40b.c&token=abc',
+    '/confirm-email?userId=1&token=abc'
   ])('rejects auth page %s', url => {
     expect(getSafeReturnUrl(url)).toBeNull();
   });

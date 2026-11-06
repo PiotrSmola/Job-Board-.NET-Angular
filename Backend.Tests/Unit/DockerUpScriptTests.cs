@@ -210,6 +210,17 @@ public class DockerUpScriptTests
     }
 
     [Fact]
+    public void Script_PicksAFreeMailpitPortAndPrintsItsUrl()
+    {
+        // port UI Mailpita wybierany jak pozostałe (preferowany 8025, kolejny wolny) i zapisywany w .env
+        var script = File.ReadAllText(RepositoryFiles.Find("docker-up.ps1"));
+
+        Assert.Contains("[int]$MailpitPort = 8025", script);
+        Assert.Contains("MAILPIT_PORT  = Get-FreePort $MailpitPort", script);
+        Assert.Contains("Mailpit:  http://localhost:$($ports.MAILPIT_PORT)", script);
+    }
+
+    [Fact]
     public void Script_IsSavedWithUtf8Bom()
     {
         // Windows PowerShell 5.1 bez BOM czyta plik w kodowaniu ANSI i psuje polskie znaki

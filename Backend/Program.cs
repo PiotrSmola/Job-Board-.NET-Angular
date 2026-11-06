@@ -8,8 +8,11 @@ using Backend.Interfaces;
 using Backend.Models;
 using Backend.Repositories;
 using Backend.Services;
+using Backend.Services.Email;
 using Backend.Settings;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -28,12 +31,20 @@ builder.WebHost.ConfigureKestrel(options =>
     options.AddServerHeader = false;
 });
 
-// Konfiguracja bazy danych MySQL
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
+// Konfiguracja bazy danych MySQL; interceptor budzi wysyłkę e-maili po zatwierdzeniu zapisu nowych wiadomości
+builder.Services.AddSingleton<EmailOutboxSignal>();
+builder.Services.AddSingleton<EmailOutboxInterceptor>();
+builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
     options.UseMySql(
         builder.Configuration.GetConnectionString("DefaultConnection"),
         ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("DefaultConnection"))
-    ));
+    ).AddInterceptors(sp.GetRequiredService<EmailOutboxInterceptor>()));
+
+// klucze Data Protection (tokeny w linkach potwierdzenia e-maila i resetu hasła) w bazie - linki z e-maili działają
+// także po przebudowie kontenera backendu
+builder.Services.AddDataProtection()
+    .SetApplicationName("JobBoard")
+    .PersistKeysToDbContext<ApplicationDbContext>();
 
 // Konfiguracja Identity
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
@@ -49,9 +60,17 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     options.Lockout.MaxFailedAccessAttempts = 5;
     options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
     options.Lockout.AllowedForNewUsers = true;
+
+    // potwierdzenie e-maila - osobny dostawca tokenów z dłuższą ważnością niż reset hasła
+    options.Tokens.EmailConfirmationTokenProvider = EmailConfirmationTokenProvider<ApplicationUser>.ProviderName;
 })
 .AddEntityFrameworkStores<ApplicationDbContext>()
-.AddDefaultTokenProviders();
+.AddDefaultTokenProviders()
+.AddTokenProvider<EmailConfirmationTokenProvider<ApplicationUser>>(EmailConfirmationTokenProvider<ApplicationUser>.ProviderName);
+
+// link resetu hasła ważny 1 h (domyślny dostawca tokenów), potwierdzenia e-maila - 3 dni
+builder.Services.Configure<DataProtectionTokenProviderOptions>(options => options.TokenLifespan = TimeSpan.FromHours(1));
+builder.Services.Configure<EmailConfirmationTokenProviderOptions>(options => options.TokenLifespan = TimeSpan.FromDays(3));
 
 // Ustawienia JWT - sekret walidowany w jednym miejscu (JwtSettings.EnsureValidSecret)
 builder.Services.AddOptions<JwtSettings>()
@@ -109,9 +128,25 @@ builder.Services.AddCors(options =>
 builder.Services.AddScoped<IJobRepository, JobRepository>();
 builder.Services.AddScoped<IJobApplicationRepository, JobApplicationRepository>();
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
+builder.Services.AddScoped<IAccountRepository, AccountRepository>();
+builder.Services.AddScoped<ISavedJobRepository, SavedJobRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<ILoginService, LoginService>();
 builder.Services.AddSingleton<LoginGuard>();
+builder.Services.AddSingleton(TimeProvider.System);
+
+// E-maile: adres frontendu (linki), SMTP i outbox (zapis w transakcji zdarzenia, wysyłka w tle z ponawianiem);
+// konfiguracja walidowana w jednym miejscu (FrontendSettings.Validate, EmailSettings.Validate)
+builder.Services.AddOptions<FrontendSettings>()
+    .Bind(builder.Configuration.GetSection(FrontendSettings.SectionName))
+    .PostConfigure(settings => settings.Validate());
+builder.Services.AddOptions<EmailSettings>()
+    .Bind(builder.Configuration.GetSection(EmailSettings.SectionName))
+    .PostConfigure(settings => settings.Validate());
+builder.Services.AddSingleton<EmailTemplates>();
+builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<IEmailOutbox, EmailOutbox>();
+builder.Services.AddHostedService<EmailOutboxProcessor>();
 
 // Magazyn plików załączników wg Storage:Provider (Local - katalog na dysku, S3 - magazyn zgodny z S3, np. SeaweedFS);
 // konfiguracja walidowana w jednym miejscu (StorageSettings.Validate)
@@ -132,11 +167,15 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserAccess, CurrentUserAccess>();
 
 // Ograniczanie liczby żądań (RateLimitingSettings, okno stałe od pierwszego żądania partycji - WindowRateLimiter):
-// - "uploads" (upload załączników) - osobny limit dla każdego zalogowanego użytkownika i wspólny limit równoległych uploadów,
-// - "auth" (logowanie, rejestracja - cały AuthController) - osobny limit dla każdego adresu IP i wspólny limit
-//   równoległych żądań (haszowanie haseł obciąża CPU),
+// - "uploads" (upload załączników i dokumentów profilu) - osobny limit dla każdego zalogowanego użytkownika i wspólny
+//   limit równoległych uploadów,
+// - "auth" (logowanie, rejestracja, potwierdzenie e-maila, reset hasła - cały AuthController) - osobny limit dla
+//   każdego adresu IP i wspólny limit równoległych żądań (haszowanie haseł obciąża CPU),
+// - "account-emails" (żądania wysyłające e-maile bezpieczeństwa) - per adres IP / użytkownik; na tych endpointach
+//   zastępuje "auth" z klasy kontrolera (middleware bierze najbliższy endpointowi atrybut EnableRateLimiting),
 // - "public-lists" (publiczne listy ofert i firm) - osobny limit dla każdego adresu IP.
-// Bez kolejek; przekroczenie -> 429 z komunikatem API i Retry-After (czas do końca okna, przy limicie równoległości 1 s).
+// Adres IP to adres klienta po UseForwardedHeaders (X-Forwarded-For od nginx). Bez kolejek; przekroczenie -> 429
+// z komunikatem API i Retry-After (czas do końca okna, przy limicie równoległości 1 s).
 // Limitery nieaktywnych partycji są usuwane przez PartitionedRateLimiter (brak nieograniczonego cache'u).
 builder.Services.AddOptions<RateLimitingSettings>()
     .Bind(builder.Configuration.GetSection(RateLimitingSettings.SectionName))
@@ -212,6 +251,25 @@ builder.Services.AddRateLimiter(options =>
             TimeProvider.System));
     });
 
+    // e-maile bezpieczeństwa: endpoint anonimowy (reset hasła) - zawsze per adres IP, także gdy żądanie niesie token
+    // (inaczej tokeny kilku kont dawałyby osobne pule z jednego adresu); endpoint z [Authorize] (ponowne wysłanie
+    // potwierdzenia) - per użytkownik
+    options.AddPolicy(RateLimitingSettings.AccountEmailsPolicy, httpContext =>
+    {
+        var limit = httpContext.RequestServices.GetRequiredService<IOptions<RateLimitingSettings>>().Value.AccountEmails;
+        var endpoint = httpContext.GetEndpoint();
+        var perUser = endpoint?.Metadata.GetMetadata<IAuthorizeData>() != null
+                      && endpoint.Metadata.GetMetadata<IAllowAnonymous>() == null;
+        var userId = perUser ? httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) : null;
+        var partitionKey = userId != null ? "user:" + userId : httpContext.ClientIpPartitionKey();
+
+        return RateLimitPartition.Get(partitionKey, _ => new WindowRateLimiter(
+            limit.PermitLimit,
+            TimeSpan.FromSeconds(limit.WindowSeconds),
+            shared: null,
+            TimeProvider.System));
+    });
+
     options.OnRejected = async (context, cancellationToken) =>
     {
         // odrzucenie przez limit równoległości nie ma czasu do końca okna - klient może spróbować po sekundzie
@@ -277,8 +335,13 @@ var resolvedStorageSettings = app.Services.GetRequiredService<IOptions<StorageSe
 await app.Services.GetRequiredService<IFileStorage>().InitializeAsync();
 app.Logger.LogInformation("File storage: {Provider}", resolvedStorageSettings.Provider);
 
-// wczesna walidacja limitów żądań (zła konfiguracja przerywa start)
+// wczesna walidacja limitów żądań i ustawień e-maili (zła konfiguracja przerywa start)
 _ = app.Services.GetRequiredService<IOptions<RateLimitingSettings>>().Value;
+_ = app.Services.GetRequiredService<IOptions<FrontendSettings>>().Value;
+var resolvedEmailSettings = app.Services.GetRequiredService<IOptions<EmailSettings>>().Value;
+app.Logger.LogInformation("E-mail: {Smtp}", resolvedEmailSettings.IsSmtpConfigured
+    ? $"SMTP {resolvedEmailSettings.Smtp.Host}:{resolvedEmailSettings.Smtp.Port}"
+    : "SMTP not configured - e-mails stay in the outbox");
 
 // seedowanie bazy danych
 using (var scope = app.Services.CreateScope())

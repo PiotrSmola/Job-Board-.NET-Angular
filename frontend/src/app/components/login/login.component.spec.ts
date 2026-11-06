@@ -202,4 +202,13 @@ describe('LoginComponent', () => {
       expect(navigate).toHaveBeenCalledWith(['/jobs']);
     });
   });
+
+  it('links to the password reset page and uses autocomplete hints', () => {
+    create();
+    const root = fixture.nativeElement as HTMLElement;
+
+    expect(root.querySelector('a[href="/forgot-password"]')?.textContent?.trim()).toBe('Nie pamiętasz hasła?');
+    expect(root.querySelector('input[formControlName="password"]')?.getAttribute('autocomplete')).toBe('current-password');
+    expect(root.querySelector('input[formControlName="email"]')?.getAttribute('autocomplete')).toBe('email');
+  });
 });

@@ -485,4 +485,142 @@ describe('AuthService', () => {
       expect(navigate).not.toHaveBeenCalled();
     });
   });
+  describe('account flows (stage 4)', () => {
+    it('forgotPassword posts the e-mail', () => {
+      const { service, http } = setup();
+      let done = false;
+      service.forgotPassword('jan@example.com').subscribe(() => (done = true));
+
+      const req = http.expectOne('/api/auth/forgot-password');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ email: 'jan@example.com' });
+      req.flush(null, { status: 202, statusText: 'Accepted' });
+      expect(done).toBe(true);
+    });
+
+    it('resetPassword posts e-mail, token and the new password', () => {
+      const { service, http } = setup();
+      service.resetPassword({ email: 'jan@example.com', token: 'tok+/=', newPassword: 'Nowe123' }).subscribe();
+
+      const req = http.expectOne('/api/auth/reset-password');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ email: 'jan@example.com', token: 'tok+/=', newPassword: 'Nowe123' });
+      req.flush(null, { status: 204, statusText: 'No Content' });
+    });
+
+    it('clears the local session of the same user after a successful reset (old tokens are revoked)', () => {
+      storeSession(makeUser(makeJwtExpiringIn(3600)));
+      const { service, http } = setup();
+
+      service.resetPassword({ email: ' JAN@example.com ', token: 't', newPassword: 'Nowe123' }).subscribe();
+      http.expectOne('/api/auth/reset-password').flush(null, { status: 204, statusText: 'No Content' });
+
+      expect(service.currentUser()).toBeNull();
+      expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+    });
+
+    it('keeps the session of another user after a reset', () => {
+      const user = makeUser(makeJwtExpiringIn(3600));
+      storeSession(user);
+      const { service, http } = setup();
+
+      service.resetPassword({ email: 'other@example.com', token: 't', newPassword: 'Nowe123' }).subscribe();
+      http.expectOne('/api/auth/reset-password').flush(null, { status: 204, statusText: 'No Content' });
+
+      expect(service.currentUser()).toEqual(user);
+    });
+
+    it('confirmEmail posts userId and token and hides the banner of the same logged-in user', () => {
+      storeSession(makeUser(makeJwtExpiringIn(3600, { nameid: 'u-1' }), { emailConfirmed: false }));
+      const { service, http } = setup();
+      expect(service.emailConfirmationPending()).toBe(true);
+
+      service.confirmEmail({ userId: 'u-1', token: 'tok' }).subscribe();
+      const req = http.expectOne('/api/auth/confirm-email');
+      expect(req.request.body).toEqual({ userId: 'u-1', token: 'tok' });
+      req.flush(null, { status: 204, statusText: 'No Content' });
+
+      expect(service.emailConfirmationPending()).toBe(false);
+      expect(JSON.parse(localStorage.getItem(USER_KEY)!).emailConfirmed).toBe(true);
+    });
+
+    it('does not mark the session as confirmed when the link belongs to another user', () => {
+      storeSession(makeUser(makeJwtExpiringIn(3600, { nameid: 'u-1' }), { emailConfirmed: false }));
+      const { service, http } = setup();
+
+      service.confirmEmail({ userId: 'u-2', token: 'tok' }).subscribe();
+      http.expectOne('/api/auth/confirm-email').flush(null, { status: 204, statusText: 'No Content' });
+
+      expect(service.emailConfirmationPending()).toBe(true);
+    });
+
+    it('resendConfirmation posts to /api/auth/resend-confirmation', () => {
+      const { service, http } = setup();
+      service.resendConfirmation().subscribe();
+      const req = http.expectOne('/api/auth/resend-confirmation');
+      expect(req.request.method).toBe('POST');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+    });
+
+    it('shows the e-mail banner only for an explicit emailConfirmed=false (older sessions have no flag)', () => {
+      storeSession(makeUser(makeJwtExpiringIn(3600)));
+      const { service } = setup();
+      expect(service.emailConfirmationPending()).toBe(false);
+    });
+
+    it('renewSession stores the new token and keeps the previous e-mail status when the response has none', () => {
+      storeSession(makeUser(makeJwtExpiringIn(3600), { emailConfirmed: false }));
+      const { service } = setup();
+      const newToken = makeJwtExpiringIn(7200);
+
+      service.renewSession(makeUser(newToken));
+
+      expect(service.getToken()).toBe(newToken);
+      expect(localStorage.getItem(TOKEN_KEY)).toBe(newToken);
+      expect(service.currentUser()?.emailConfirmed).toBe(false);
+    });
+
+    it('a late 401 for the token from before the password change does not log the user out', async () => {
+      const router = TestBed.inject(Router);
+      await router.navigateByUrl('/protected');
+      const oldToken = makeJwtExpiringIn(3600, { sub: 'old' });
+      storeSession(makeUser(oldToken));
+      const { service, navigate } = setup();
+      service.renewSession(makeUser(makeJwtExpiringIn(3600, { sub: 'new' })));
+
+      service.handleUnauthorized(oldToken);
+
+      expect(service.currentUser()).not.toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('updateCurrentUser patches the stored user without changing the token', () => {
+      const user = makeUser(makeJwtExpiringIn(3600));
+      storeSession(user);
+      const { service } = setup();
+
+      service.updateCurrentUser({ firstName: 'Janek' });
+
+      expect(service.currentUser()).toEqual({ ...user, firstName: 'Janek' });
+      expect(JSON.parse(localStorage.getItem(USER_KEY)!).firstName).toBe('Janek');
+    });
+
+    it('updateCurrentUser does nothing without a session', () => {
+      const { service } = setup();
+      service.updateCurrentUser({ firstName: 'X' });
+      expect(service.currentUser()).toBeNull();
+    });
+
+    it('endSession clears the session, shows the message and goes to the job list', () => {
+      storeSession(makeUser(makeJwtExpiringIn(3600)));
+      const { service, navigate } = setup();
+
+      service.endSession('Konto zostało usunięte');
+
+      expect(service.currentUser()).toBeNull();
+      expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+      expect(snackBarOpen).toHaveBeenCalledWith('Konto zostało usunięte', 'OK', { duration: 5000 });
+      expect(navigate).toHaveBeenCalledWith(['/jobs']);
+    });
+  });
 });

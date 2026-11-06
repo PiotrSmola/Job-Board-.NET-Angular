@@ -1,9 +1,12 @@
 namespace Backend.Settings;
 
 // Ograniczanie liczby żądań (sekcja "RateLimiting"):
-// - "uploads" - upload załączników, osobny limit dla każdego zalogowanego użytkownika i wspólny limit równoległych uploadów,
-// - "auth" - logowanie i rejestracja (i każdy przyszły endpoint AuthController, np. reset hasła), osobny limit dla
+// - "uploads" - upload plików (załączniki, dokumenty profilu), osobny limit dla każdego zalogowanego użytkownika
+//   i wspólny limit równoległych uploadów,
+// - "auth" - logowanie, rejestracja i pozostałe endpointy AuthController (każdy przyszły też), osobny limit dla
 //   każdego adresu IP (brute force) i wspólny limit równoległych żądań (haszowanie haseł obciąża CPU),
+// - "account-emails" - żądania wysyłające e-maile bezpieczeństwa (reset hasła - per adres IP, ponowne wysłanie
+//   potwierdzenia - per użytkownik); na tych endpointach zastępuje "auth" (atrybut akcji ma pierwszeństwo),
 // - "public-lists" - publiczne listy ofert i firm (z wyszukiwaniem), osobny limit dla każdego adresu IP.
 public class RateLimitingSettings
 {
@@ -11,6 +14,7 @@ public class RateLimitingSettings
     public const string UploadsPolicy = "uploads";
     public const string AuthPolicy = "auth";
     public const string PublicListsPolicy = "public-lists";
+    public const string AccountEmailsPolicy = "account-emails";
     public const string RejectedMessage = "Too many requests - try again later";
 
     public RateLimitRule Uploads { get; set; } = new() { PermitLimit = 30, WindowSeconds = 600, ConcurrencyLimit = 8 };
@@ -19,12 +23,15 @@ public class RateLimitingSettings
 
     public WindowRateLimitRule PublicLists { get; set; } = new() { PermitLimit = 120, WindowSeconds = 60 };
 
+    public WindowRateLimitRule AccountEmails { get; set; } = new() { PermitLimit = 5, WindowSeconds = 900 };
+
     // rzuca InvalidOperationException przy złej konfiguracji (przerywa start aplikacji)
     public void Validate()
     {
         Uploads.Validate($"{SectionName}:Uploads");
         Auth.Validate($"{SectionName}:Auth");
         PublicLists.Validate($"{SectionName}:PublicLists");
+        AccountEmails.Validate($"{SectionName}:AccountEmails");
     }
 }
 

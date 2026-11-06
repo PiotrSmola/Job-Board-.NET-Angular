@@ -1,11 +1,13 @@
 using Backend.Models;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Backend.Data;
 
-public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
+// IDataProtectionKeyContext - klucze Data Protection (tokeny potwierdzenia e-maila i resetu hasła) w bazie
+public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionKeyContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
@@ -17,6 +19,14 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<JobApplication> JobApplications { get; set; }
     public DbSet<ApplicationStatusHistory> ApplicationStatusHistories { get; set; }
     public DbSet<ApplicationAttachment> ApplicationAttachments { get; set; }
+    public DbSet<ProfileDocument> ProfileDocuments { get; set; }
+    public DbSet<SavedJob> SavedJobs { get; set; }
+    public DbSet<EmailMessage> EmailMessages { get; set; }
+    public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
+
+    // stan EmailOutboxInterceptor: trwa zapis nowych wiadomości e-mail / zapisane czekają na COMMIT transakcji
+    internal bool SavingEmails { get; set; }
+    internal bool UncommittedEmails { get; set; }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -122,6 +132,56 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(e => e.JobApplicationId);
         });
 
+        builder.Entity<ProfileDocument>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Kind).HasConversion<int>();
+            entity.Property(e => e.FileKey).IsRequired().HasMaxLength(300);
+            entity.Property(e => e.FileName).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.ContentType).IsRequired().HasMaxLength(100);
+
+            // klucz pliku w magazynie wskazuje dokładnie jeden dokument
+            entity.HasIndex(e => e.FileKey).IsUnique();
+            entity.HasIndex(e => e.UserId);
+        });
+
+        builder.Entity<SavedJob>(entity =>
+        {
+            // jedna pozycja na parę użytkownik-oferta (PUT jest idempotentny)
+            entity.HasKey(e => new { e.UserId, e.JobOfferId });
+            entity.Property(e => e.SavedAt);
+
+            // lista "Zapisane oferty" - od najnowszych zapisów
+            entity.HasIndex(e => new { e.UserId, e.SavedAt });
+
+            // usunięcie oferty usuwa ją z zapisanych
+            entity.HasOne(e => e.JobOffer)
+                .WithMany()
+                .HasForeignKey(e => e.JobOfferId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<EmailMessage>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Type).HasConversion<int>();
+            entity.Property(e => e.Status).HasConversion<int>();
+            entity.Property(e => e.ToAddress).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.ToName).HasMaxLength(200);
+            entity.Property(e => e.Subject).IsRequired().HasMaxLength(300);
+            entity.Property(e => e.LastError).HasMaxLength(500);
+
+            // wiadomości do wysłania: Pending z NextAttemptAt <= teraz
+            entity.HasIndex(e => new { e.Status, e.NextAttemptAt });
+            // limit e-maili resetu hasła na adres (Type, UserId, CreatedAt)
+            entity.HasIndex(e => new { e.UserId, e.Type, e.CreatedAt });
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         builder.Entity<ApplicationStatusHistory>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -140,6 +200,24 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.FirstName).HasMaxLength(100);
             entity.Property(e => e.LastName).HasMaxLength(100);
             entity.Property(e => e.CreatedAt);
+            entity.Property(e => e.Headline).HasMaxLength(150);
+            entity.Property(e => e.Location).HasMaxLength(200);
+            entity.Property(e => e.LinkedInUrl).HasMaxLength(300);
+            entity.Property(e => e.About).HasMaxLength(2000);
+            // wartość domyślna kolumn (true - istniejące konta mają powiadomienia włączone) jest ustawiona w migracji;
+            // w modelu jej nie deklarujemy, bo EF pomijałby przy INSERT wartość false (= domyślna wartość CLR)
+
+            // dokumenty profilu, zapisane oferty i wiadomości e-mail usuwane razem z kontem (pliki w magazynie
+            // usuwa kod po zatwierdzeniu zmian)
+            entity.HasMany(e => e.ProfileDocuments)
+                .WithOne(e => e.User)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.SavedJobs)
+                .WithOne(e => e.User)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // firmy z członkami (pracodawcami) nie można usunąć - konto pracodawcy bez firmy nie ma sensu
             entity.HasOne(e => e.Company)

@@ -1,0 +1,31 @@
+<main class="account-container">
+  <header class="header">
+    <h1>Moje konto</h1>
+    <p class="subtitle">Profil, bezpieczeństwo i powiadomienia</p>
+  </header>
+
+  <mat-tab-group
+    class="account-tabs"
+    [selectedIndex]="selectedIndex()"
+    (selectedIndexChange)="onTabChange($event)"
+    [preserveContent]="true"
+    mat-stretch-tabs="false"
+    aria-label="Ustawienia konta">
+    @for (tab of tabs; track tab.id) {
+      <mat-tab>
+        <ng-template mat-tab-label>
+          <mat-icon class="tab-icon" aria-hidden="true">{{ tab.icon }}</mat-icon>
+          {{ tab.label }}
+        </ng-template>
+        <ng-template matTabContent>
+          @switch (tab.id) {
+            @case ('profile') { <app-profile-tab /> }
+            @case ('documents') { <app-documents-tab /> }
+            @case ('security') { <app-security-tab /> }
+            @case ('notifications') { <app-notifications-tab /> }
+          }
+        </ng-template>
+      </mat-tab>
+    }
+  </mat-tab-group>
+</main>

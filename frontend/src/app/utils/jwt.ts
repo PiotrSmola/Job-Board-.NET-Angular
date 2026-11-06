@@ -48,6 +48,20 @@ export function isJwtExpired(token: string | null | undefined, now = Date.now())
   return expiration === null || expiration <= now;
 }
 
+const USER_ID_CLAIMS = ['nameid', 'sub', 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'];
+
+/** Id użytkownika z tokena (claim NameIdentifier) albo null. */
+export function getJwtUserId(token: string | null | undefined): string | null {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return null;
+
+  for (const claim of USER_ID_CLAIMS) {
+    const value = payload[claim];
+    if (typeof value === 'string' && value) return value;
+  }
+  return null;
+}
+
 export function getJwtRoles(token: string | null | undefined): string[] {
   const payload = decodeJwtPayload(token);
   if (!payload) return [];

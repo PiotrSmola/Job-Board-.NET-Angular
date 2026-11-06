@@ -29,6 +29,8 @@ public class JobApplicationsController : ControllerBase
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ICurrentUserAccess _access;
     private readonly IFileStorage _fileStorage;
+    private readonly IAccountRepository _accountRepository;
+    private readonly IEmailOutbox _emailOutbox;
     private readonly ILogger<JobApplicationsController> _logger;
 
     public JobApplicationsController(
@@ -37,6 +39,8 @@ public class JobApplicationsController : ControllerBase
         UserManager<ApplicationUser> userManager,
         ICurrentUserAccess access,
         IFileStorage fileStorage,
+        IAccountRepository accountRepository,
+        IEmailOutbox emailOutbox,
         ILogger<JobApplicationsController> logger)
     {
         _applicationRepository = applicationRepository;
@@ -44,6 +48,8 @@ public class JobApplicationsController : ControllerBase
         _userManager = userManager;
         _access = access;
         _fileStorage = fileStorage;
+        _accountRepository = accountRepository;
+        _emailOutbox = emailOutbox;
         _logger = logger;
     }
 
@@ -95,7 +101,8 @@ public class JobApplicationsController : ControllerBase
     }
 
     // Złożenie aplikacji (tylko kandydaci - nie admin ani pracodawca); na ofertę, z której kandydat wcześniej
-    // się wycofał, reaktywuje tę samą aplikację
+    // się wycofał, reaktywuje tę samą aplikację. E-maile (potwierdzenie dla kandydata, nowa aplikacja dla członków
+    // firmy - wg ich preferencji) zapisywane w outboksie razem z aplikacją
     [HttpPost]
     [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -137,14 +144,16 @@ public class JobApplicationsController : ControllerBase
         }
 
         var existing = await _applicationRepository.GetUserApplicationForJobAsync(job.Id, userId);
+        if (existing != null && existing.Status != ApplicationStatus.Withdrawn)
+        {
+            return BadRequest(new { message = AlreadyAppliedMessage });
+        }
+
+        var emails = await _emailOutbox.PrepareApplicationSubmittedAsync(job.Id, userId);
         int applicationId;
 
         if (existing != null)
         {
-            if (existing.Status != ApplicationStatus.Withdrawn)
-            {
-                return BadRequest(new { message = AlreadyAppliedMessage });
-            }
 
             try
             {
@@ -154,6 +163,7 @@ public class JobApplicationsController : ControllerBase
                     existing.Note = createApplicationDto.Note;
                     existing.AppliedAt = changedAt;
                     existing.ChangeStatus(ApplicationStatus.Submitted, userId, null, changedAt);
+                    _emailOutbox.Queue(emails);
                 });
             }
             catch (Exception ex) when (ex.IsConcurrentChangeConflict())
@@ -168,6 +178,8 @@ public class JobApplicationsController : ControllerBase
         {
             try
             {
+                // e-maile zapisują się w tym samym SaveChanges co aplikacja
+                _emailOutbox.Queue(emails);
                 var created = await _applicationRepository.AddApplicationAsync(
                     JobApplication.Submit(job.Id, userId, createApplicationDto.Note, now));
                 applicationId = created.Id;
@@ -193,7 +205,8 @@ public class JobApplicationsController : ControllerBase
     }
 
     // Zmiana statusu przez rekrutera (admin albo pracodawca firmy oferty); ten sam status z komentarzem
-    // dodaje notatkę do historii
+    // dodaje notatkę do historii. Nowy status (nie sama notatka) - e-mail do kandydata (wg jego preferencji)
+    // zapisywany w outboksie razem ze zmianą
     [HttpPut("{id:int}/status")]
     [Authorize(Roles = Roles.AdminOrEmployer)]
     [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status200OK)]
@@ -236,10 +249,17 @@ public class JobApplicationsController : ControllerBase
             return BadRequest(new { message = "Application already has this status - add a comment to record a note" });
         }
 
+        var emails = application.Status == status
+            ? []
+            : await _emailOutbox.PrepareApplicationStatusChangedAsync(application.JobOfferId, application.UserId, status, comment);
+
         try
         {
-            await _applicationRepository.UpdateApplicationAsync(application,
-                changedAt => application.ChangeStatus(status, userId, comment, changedAt));
+            await _applicationRepository.UpdateApplicationAsync(application, changedAt =>
+            {
+                application.ChangeStatus(status, userId, comment, changedAt);
+                _emailOutbox.Queue(emails);
+            });
         }
         catch (Exception ex) when (ex.IsConcurrentChangeConflict())
         {
@@ -361,7 +381,7 @@ public class JobApplicationsController : ControllerBase
         var uploads = new List<(IFormFile File, ApplicationAttachment Attachment)>(form.Items.Count);
         foreach (var item in form.Items)
         {
-            var (error, type) = await ValidateAttachmentAsync(item.File, cancellationToken);
+            var (error, type) = await AttachmentUploadForm.ValidateFileAsync(item.File, cancellationToken);
             if (type == null)
             {
                 return BadRequest(new { message = error });
@@ -383,62 +403,108 @@ public class JobApplicationsController : ControllerBase
             return BadRequest(new { message = AttachmentFiles.TotalTooLargeMessage });
         }
 
-        var savedKeys = new List<string>(uploads.Count);
-        var recordsMayExist = false;
-        AttachmentsAddResult result;
-        try
-        {
-            foreach (var (file, attachment) in uploads)
+        return await StoreAttachmentsAsync(id, userId, uploads.Select(u => u.Attachment).ToList(),
+            async (attachment, index) =>
             {
-                // klucz dodawany przed zapisem - sprzątany jest też plik, którego zapis się nie udał (magazyn nie
-                // zostawia częściowych plików, ale S3 mógł przyjąć obiekt tuż przed zerwaniem połączenia)
-                savedKeys.Add(attachment.FileKey);
-                await using var content = file.OpenReadStream();
+                await using var content = uploads[index].File.OpenReadStream();
                 await _fileStorage.SaveAsync(attachment.FileKey, content, attachment.ContentType, cancellationToken);
-            }
+            });
+    }
 
-            // bez tokenu żądania: po zapisaniu plików operacja jest doprowadzana do końca, żeby przerwanie nie
-            // zostawiło niepewnego stanu (rekordy zapisane, a pliki usunięte poniżej)
-            recordsMayExist = true;
-            result = await _applicationRepository.AddAttachmentsAsync(id, userId,
-                uploads.Select(u => u.Attachment).ToList(), CancellationToken.None);
-        }
-        catch
+    // Dołączenie dokumentów z profilu kandydata: kopie plików pod nowymi kluczami (usunięcie dokumentu z profilu nie
+    // usuwa załącznika aplikacji). Te same reguły co przy uploadzie: właściciel, status aplikacji, limity aplikacji
+    // (10 plików, 25 MB łącznie z istniejącymi załącznikami), wszystko albo nic.
+    [HttpPost("{id:int}/attachments/from-profile")]
+    [EnableRateLimiting(RateLimitingSettings.UploadsPolicy)]
+    [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<ActionResult<JobApplicationDto>> AttachFromProfile(int id, AttachFromProfileDto attachDto)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId))
         {
-            if (recordsMayExist)
-            {
-                await DeleteFilesWithoutRecordsAsync(savedKeys);
-            }
-            else
-            {
-                await _fileStorage.DeleteQuietlyAsync(savedKeys, _logger);
-            }
-
-            throw;
-        }
-
-        if (result != AttachmentsAddResult.Added)
-        {
-            // stan zmieniło równoległe żądanie (np. decyzja rekrutera, inny upload, usunięcie aplikacji)
-            await _fileStorage.DeleteQuietlyAsync(savedKeys, _logger);
-            return result switch
-            {
-                AttachmentsAddResult.ApplicationNotFound => NotFound(new { message = ApplicationNotFoundMessage }),
-                AttachmentsAddResult.StatusNotAllowed => BadRequest(new { message = AttachmentFiles.StatusMessage }),
-                AttachmentsAddResult.TooMany => BadRequest(new { message = AttachmentFiles.TooManyMessage }),
-                _ => BadRequest(new { message = AttachmentFiles.TotalTooLargeMessage })
-            };
+            return Unauthorized();
         }
 
-        var application = await _applicationRepository.GetApplicationByIdAsync(id, includeHistory: true);
-        if (application == null)
+        var documentIds = (attachDto.DocumentIds ?? []).Distinct().ToList();
+        if (documentIds.Count == 0)
         {
-            // aplikację usunięto zaraz po zapisie - jej pliki usunęło to samo usunięcie
+            return BadRequest(new { message = AttachmentFiles.NoDocumentsSelectedMessage });
+        }
+
+        if (documentIds.Count > AttachmentFiles.MaxAttachments)
+        {
+            return BadRequest(new { message = AttachmentFiles.TooManyMessage });
+        }
+
+        var cancellationToken = HttpContext.RequestAborted;
+        var ownership = await _applicationRepository.GetOwnershipAsync(id, cancellationToken);
+        if (ownership == null || ownership.UserId != userId)
+        {
             return NotFound(new { message = ApplicationNotFoundMessage });
         }
 
-        // dodaje tylko kandydat - nie widzi autorów zmian
-        return CreatedAtAction(nameof(GetApplication), new { id }, application.ToDto(includeHistory: true));
+        if (!JobApplication.AttachmentUploadStatuses.Contains(ownership.Status))
+        {
+            return BadRequest(new { message = AttachmentFiles.StatusMessage });
+        }
+
+        // tylko własne dokumenty - cudze i nieistniejące wyglądają tak samo
+        var documents = await _accountRepository.GetDocumentsAsync(userId, documentIds, cancellationToken);
+        if (documents.Count != documentIds.Count)
+        {
+            return NotFound(new { message = AttachmentFiles.DocumentNotFoundMessage });
+        }
+
+        if (documents.Sum(d => d.Size) > AttachmentFiles.MaxTotalSize)
+        {
+            return BadRequest(new { message = AttachmentFiles.TotalTooLargeMessage });
+        }
+
+        var uploadedAt = DateTime.UtcNow;
+        var copies = new List<(ProfileDocument Document, ApplicationAttachment Attachment)>(documents.Count);
+        foreach (var document in documents.OrderBy(d => documentIds.IndexOf(d.Id)))
+        {
+            var type = AttachmentFileType.FromContentType(document.ContentType);
+            if (type == null)
+            {
+                // obronnie: dokumenty mają typ ustalony przez serwer przy uploadzie
+                _logger.LogWarning("Profile document {DocumentId} has an unsupported content type", document.Id);
+                return NotFound(new { message = AttachmentFiles.DocumentNotFoundMessage });
+            }
+
+            copies.Add((document, new ApplicationAttachment
+            {
+                Kind = document.Kind,
+                FileKey = AttachmentFiles.NewStorageKey(id, type),
+                FileName = document.FileName,
+                ContentType = document.ContentType,
+                Size = document.Size,
+                UploadedAt = uploadedAt
+            }));
+        }
+
+        try
+        {
+            return await StoreAttachmentsAsync(id, userId, copies.Select(c => c.Attachment).ToList(),
+                async (attachment, index) =>
+                {
+                    var source = copies[index].Document;
+                    if (!await _fileStorage.CopyAsync(source.FileKey, attachment.FileKey, attachment.ContentType,
+                            AttachmentFiles.MaxFileSize, cancellationToken))
+                    {
+                        throw new ProfileDocumentMissingException(source.Id);
+                    }
+                });
+        }
+        catch (ProfileDocumentMissingException ex)
+        {
+            _logger.LogWarning("File of profile document {DocumentId} is missing in storage", ex.DocumentId);
+            return NotFound(new { message = AttachmentFiles.DocumentNotFoundMessage });
+        }
     }
 
     // Usunięcie załącznika przez kandydata - w każdym statusie aplikacji (prawo do usunięcia danych); plik
@@ -505,26 +571,7 @@ public class JobApplicationsController : ControllerBase
             return NotFound(new { message = AttachmentFiles.NotFoundMessage });
         }
 
-        try
-        {
-            Response.Headers.ContentDisposition = AttachmentFiles.ContentDisposition(attachment.FileName);
-            Response.Headers.XContentTypeOptions = "nosniff";
-            Response.Headers.CacheControl = "no-store";
-            // rozmiar podany przez magazyn (Local - plik, S3 - nagłówek odpowiedzi); strumienia S3 nie da się
-            // przewijać, więc FileStreamResult sam by go nie ustawił
-            if (file.Length.HasValue)
-            {
-                Response.ContentLength = file.Length.Value;
-            }
-
-            // FileStreamResult zwalnia strumień po wysłaniu odpowiedzi (także przerwanej)
-            return File(file.Content, attachment.ContentType);
-        }
-        catch
-        {
-            await file.DisposeAsync();
-            throw;
-        }
+        return await this.StoredFileAsync(file, attachment.FileName, attachment.ContentType);
     }
 
     [HttpGet("check/{jobId}")]
@@ -570,6 +617,68 @@ public class JobApplicationsController : ControllerBase
         return Ok(applications.Select(a => a.ToDto()));
     }
 
+    // Zapis plików załączników (saveFile - upload albo kopia dokumentu z profilu) i ich rekordów. Wszystko albo nic:
+    // najpierw pliki w magazynie, na końcu rekordy w bazie (pod blokadą wiersza aplikacji z kontrolą limitów); gdy
+    // zapis w bazie się nie uda albo limit przekroczy równoległe żądanie - zapisane pliki są usuwane.
+    private async Task<ActionResult<JobApplicationDto>> StoreAttachmentsAsync(int id, string userId,
+        IReadOnlyList<ApplicationAttachment> attachments, Func<ApplicationAttachment, int, Task> saveFile)
+    {
+        var savedKeys = new List<string>(attachments.Count);
+        var recordsMayExist = false;
+        AttachmentsAddResult result;
+        try
+        {
+            for (var i = 0; i < attachments.Count; i++)
+            {
+                // klucz dodawany przed zapisem - sprzątany jest też plik, którego zapis się nie udał (magazyn nie
+                // zostawia częściowych plików, ale S3 mógł przyjąć obiekt tuż przed zerwaniem połączenia)
+                savedKeys.Add(attachments[i].FileKey);
+                await saveFile(attachments[i], i);
+            }
+
+            // bez tokenu żądania: po zapisaniu plików operacja jest doprowadzana do końca, żeby przerwanie nie
+            // zostawiło niepewnego stanu (rekordy zapisane, a pliki usunięte poniżej)
+            recordsMayExist = true;
+            result = await _applicationRepository.AddAttachmentsAsync(id, userId, attachments, CancellationToken.None);
+        }
+        catch
+        {
+            if (recordsMayExist)
+            {
+                await DeleteFilesWithoutRecordsAsync(savedKeys);
+            }
+            else
+            {
+                await _fileStorage.DeleteQuietlyAsync(savedKeys, _logger);
+            }
+
+            throw;
+        }
+
+        if (result != AttachmentsAddResult.Added)
+        {
+            // stan zmieniło równoległe żądanie (np. decyzja rekrutera, inny upload, usunięcie aplikacji)
+            await _fileStorage.DeleteQuietlyAsync(savedKeys, _logger);
+            return result switch
+            {
+                AttachmentsAddResult.ApplicationNotFound => NotFound(new { message = ApplicationNotFoundMessage }),
+                AttachmentsAddResult.StatusNotAllowed => BadRequest(new { message = AttachmentFiles.StatusMessage }),
+                AttachmentsAddResult.TooMany => BadRequest(new { message = AttachmentFiles.TooManyMessage }),
+                _ => BadRequest(new { message = AttachmentFiles.TotalTooLargeMessage })
+            };
+        }
+
+        var application = await _applicationRepository.GetApplicationByIdAsync(id, includeHistory: true);
+        if (application == null)
+        {
+            // aplikację usunięto zaraz po zapisie - jej pliki usunęło to samo usunięcie
+            return NotFound(new { message = ApplicationNotFoundMessage });
+        }
+
+        // dodaje tylko kandydat - nie widzi autorów zmian
+        return CreatedAtAction(nameof(GetApplication), new { id }, application.ToDto(includeHistory: true));
+    }
+
     // Sprzątanie po błędzie zapisu rekordów załączników: wyjątek mógł wystąpić już po zatwierdzeniu transakcji (np.
     // zerwane połączenie przy potwierdzeniu COMMIT), więc usuwane są tylko pliki, których klucze nie trafiły do bazy.
     // Gdy nie da się tego sprawdzić, pliki zostają - osierocony plik jest mniejszym złem niż rekord bez pliku.
@@ -591,26 +700,6 @@ public class JobApplicationsController : ControllerBase
         await _fileStorage.DeleteQuietlyAsync(savedKeys.Except(recorded, StringComparer.Ordinal), _logger);
     }
 
-    // Rozmiar i typ pliku (po zawartości): wykryty typ albo komunikat błędu
-    private static async Task<(string? Error, AttachmentFileType? Type)> ValidateAttachmentAsync(IFormFile file,
-        CancellationToken cancellationToken)
-    {
-        if (file.Length == 0)
-        {
-            return (AttachmentFiles.EmptyFileMessage, null);
-        }
-
-        if (file.Length > AttachmentFiles.MaxFileSize)
-        {
-            return (AttachmentFiles.TooLargeMessage, null);
-        }
-
-        // strumień pliku z formularza jest przewijalny (bufor ASP.NET Core)
-        await using var content = file.OpenReadStream();
-        var type = await AttachmentFiles.DetectTypeAsync(content, cancellationToken);
-        return type == null ? (AttachmentFiles.UnsupportedTypeMessage, null) : (null, type);
-    }
-
     private async Task<ActionResult<JobApplicationDto>> ApplicationWithHistoryAsync(int id, bool includeChangedBy)
     {
         var application = await _applicationRepository.GetApplicationByIdAsync(id, includeHistory: true);
@@ -621,4 +710,10 @@ public class JobApplicationsController : ControllerBase
 
         return Ok(application.ToDto(includeHistory: true, includeChangedBy));
     }
+}
+
+// Plik dokumentu profilu zniknął z magazynu w trakcie kopiowania do aplikacji (404 zamiast 500)
+internal sealed class ProfileDocumentMissingException(int documentId) : Exception("Profile document file is missing")
+{
+    public int DocumentId { get; } = documentId;
 }

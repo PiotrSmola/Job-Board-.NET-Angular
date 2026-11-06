@@ -39,7 +39,8 @@ public class DockerComposeTests
     {
         var mappings = ReadPortMappings(RepositoryFiles.Find("docker-compose.yml"));
 
-        Assert.Equal(3, mappings.Count);
+        // frontend, backend, MySQL, UI Mailpita
+        Assert.Equal(4, mappings.Count);
         Assert.All(mappings, mapping => Assert.Matches(new Regex(@"^127\.0\.0\.1:\$\{[A-Z_]+:-\d+\}:\d+$"), mapping));
     }
 
@@ -110,6 +111,7 @@ public class DockerComposeTests
     [Theory]
     [InlineData("db")]
     [InlineData("storage")]
+    [InlineData("mailpit")]
     [InlineData("backend")]
     [InlineData("frontend")]
     public void EveryService_RunsWithNoNewPrivileges(string service)
@@ -131,6 +133,32 @@ public class DockerComposeTests
         Assert.Contains("RUN mkdir -p /app/storage && chown app:app /app/storage", runtime);
         Assert.True(runtime.IndexOf("chown app:app", StringComparison.Ordinal) < runtime.IndexOf("USER app", StringComparison.Ordinal));
         Assert.Contains("ASPNETCORE_HTTP_PORTS=8080", runtime);
+    }
+
+    [Fact]
+    public void Mailpit_IsPinnedWithTheUiOnLocalhostAndSmtpOnlyInsideCompose()
+    {
+        var compose = File.ReadAllText(RepositoryFiles.Find("docker-compose.yml"));
+        var mailpit = ServiceBlock(compose, "mailpit");
+
+        Assert.Contains("image: axllent/mailpit:v1.31.1", mailpit);
+        // jedyny publikowany port to UI (8025); SMTP 1025 dostępny tylko z sieci compose
+        Assert.Contains("- \"127.0.0.1:${MAILPIT_PORT:-8025}:8025\"", mailpit);
+        Assert.DoesNotContain("1025", mailpit);
+        Assert.Contains("MAILPIT_PORT=8025", File.ReadAllText(RepositoryFiles.Find(".env.example")));
+    }
+
+    [Fact]
+    public void Backend_SendsEmailsToMailpitWithLinksToTheFrontendPort()
+    {
+        var compose = File.ReadAllText(RepositoryFiles.Find("docker-compose.yml"));
+        var backend = ServiceBlock(compose, "backend");
+
+        Assert.Contains("Email__Smtp__Host: mailpit", backend);
+        Assert.Contains("Email__Smtp__Port: 1025", backend);
+        Assert.Contains("Email__Smtp__Security: None", backend);
+        Assert.Contains("Frontend__BaseUrl: http://localhost:${FRONTEND_PORT:-4200}", backend);
+        Assert.Matches(new Regex(@"mailpit:\s+condition: service_started"), backend);
     }
 
     // Treść usługi (od "  name:" do następnej usługi albo sekcji najwyższego poziomu)

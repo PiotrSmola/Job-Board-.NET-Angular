@@ -12,7 +12,7 @@ namespace Backend.Tests.Integration;
 [Trait("Category", "Migrations")]
 public class AddJobOfferListIndexMigrationTests
 {
-    private const string PreviousMigration = "20261106103645_AddApplicationAttachments";
+    private const string PreviousMigration = "20261106142123_AddUserAccount";
     private const string AddJobOfferListIndex = "20261106152754_AddJobOfferListIndex";
     private const string IndexName = "IX_JobOffers_Status_ExpiresAt_CreatedAt";
 

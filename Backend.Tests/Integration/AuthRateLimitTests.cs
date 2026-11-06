@@ -78,10 +78,14 @@ public class AuthRateLimitTests : IClassFixture<DefaultAuthRateLimitFixture>
         Assert.Equal(60, settings.PublicLists.WindowSeconds);
     }
 
-    // Każdy endpoint AuthController (także dodany później, np. reset hasła) jest objęty polityką "auth"
+    // Każdy endpoint AuthController (także dodany później, np. reset hasła) jest objęty polityką "auth" - poza
+    // endpointami wysyłającymi e-maile, których atrybut "account-emails" zastępuje politykę klasy (middleware stosuje
+    // jedną politykę - najbliższy endpointowi EnableRateLimiting, więc limity się nie sumują)
     [Fact]
-    public void EveryAuthEndpoint_UsesTheAuthPolicy()
+    public void EveryAuthEndpoint_UsesTheAuthPolicy_ExceptTheEmailSendingOnes()
     {
+        string[] emailSending = [nameof(AuthController.ForgotPassword), nameof(AuthController.ResendConfirmation)];
+
         var endpoints = _api.Factory.Services.GetRequiredService<EndpointDataSource>().Endpoints
             .Where(e => e.Metadata.GetMetadata<ControllerActionDescriptor>()?.ControllerTypeInfo == typeof(AuthController))
             .ToList();
@@ -89,7 +93,14 @@ public class AuthRateLimitTests : IClassFixture<DefaultAuthRateLimitFixture>
         Assert.Contains(endpoints, e => e.Metadata.GetMetadata<ControllerActionDescriptor>()!.ActionName == nameof(AuthController.Login));
         Assert.Contains(endpoints, e => e.Metadata.GetMetadata<ControllerActionDescriptor>()!.ActionName == nameof(AuthController.Register));
         Assert.Contains(endpoints, e => e.Metadata.GetMetadata<ControllerActionDescriptor>()!.ActionName == nameof(AuthController.RegisterEmployer));
-        Assert.All(endpoints, e => Assert.Equal(RateLimitingSettings.AuthPolicy, e.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName));
+        Assert.Contains(endpoints, e => e.Metadata.GetMetadata<ControllerActionDescriptor>()!.ActionName == nameof(AuthController.ResetPassword));
+        Assert.All(endpoints, e =>
+        {
+            var expected = emailSending.Contains(e.Metadata.GetMetadata<ControllerActionDescriptor>()!.ActionName)
+                ? RateLimitingSettings.AccountEmailsPolicy
+                : RateLimitingSettings.AuthPolicy;
+            Assert.Equal(expected, e.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName);
+        });
     }
 
     [Fact]

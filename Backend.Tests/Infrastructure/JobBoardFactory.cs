@@ -1,7 +1,11 @@
 using Backend.Data;
+using Backend.Interfaces;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using MySqlConnector;
 
@@ -18,6 +22,10 @@ public class JobBoardFactory : WebApplicationFactory<Program>
     public const string AuthPermitLimitKey = "RateLimiting:Auth:PermitLimit";
     public const string AuthConcurrencyLimitKey = "RateLimiting:Auth:ConcurrencyLimit";
     public const string PublicListsPermitLimitKey = "RateLimiting:PublicLists:PermitLimit";
+    public const string AccountEmailsPermitLimitKey = "RateLimiting:AccountEmails:PermitLimit";
+
+    // adres frontendu w linkach e-maili wysyłanych w testach
+    public const string FrontendBaseUrl = "http://frontend.test:4200";
 
     private readonly string _environment;
     private readonly Dictionary<string, string?> _settings;
@@ -27,6 +35,9 @@ public class JobBoardFactory : WebApplicationFactory<Program>
 
     // katalog plików (Storage:Provider = Local) - osobny dla każdej fabryki, usuwany razem z bazą
     public string StoragePath { get; }
+
+    // wiadomości wysłane przez outbox (zamiast SMTP); null - prawdziwy SmtpEmailSender (UseRealEmailSender)
+    public FakeEmailSender? EmailSender { get; private set; } = new();
 
     public JobBoardFactory(
         string environment = "Development",
@@ -54,7 +65,13 @@ public class JobBoardFactory : WebApplicationFactory<Program>
             // limity logowania i list publicznych podniesione; testy tych limitów ustawiają własne wartości
             [AuthPermitLimitKey] = "100000",
             [AuthConcurrencyLimitKey] = "1000",
-            [PublicListsPermitLimitKey] = "100000"
+            [PublicListsPermitLimitKey] = "100000",
+            // e-maile: wysyłka przez FakeEmailSender (host SMTP tylko włącza procesor outboksu), szybkie odpytywanie;
+            // limit żądań e-maili bezpieczeństwa podniesiony jak limit uploadów (testy limitu ustawiają własny)
+            ["Frontend:BaseUrl"] = FrontendBaseUrl,
+            ["Email:Smtp:Host"] = "smtp.fake.test",
+            ["Email:Outbox:PollIntervalSeconds"] = "1",
+            [AccountEmailsPermitLimitKey] = "100000"
         };
 
         // poza Development hasło kont adminów z seeda musi być skonfigurowane - testy logują się tym samym co w Development
@@ -78,6 +95,26 @@ public class JobBoardFactory : WebApplicationFactory<Program>
         builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(_settings));
 
         builder.ConfigureLogging(logging => logging.ClearProviders());
+
+        if (EmailSender != null)
+        {
+            var sender = EmailSender;
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IEmailSender>();
+                services.AddSingleton<IEmailSender>(sender);
+            });
+        }
+    }
+
+    // Prawdziwa wysyłka SMTP (np. do dev Mailpita) zamiast FakeEmailSender - przed startem aplikacji
+    public JobBoardFactory UseRealEmailSender(string host, int port)
+    {
+        EmailSender = null;
+        _settings["Email:Smtp:Host"] = host;
+        _settings["Email:Smtp:Port"] = port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _settings["Email:Smtp:Security"] = "None";
+        return this;
     }
 
     // Nadpisanie ustawień przed startem aplikacji (np. magazyn S3 albo zła konfiguracja magazynu)
