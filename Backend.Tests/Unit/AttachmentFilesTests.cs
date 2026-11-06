@@ -97,6 +97,22 @@ public class AttachmentFilesTests
         Assert.Null(await DetectAsync(docx));
     }
 
+    // katalog centralny musi kończyć się dokładnie na rekordzie EOCD - dane wstawione pomiędzy (ukryta treść, której
+    // nie opisuje żaden wpis) są odrzucane, choć ZipArchive by je pominął
+    [Theory]
+    [InlineData(1)]
+    [InlineData(64)]
+    public async Task DetectType_DocxWithBytesBetweenCentralDirectoryAndEndRecord_ReturnsNull(int gap)
+    {
+        var docx = AttachmentTestFiles.Docx();
+        var eocd = docx.AsSpan().LastIndexOf(new byte[] { 0x50, 0x4B, 0x05, 0x06 });
+        Assert.NotNull(await DetectAsync(docx));
+
+        byte[] withGap = [.. docx.AsSpan(0, eocd), .. new byte[gap], .. docx.AsSpan(eocd)];
+
+        Assert.Null(await DetectAsync(withGap));
+    }
+
     [Fact]
     public async Task DetectType_NonSeekableStream_Throws()
     {

@@ -236,8 +236,9 @@ public static class AttachmentFiles
     }
 
     // Rekord EOCD (sygnatura PK 05 06, ostatnie 22 B + komentarz do 64 KB): jeden dysk, bez ZIP64 (0xFFFF /
-    // 0xFFFFFFFF), 1-1000 wpisów, katalog centralny do 256 KB, w całości przed rekordem EOCD i nie mniejszy niż
-    // minimalny rozmiar zadeklarowanej liczby wpisów (46 B na wpis)
+    // 0xFFFFFFFF), 1-1000 wpisów, katalog centralny do 256 KB, kończący się dokładnie na rekordzie EOCD (bez danych
+    // pomiędzy, których nie opisuje żaden wpis) i nie mniejszy niż minimalny rozmiar zadeklarowanej liczby wpisów
+    // (46 B na wpis)
     private static bool HasAcceptableCentralDirectory(Stream content)
     {
         const int eocdSize = 22;
@@ -277,7 +278,7 @@ public static class AttachmentFiles
                    && centralDirectoryOffset != uint.MaxValue
                    && centralDirectorySize <= MaxDocxCentralDirectorySize
                    && centralDirectorySize >= (long)totalEntries * minCentralDirectoryEntrySize
-                   && (long)centralDirectoryOffset + centralDirectorySize <= eocdPosition;
+                   && (long)centralDirectoryOffset + centralDirectorySize == eocdPosition;
         }
 
         return false;
