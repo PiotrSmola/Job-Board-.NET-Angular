@@ -250,6 +250,9 @@ public class AuthRateLimitTests : IClassFixture<DefaultAuthRateLimitFixture>
     [Theory]
     [InlineData("/api/jobs")]
     [InlineData("/api/companies")]
+    [InlineData("/api/jobs/facets")]
+    [InlineData("/api/categories")]
+    [InlineData("/api/skills")]
     public async Task PublicList_AboveTheLimit_Returns429PerAddress(string url)
     {
         using var client = ClientFrom(NewIp());

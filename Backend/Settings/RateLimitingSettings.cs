@@ -7,7 +7,8 @@ namespace Backend.Settings;
 //   każdego adresu IP (brute force) i wspólny limit równoległych żądań (haszowanie haseł obciąża CPU),
 // - "account-emails" - żądania wysyłające e-maile bezpieczeństwa (reset hasła - per adres IP, ponowne wysłanie
 //   potwierdzenia - per użytkownik); na tych endpointach zastępuje "auth" (atrybut akcji ma pierwszeństwo),
-// - "public-lists" - publiczne listy ofert i firm (z wyszukiwaniem), osobny limit dla każdego adresu IP.
+// - "public-lists" - publiczne listy ofert i firm (z wyszukiwaniem), fasety ofert, kategorie i podpowiedzi
+//   umiejętności, osobny limit dla każdego adresu IP.
 public class RateLimitingSettings
 {
     public const string SectionName = "RateLimiting";

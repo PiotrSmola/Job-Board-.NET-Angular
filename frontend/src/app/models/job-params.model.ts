@@ -1,4 +1,4 @@
-import { WorkType } from './job-offer.model';
+import { Currency, SeniorityLevel, WorkType } from './job-offer.model';
 
 export type JobOrderBy =
   | 'newest'
@@ -16,12 +16,23 @@ export class JobParams {
   pageNumber = 1;
   pageSize = 10;
   searchTerm = '';
-  workType: WorkType | null = null;
+  /** Tryby pracy (OR w obrębie filtra); pusta lista = wszystkie. */
+  workTypes: WorkType[] = [];
   minSalary: number | null = null;
   maxSalary: number | null = null;
   location = '';
   /** Oferty jednej firmy (null = wszystkie). */
   companyId: number | null = null;
+  /** Slug kategorii (null = wszystkie). */
+  category: string | null = null;
+  /** Poziomy doświadczenia (OR); pusta lista = wszystkie. */
+  seniority: SeniorityLevel[] = [];
+  /** Maska bitowa ContractTypes – pasuje oferta z którymkolwiek zaznaczonym typem (0 = bez filtra). */
+  contractTypes = 0;
+  /** Nazwy umiejętności – oferta musi mieć wszystkie. */
+  skills: string[] = [];
+  /** Waluta widełek (null = dowolna). */
+  currency: Currency | null = null;
   orderBy: JobOrderBy = 'newest';
 }
 

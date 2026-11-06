@@ -94,6 +94,25 @@ Admin i pracodawca (tylko oferty swojej firmy) zarządzają ofertami w panelu (`
 
 Usunięcie oferty (`DELETE /api/jobs/{id}`): admin usuwa ofertę razem z jej aplikacjami, pracodawca tylko ofertę bez żadnych aplikacji (także wycofanych) - ofertę z aplikacjami kandydatów zwraca `400` (`Job offer has applications - close it instead`), można ją natomiast zamknąć.
 
+## Job taxonomy and filters
+
+Every offer can have a category, a seniority level, contract types, a salary currency and period, and up to 15 skills. The job list (`GET /api/jobs`, and `GET /api/jobs/manage` for admins and employers) accepts these optional filters, all combined with AND:
+
+| Parameter | Meaning |
+| --- | --- |
+| `category` / `categoryId` | category slug (`[a-z0-9-]`, up to 100 characters) and/or id |
+| `seniority` | comma-separated levels (`0` intern, `1` junior, `2` mid, `3` senior, `4` lead, `5` manager); any of them matches |
+| `contractTypes` | bit mask (`1` employment, `2` B2B, `4` mandate, `8` specific-task, `16` internship, `0..31`); an offer matches when it has any selected type; `0` means no filter |
+| `workType` | comma-separated work types (`0,1`); a single number or name still works |
+| `skills` | comma-separated skill names (up to 10, 50 characters each, case-insensitive); an offer must have all of them |
+| `currency` | salary currency (`0` PLN, `1` EUR, `2` USD, `3` GBP); `0` is a real filter. `minSalary` / `maxSalary` are compared in the offer's own currency, without conversion |
+
+Invalid or oversized values return `400`. All filters run in SQL; the list loads category and skills in the same query.
+
+`GET /api/jobs/facets` (public, same filter parameters, no paging) returns `total` and the counts for categories, seniority, single contract-type bits, work types and the 20 most common skills. The counts of a facet ignore that facet's own filter (so a user can widen the selection) and apply all the others; values with a zero count are omitted. `GET /api/categories` lists the categories with the number of publicly visible offers, `GET /api/skills?search=&limit=` suggests skills used by publicly visible offers (substring match, prefixes first, then by popularity; `limit` 1-20, default 10). Admins manage categories with `POST/PUT/DELETE /api/admin/categories`; deleting a category keeps its offers and clears their category.
+
+When an offer is created or updated (`PUT` replaces all taxonomy fields), unknown skills are created automatically and matched to existing ones case-insensitively; a skill name cannot contain a comma (it is the list separator in filters). The migration `AddJobTaxonomy` gives existing offers PLN, monthly salaries, no contract types, no level and no category; on startup the demo categories are created when none exist and the demo offers without any taxonomy are filled in.
+
 ## Proces rekrutacji
 
 Każda aplikacja ma status, a każda jego zmiana (także złożenie aplikacji) trafia do historii z datą, autorem i opcjonalnym komentarzem:
@@ -198,7 +217,7 @@ The project runs locally only (a portfolio project, the Docker stack listens on 
 - **Login and registration** (the whole `AuthController`, rate limiting policy `auth` - new authentication endpoints such as e-mail confirmation and password reset inherit it automatically; only `forgot-password` and `resend-confirmation` use the `account-emails` policy instead - see "User account and e-mails"): at most 10 requests per minute per client IP (`RateLimiting:Auth:PermitLimit`, `RateLimiting:Auth:WindowSeconds`) and 4 at once overall (`RateLimiting:Auth:ConcurrencyLimit`, no queue - password hashing is CPU-heavy). Exceeding a limit returns `429` `Too many requests - try again later` with `Retry-After` (seconds until the end of the window, `1` for the concurrency limit). The limits are validated at startup (a value below 1 stops the startup).
 - **Account lockout** after 5 failed attempts for 5 minutes without account enumeration (see the paragraph under the test accounts): an unknown account and a wrong password give the same `401` in comparable time, `423` only with the correct password. Parallel attempts for one account are serialized (a lock per normalized email whose entries are removed after use), so the counter never loses an attempt.
 - **Input validation**: email up to 256 characters and password up to 100 in every DTO with credentials (login, registration, password change and reset, account deletion - `CredentialLimits`, the same password limit as in the frontend forms), search terms and the location filter of the lists up to 100 characters (`400`), page numbers capped at 100,000 (a page past the end is empty - `200`, not `500`).
-- **Public lists** (`GET /api/jobs`, `GET /api/companies`, including search): 120 requests per minute per client IP (`RateLimiting:PublicLists:*`); the job list is backed by the composite index `(Status, ExpiresAt, CreatedAt)`.
+- **Public lists** (`GET /api/jobs`, `GET /api/jobs/facets`, `GET /api/companies`, `GET /api/categories`, `GET /api/skills`, including search - one shared limit): 120 requests per minute per client IP (`RateLimiting:PublicLists:*`); the job list is backed by the composite index `(Status, ExpiresAt, CreatedAt)`.
 - **Client IP behind nginx**: the per-IP limits see the real address - the backend reads `X-Forwarded-For` (`UseForwardedHeaders`, last entry only, i.e. the one appended by nginx, so spoofed earlier entries do not bypass the limit).
 - **JWT**: HS256 only, 30 s clock skew, 120-minute lifetime (`JwtSettings:ExpirationInMinutes`), a hash of the security stamp instead of the stamp itself; every request checks that the account still exists and the stamp is current.
 - **Headers** - nginx (frontend and proxied API): `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (no camera, microphone, geolocation, payment, USB), `Cross-Origin-Opener-Policy: same-origin`, no nginx version (`server_tokens off`); gzip compression; files with a content hash in the name (`*.js`, `*.css`, `*.woff2` from the build) get `Cache-Control: public, max-age=31536000, immutable`, `index.html` gets `no-cache`. The headers are set only at `server` level (`add_header` in a `location` block drops all inherited ones - guarded by `NginxConfigTests`). Backend: no `Server` header, `X-Content-Type-Options: nosniff` on every API response, `Cache-Control: no-store` on responses with user data (requests with a token and endpoints that require login).

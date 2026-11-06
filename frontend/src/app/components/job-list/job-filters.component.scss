@@ -1,0 +1,128 @@
+:host {
+  display: block;
+}
+
+.panel {
+  padding: 20px;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.panel-title {
+  margin: 0 0 16px;
+  font-size: 1.25rem;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+mat-form-field {
+  width: 100%;
+}
+
+.group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+
+  legend {
+    padding: 0;
+    margin-bottom: 4px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  mat-checkbox,
+  mat-radio-button {
+    display: block;
+  }
+}
+
+.count {
+  color: var(--text-secondary);
+}
+
+.salary-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+
+  input[type=number] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+
+    &::-webkit-outer-spin-button,
+    &::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+  }
+}
+
+// Zarezerwowane miejsce na komunikat – pojawienie się błędu nie przesuwa układu
+.error {
+  min-height: 1.25em;
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: #ff8a80;
+}
+
+.clear {
+  align-self: flex-start;
+}
+
+.toggle {
+  display: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.badge {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--primary-color);
+  color: #000;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+@media (max-width: 959px) {
+  .panel-title {
+    // Przycisk „Filtry” pełni rolę nagłówka sekcji
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .toggle {
+    display: inline-flex;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .body {
+    display: none;
+    margin-top: 16px;
+
+    &.open {
+      display: flex;
+    }
+  }
+}

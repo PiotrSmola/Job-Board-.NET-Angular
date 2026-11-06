@@ -16,6 +16,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
 
     public DbSet<Company> Companies { get; set; }
     public DbSet<JobOffer> JobOffers { get; set; }
+    public DbSet<Category> Categories { get; set; }
+    public DbSet<Skill> Skills { get; set; }
     public DbSet<JobApplication> JobApplications { get; set; }
     public DbSet<ApplicationStatusHistory> ApplicationStatusHistories { get; set; }
     public DbSet<ApplicationAttachment> ApplicationAttachments { get; set; }
@@ -54,6 +56,26 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
             // bo EF pomijałby wtedy przy INSERT wartość Draft (= domyślna wartość CLR enuma)
             entity.Property(e => e.Status).HasConversion<int>();
             entity.Property(e => e.ExpiresAt);
+            // wartości domyślne kolumn (0 = PLN, miesięcznie, bez typów umów) są ustawione w migracji - w modelu ich
+            // nie deklarujemy z tego samego powodu co przy Status
+            entity.Property(e => e.ContractTypes).HasConversion<int>();
+            entity.Property(e => e.SalaryCurrency).HasConversion<int>();
+            entity.Property(e => e.SalaryPeriod).HasConversion<int>();
+
+            // filtry listy ofert (kategoria ma indeks klucza obcego; maska typów umów nie jest indeksowalna)
+            entity.HasIndex(e => e.Seniority);
+            entity.HasIndex(e => e.SalaryCurrency);
+
+            // usunięcie kategorii zostawia oferty bez kategorii
+            entity.HasOne(e => e.Category)
+                .WithMany(e => e.JobOffers)
+                .HasForeignKey(e => e.CategoryId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // umiejętności: wiele-do-wielu, powiązania znikają razem z ofertą albo umiejętnością
+            entity.HasMany(e => e.Skills)
+                .WithMany(e => e.JobOffers)
+                .UsingEntity(join => join.ToTable("JobOfferSkills"));
 
             // publiczna lista ofert: filtr po statusie i dacie ważności, domyślne sortowanie po dacie utworzenia
             entity.HasIndex(e => new { e.Status, e.ExpiresAt, e.CreatedAt });
@@ -68,6 +90,27 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
                 .WithMany(e => e.JobOffers)
                 .HasForeignKey(e => e.CompanyId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Category>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Slug).IsRequired().HasMaxLength(100);
+
+            // unikalność bez rozróżniania wielkości liter zapewnia kolacja kolumn (utf8mb4_0900_ai_ci)
+            entity.HasIndex(e => e.Name).IsUnique();
+            entity.HasIndex(e => e.Slug).IsUnique();
+        });
+
+        builder.Entity<Skill>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(50);
+            // klucz porównania (małe litery) w kolacji binarnej: dopasowanie dokładne, deterministyczne po stronie bazy i kodu
+            entity.Property(e => e.NormalizedName).IsRequired().HasMaxLength(50).UseCollation("utf8mb4_bin");
+
+            entity.HasIndex(e => e.NormalizedName).IsUnique();
         });
 
         builder.Entity<Company>(entity =>

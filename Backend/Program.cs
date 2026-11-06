@@ -128,6 +128,8 @@ builder.Services.AddCors(options =>
 builder.Services.AddScoped<IJobRepository, JobRepository>();
 builder.Services.AddScoped<IJobApplicationRepository, JobApplicationRepository>();
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
+builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
+builder.Services.AddScoped<ISkillRepository, SkillRepository>();
 builder.Services.AddScoped<IAccountRepository, AccountRepository>();
 builder.Services.AddScoped<ISavedJobRepository, SavedJobRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
@@ -173,7 +175,8 @@ builder.Services.AddScoped<ICurrentUserAccess, CurrentUserAccess>();
 //   każdego adresu IP i wspólny limit równoległych żądań (haszowanie haseł obciąża CPU),
 // - "account-emails" (żądania wysyłające e-maile bezpieczeństwa) - per adres IP / użytkownik; na tych endpointach
 //   zastępuje "auth" z klasy kontrolera (middleware bierze najbliższy endpointowi atrybut EnableRateLimiting),
-// - "public-lists" (publiczne listy ofert i firm) - osobny limit dla każdego adresu IP.
+// - "public-lists" (publiczne listy ofert i firm, fasety, kategorie i podpowiedzi umiejętności) - osobny limit
+//   dla każdego adresu IP (wspólny dla tych endpointów).
 // Adres IP to adres klienta po UseForwardedHeaders (X-Forwarded-For od nginx). Bez kolejek; przekroczenie -> 429
 // z komunikatem API i Retry-After (czas do końca okna, przy limicie równoległości 1 s).
 // Limitery nieaktywnych partycji są usuwane przez PartitionedRateLimiter (brak nieograniczonego cache'u).

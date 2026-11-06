@@ -46,8 +46,11 @@ public class SavedJobRepository : ISavedJobRepository
 
     public async Task<PagedList<SavedJob>> GetSavedJobsAsync(string userId, SavedJobParams savedJobParams)
     {
+        // kategoria i umiejętności potrzebne do JobOfferDto (jak na publicznej liście)
         var query = Visible(userId)
             .Include(s => s.JobOffer).ThenInclude(j => j.Company)
+            .Include(s => s.JobOffer).ThenInclude(j => j.Category)
+            .Include(s => s.JobOffer).ThenInclude(j => j.Skills)
             .AsNoTracking()
             .OrderByDescending(s => s.SavedAt)
             .ThenByDescending(s => s.JobOfferId);

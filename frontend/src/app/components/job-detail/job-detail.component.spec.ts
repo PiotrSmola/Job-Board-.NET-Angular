@@ -8,7 +8,7 @@ import { APPLY_DIALOG_CONFIG, ApplyDialogComponent, ApplyDialogData, ATTACHMENTS
 import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
-import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
+import { ContractTypes, Currency, JobOffer, JobOfferStatus, SalaryPeriod, SeniorityLevel, WorkType } from '../../models/job-offer.model';
 import { ApplicationAttachment, ApplicationStatus, AttachmentKind, AttachmentUploadEvent, AttachmentUploadItem } from '../../models/job-application.model';
 import { SavedJobsService } from '../../services/saved-jobs.service';
 import { AccountService } from '../../services/account.service';
@@ -17,7 +17,9 @@ import { ProfileDocument } from '../../models/account.model';
 const JOB: JobOffer = {
   id: 5, title: 'Angular Developer', company: 'Acme', companyId: 1, description: 'Opis', salaryMin: 1000, salaryMax: 2000,
   location: 'Rzeszów', workType: WorkType.Remote, createdAt: new Date('2026-01-01'),
-  status: JobOfferStatus.Active, expiresAt: null, isExpired: false
+  status: JobOfferStatus.Active, expiresAt: null, isExpired: false,
+  categoryId: null, categoryName: null, categorySlug: null, seniority: null, contractTypes: 0,
+  salaryCurrency: Currency.PLN, salaryPeriod: SalaryPeriod.Month, skills: []
 };
 
 const SAVED_CV: ApplicationAttachment = {
@@ -101,6 +103,45 @@ describe('JobDetailComponent', () => {
     expect(checkIfApplied).toHaveBeenCalledWith(5);
     expect(component.job).toEqual(JOB);
     expect(component.hasApplied).toBe(false);
+  });
+
+  describe('taxonomy', () => {
+    const TAXONOMY_JOB: JobOffer = {
+      ...JOB,
+      categoryId: 2, categoryName: 'DevOps i chmura', categorySlug: 'devops-i-chmura',
+      seniority: SeniorityLevel.Senior, contractTypes: ContractTypes.B2B | ContractTypes.MandateContract,
+      salaryMin: 120, salaryMax: 150, salaryCurrency: Currency.EUR, salaryPeriod: SalaryPeriod.Hour,
+      skills: ['Angular', 'Docker', 'Kubernetes', 'Terraform', 'Ansible', 'Git', 'Linux']
+    };
+    const root = () => fixture.nativeElement as HTMLElement;
+
+    it('shows the category as a link to the filtered list, the level and the contract types', () => {
+      create(of(TAXONOMY_JOB));
+
+      const link = root().querySelector<HTMLAnchorElement>('a.category-link')!;
+      expect(link.textContent?.trim()).toBe('DevOps i chmura');
+      expect(link.getAttribute('href')).toBe('/jobs?category=devops-i-chmura');
+      const text = root().textContent ?? '';
+      expect(text).toContain('Senior');
+      expect(text).toContain('B2B, Umowa zlecenie');
+    });
+
+    it('shows the salary with currency and period and the full list of skills', () => {
+      create(of(TAXONOMY_JOB));
+
+      expect(component.formatSalary()).toBe('120–150 EUR / h');
+      const skills = Array.from(root().querySelectorAll('.skills li')).map(li => li.textContent?.trim());
+      expect(skills).toEqual(['Angular', 'Docker', 'Kubernetes', 'Terraform', 'Ansible', 'Git', 'Linux']);
+    });
+
+    it('hides the taxonomy rows for an offer without category, level, contracts and skills', () => {
+      create();
+
+      expect(root().querySelector('a.category-link')).toBeNull();
+      expect(root().querySelector('.skills-section')).toBeNull();
+      expect(root().textContent).not.toContain('Poziom');
+      expect(root().textContent).not.toContain('Typ umowy');
+    });
   });
 
   describe('loadJob errors', () => {

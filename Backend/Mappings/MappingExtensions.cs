@@ -9,7 +9,8 @@ public static class MappingExtensions
 {
     public static JobOfferDto ToDto(this JobOffer job) => job.ToDto(DateTime.UtcNow);
 
-    // Wymaga załadowanej nawigacji Company (Include) - inaczej nazwa firmy będzie pusta
+    // Wymaga załadowanych nawigacji Company, Category i Skills (Include) - inaczej nazwa firmy będzie pusta,
+    // a kategoria i umiejętności brakujące
     public static JobOfferDto ToDto(this JobOffer job, DateTime now) => new()
     {
         Id = job.Id,
@@ -24,7 +25,19 @@ public static class MappingExtensions
         CreatedAt = job.CreatedAt,
         Status = job.Status,
         ExpiresAt = job.ExpiresAt,
-        IsExpired = job.IsExpired(now)
+        IsExpired = job.IsExpired(now),
+        CategoryId = job.CategoryId,
+        CategoryName = job.Category?.Name,
+        CategorySlug = job.Category?.Slug,
+        Seniority = job.Seniority,
+        ContractTypes = job.ContractTypes,
+        SalaryCurrency = job.SalaryCurrency,
+        SalaryPeriod = job.SalaryPeriod,
+        Skills = (job.Skills ?? [])
+            .Select(s => s.Name)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(n => n, StringComparer.Ordinal)
+            .ToList()
     };
 
     public static JobOffer ToEntity(this CreateJobOfferDto dto, int companyId)
@@ -58,7 +71,7 @@ public static class MappingExtensions
         }
     }
 
-    // Przepisuje pola wspólne dla tworzenia i edycji (bez firmy)
+    // Przepisuje pola wspólne dla tworzenia i edycji (bez firmy i umiejętności - te zapisuje repozytorium)
     private static void ApplyFormTo(this JobOfferFormDto dto, JobOffer job)
     {
         job.Title = dto.Title;
@@ -68,6 +81,11 @@ public static class MappingExtensions
         job.Location = dto.Location;
         job.WorkType = dto.WorkType;
         job.ExpiresAt = dto.GetExpiresAtUtc();
+        job.CategoryId = dto.CategoryId;
+        job.Seniority = dto.Seniority;
+        job.ContractTypes = dto.ContractTypes;
+        job.SalaryCurrency = dto.SalaryCurrency;
+        job.SalaryPeriod = dto.SalaryPeriod;
     }
 
     // Wymaga załadowanych nawigacji JobOffer (z Company), User i Attachments (Include) - inaczej pola pochodne będą puste.
@@ -164,6 +182,29 @@ public static class MappingExtensions
 
     // includeReview: status, powód odrzucenia i data decyzji (admin i członkowie firmy);
     // membersCount tylko w odpowiedziach panelu admina
+    public static CategoryDto ToDto(this CategorySummary summary) => new()
+    {
+        Id = summary.Category.Id,
+        Name = summary.Category.Name,
+        Slug = summary.Category.Slug,
+        SortOrder = summary.Category.SortOrder,
+        ActiveJobsCount = summary.ActiveJobsCount
+    };
+
+    public static JobFacetsDto ToDto(this JobFacets facets) => new()
+    {
+        Total = facets.Total,
+        Categories = facets.Categories
+            .Select(c => new FacetCategoryDto { Id = c.Id, Slug = c.Slug, Name = c.Name, Count = c.Count })
+            .ToList(),
+        Seniority = facets.Seniority.Select(ToFacetValueDto).ToList(),
+        ContractTypes = facets.ContractTypes.Select(ToFacetValueDto).ToList(),
+        WorkTypes = facets.WorkTypes.Select(ToFacetValueDto).ToList(),
+        Skills = facets.Skills.Select(s => new FacetSkillDto { Name = s.Name, Count = s.JobsCount }).ToList()
+    };
+
+    private static FacetValueDto ToFacetValueDto(FacetCount count) => new() { Value = count.Value, Count = count.Count };
+
     public static CompanyDto ToDto(this Company company, int activeJobsCount, bool includeReview, int? membersCount = null) => new()
     {
         Id = company.Id,

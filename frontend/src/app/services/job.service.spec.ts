@@ -2,9 +2,10 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { JobService } from './job.service';
-import { CreateJobOffer, JobOffer, JobOfferStatus, WorkType } from '../models/job-offer.model';
+import { ContractTypes, CreateJobOffer, Currency, JobOffer, JobOfferStatus, SalaryPeriod, SeniorityLevel, WorkType } from '../models/job-offer.model';
 import { JobParams, ManageJobParams } from '../models/job-params.model';
 import { PaginatedResult } from '../models/pagination.model';
+import { JobFacets } from '../models/taxonomy.model';
 
 const JOB: JobOffer = {
   id: 1,
@@ -19,7 +20,9 @@ const JOB: JobOffer = {
   createdAt: new Date('2026-01-01'),
   status: JobOfferStatus.Active,
   expiresAt: null,
-  isExpired: false
+  isExpired: false,
+  categoryId: null, categoryName: null, categorySlug: null, seniority: null, contractTypes: 0,
+  salaryCurrency: Currency.PLN, salaryPeriod: SalaryPeriod.Month, skills: []
 };
 
 describe('JobService', () => {
@@ -52,7 +55,7 @@ describe('JobService', () => {
       params.pageNumber = 3;
       params.pageSize = 25;
       params.searchTerm = 'angular';
-      params.workType = WorkType.Hybrid;
+      params.workTypes = [WorkType.Hybrid];
       params.minSalary = 5000;
       params.maxSalary = 15000;
       params.location = 'Kraków';
@@ -74,7 +77,7 @@ describe('JobService', () => {
 
     it('sends workType=0 (Remote) even though it is falsy', () => {
       const params = new JobParams();
-      params.workType = WorkType.Remote;
+      params.workTypes = [WorkType.Remote];
 
       service.getJobs(params).subscribe();
 
@@ -83,20 +86,57 @@ describe('JobService', () => {
       req.flush([]);
     });
 
-    it('omits empty search term, location and null filters', () => {
+    it('omits empty search term, location and empty filters', () => {
       const params = new JobParams();
       params.searchTerm = '';
       params.location = '';
-      params.workType = null;
+      params.workTypes = [];
       params.minSalary = null;
       params.maxSalary = null;
 
       service.getJobs(params).subscribe();
 
       const req = http.expectOne(r => r.url === '/api/jobs');
-      for (const key of ['searchTerm', 'location', 'workType', 'minSalary', 'maxSalary']) {
+      for (const key of [
+        'searchTerm', 'location', 'workType', 'minSalary', 'maxSalary', 'category', 'seniority', 'contractTypes', 'skills', 'currency'
+      ]) {
         expect(req.request.params.has(key)).toBe(false);
       }
+      req.flush([]);
+    });
+
+    it('serializes taxonomy filters: lists as comma-separated values, contract types as a bit mask', () => {
+      const params = new JobParams();
+      params.category = 'programowanie';
+      params.seniority = [SeniorityLevel.Mid, SeniorityLevel.Junior];
+      params.contractTypes = ContractTypes.EmploymentContract | ContractTypes.B2B;
+      params.workTypes = [WorkType.Onsite, WorkType.Remote];
+      params.skills = ['Angular', 'C#'];
+      params.currency = Currency.PLN;
+
+      service.getJobs(params).subscribe();
+
+      const req = http.expectOne(r => r.url === '/api/jobs');
+      expect(req.request.params.get('category')).toBe('programowanie');
+      expect(req.request.params.get('seniority')).toBe('1,2');
+      expect(req.request.params.get('contractTypes')).toBe('3');
+      expect(req.request.params.get('workType')).toBe('0,2');
+      expect(req.request.params.get('skills')).toBe('Angular,C#');
+      // waluta 0 (PLN) jest poprawnym filtrem mimo że to „falsy”
+      expect(req.request.params.get('currency')).toBe('0');
+      req.flush([]);
+    });
+
+    it('also sends the taxonomy filters to the manage endpoint', () => {
+      const params = new ManageJobParams();
+      params.seniority = [SeniorityLevel.Lead];
+      params.skills = ['Docker'];
+
+      service.getManagedJobs(params).subscribe();
+
+      const req = http.expectOne(r => r.url === '/api/jobs/manage');
+      expect(req.request.params.get('seniority')).toBe('4');
+      expect(req.request.params.get('skills')).toBe('Docker');
       req.flush([]);
     });
 
@@ -136,10 +176,52 @@ describe('JobService', () => {
     });
   });
 
+  describe('getFacets', () => {
+    const FACETS: JobFacets = {
+      total: 3,
+      categories: [{ id: 1, slug: 'programowanie', name: 'Programowanie', count: 3 }],
+      seniority: [{ value: 1, count: 2 }],
+      contractTypes: [{ value: 2, count: 1 }],
+      workTypes: [{ value: 0, count: 3 }],
+      skills: [{ name: 'Angular', count: 2 }]
+    };
+
+    it('requests /api/jobs/facets with the filters but without paging and sorting', () => {
+      const params = new JobParams();
+      params.pageNumber = 4;
+      params.pageSize = 50;
+      params.orderBy = 'salaryHigh';
+      params.searchTerm = 'dev';
+      params.seniority = [SeniorityLevel.Senior];
+      params.skills = ['Angular'];
+      let result: JobFacets | undefined;
+
+      service.getFacets(params).subscribe(f => (result = f));
+
+      const req = http.expectOne(r => r.url === '/api/jobs/facets');
+      expect(req.request.method).toBe('GET');
+      expect(req.request.params.keys().sort()).toEqual(['searchTerm', 'seniority', 'skills']);
+      expect(req.request.params.get('seniority')).toBe('3');
+      req.flush(FACETS);
+      expect(result).toEqual(FACETS);
+    });
+
+    it('can be cancelled by unsubscribing', () => {
+      const subscription = service.getFacets(new JobParams()).subscribe();
+      const req = http.expectOne(r => r.url === '/api/jobs/facets');
+
+      subscription.unsubscribe();
+
+      expect(req.cancelled).toBe(true);
+    });
+  });
+
   describe('CRUD', () => {
     const create: CreateJobOffer = {
       title: 'T', companyId: 4, description: 'D', salaryMin: null, salaryMax: null, location: 'L', workType: WorkType.Onsite,
-      status: JobOfferStatus.Draft, expiresAt: '2026-12-31T22:59:59.999Z'
+      status: JobOfferStatus.Draft, expiresAt: '2026-12-31T22:59:59.999Z',
+      categoryId: 2, seniority: SeniorityLevel.Senior, contractTypes: 3, salaryCurrency: Currency.EUR,
+      salaryPeriod: SalaryPeriod.Hour, skills: ['Angular', 'C#']
     };
 
     it('getJob requests /api/jobs/:id', () => {

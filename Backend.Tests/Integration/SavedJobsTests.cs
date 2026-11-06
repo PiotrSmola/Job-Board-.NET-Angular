@@ -84,6 +84,23 @@ public class SavedJobsTests
     }
 
     [Fact]
+    public async Task List_IncludesTheOfferCategoryAndSkills()
+    {
+        var user = await _api.RegisterUserAsync("saved");
+        using var client = _api.CreateClient(user);
+        var category = await _api.CreateCategoryAsync();
+        var skill = "s-" + TaxonomyScenario.Token();
+        var job = await _api.CreateJobAsync(j => { j.CategoryId = category.Id; j.Skills = [skill]; });
+        await SaveAsync(client, job.Id);
+
+        var saved = await (await client.GetAsync(AccountApi.SavedJobsUrl)).ReadJsonAsync<List<SavedJobDto>>();
+
+        var item = Assert.Single(saved, s => s.Job.Id == job.Id);
+        Assert.Equal(category.Name, item.Job.CategoryName);
+        Assert.Equal([skill], item.Job.Skills);
+    }
+
+    [Fact]
     public async Task Remove_IsIdempotent()
     {
         var user = await _api.RegisterUserAsync("saved");

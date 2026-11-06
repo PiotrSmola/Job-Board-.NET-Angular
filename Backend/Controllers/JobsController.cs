@@ -21,6 +21,7 @@ public class JobsController : ControllerBase
 
     private readonly IJobRepository _jobRepository;
     private readonly ICompanyRepository _companyRepository;
+    private readonly ICategoryRepository _categoryRepository;
     private readonly ICurrentUserAccess _access;
     private readonly IFileStorage _fileStorage;
     private readonly ILogger<JobsController> _logger;
@@ -28,21 +29,25 @@ public class JobsController : ControllerBase
     public JobsController(
         IJobRepository jobRepository,
         ICompanyRepository companyRepository,
+        ICategoryRepository categoryRepository,
         ICurrentUserAccess access,
         IFileStorage fileStorage,
         ILogger<JobsController> logger)
     {
         _jobRepository = jobRepository;
         _companyRepository = companyRepository;
+        _categoryRepository = categoryRepository;
         _access = access;
         _fileStorage = fileStorage;
         _logger = logger;
     }
 
-    // Publiczna lista - wyłącznie oferty aktywne i niewygasłe firm zatwierdzonych (opcjonalny filtr companyId)
+    // Publiczna lista - wyłącznie oferty aktywne i niewygasłe firm zatwierdzonych (opcjonalne filtry: companyId,
+    // kategoria, poziom, typy umów, tryb pracy, umiejętności, waluta i widełki - łączone AND)
     [HttpGet]
     [EnableRateLimiting(RateLimitingSettings.PublicListsPolicy)]
     [ProducesResponseType(typeof(IEnumerable<JobOfferDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IEnumerable<JobOfferDto>>> GetJobs([FromQuery] JobParams jobParams)
     {
         var jobs = await _jobRepository.GetPublicJobsAsync(jobParams);
@@ -51,6 +56,18 @@ public class JobsController : ControllerBase
 
         var now = DateTime.UtcNow;
         return Ok(jobs.Select(j => j.ToDto(now)));
+    }
+
+    // Liczniki faset publicznej listy (te same filtry co GET /api/jobs, bez stronicowania); licznik fasety
+    // pomija jej własny filtr, żeby można było rozszerzać wybór w grupie
+    [HttpGet("facets")]
+    [EnableRateLimiting(RateLimitingSettings.PublicListsPolicy)]
+    [ProducesResponseType(typeof(JobFacetsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<JobFacetsDto>> GetFacets([FromQuery] JobParams jobParams, CancellationToken cancellationToken)
+    {
+        var facets = await _jobRepository.GetPublicFacetsAsync(jobParams, cancellationToken);
+        return Ok(facets.ToDto());
     }
 
     // Panel zarządzania: admin - wszystkie oferty (opcjonalny filtr companyId), pracodawca - wyłącznie oferty
@@ -113,7 +130,12 @@ public class JobsController : ControllerBase
             return Forbidden(CompanyNotApprovedMessage);
         }
 
-        var createdJob = await _jobRepository.AddJobAsync(createJobDto.ToEntity(company!.Value.Id));
+        if (await CategoryMissingAsync(createJobDto.CategoryId))
+        {
+            return BadRequest(new { message = CategoryMessages.NotFound });
+        }
+
+        var createdJob = await _jobRepository.AddJobAsync(createJobDto.ToEntity(company!.Value.Id), createJobDto.GetSkillNames());
         var jobDto = createdJob.ToDto();
 
         return CreatedAtAction(nameof(GetJob), new { id = jobDto.Id }, jobDto);
@@ -156,9 +178,14 @@ public class JobsController : ControllerBase
             return ValidationProblem(ModelState);
         }
 
+        if (await CategoryMissingAsync(updateJobDto.CategoryId))
+        {
+            return BadRequest(new { message = CategoryMessages.NotFound });
+        }
+
         updateJobDto.ApplyTo(job, company!.Value.Id);
 
-        var updatedJob = await _jobRepository.UpdateJobAsync(job);
+        var updatedJob = await _jobRepository.UpdateJobAsync(job, updateJobDto.GetSkillNames());
 
         return Ok(updatedJob.ToDto());
     }
@@ -278,6 +305,10 @@ public class JobsController : ControllerBase
 
         return ((companyId, status.Value), null);
     }
+
+    // Wskazana kategoria nie istnieje (null = oferta bez kategorii)
+    private async Task<bool> CategoryMissingAsync(int? categoryId) =>
+        categoryId.HasValue && !await _categoryRepository.ExistsAsync(categoryId.Value);
 
     // Admin publikuje oferty każdej firmy; pracodawca - dopiero po zatwierdzeniu jego firmy
     private bool CanPublishIn(CompanyStatus companyStatus) =>

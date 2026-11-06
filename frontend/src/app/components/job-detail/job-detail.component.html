@@ -47,6 +47,36 @@
             </div>
           </div>
 
+          @if (job.categoryName && job.categorySlug) {
+            <div class="meta-item">
+              <mat-icon>category</mat-icon>
+              <div class="meta-content">
+                <span class="meta-label">Kategoria</span>
+                <a class="meta-value category-link" routerLink="/jobs" [queryParams]="{ category: job.categorySlug }">{{ job.categoryName }}</a>
+              </div>
+            </div>
+          }
+
+          @if (seniorityLabel; as seniority) {
+            <div class="meta-item">
+              <mat-icon>trending_up</mat-icon>
+              <div class="meta-content">
+                <span class="meta-label">Poziom</span>
+                <span class="meta-value">{{ seniority }}</span>
+              </div>
+            </div>
+          }
+
+          @if (contractLabels.length > 0) {
+            <div class="meta-item">
+              <mat-icon>description</mat-icon>
+              <div class="meta-content">
+                <span class="meta-label">Typ umowy</span>
+                <span class="meta-value">{{ contractLabels.join(', ') }}</span>
+              </div>
+            </div>
+          }
+
           <div class="meta-item">
             <mat-icon>payments</mat-icon>
             <div class="meta-content">
@@ -73,6 +103,13 @@
             </div>
           }
         </div>
+
+        @if (job.skills.length > 0) {
+          <div class="skills-section">
+            <h3>Umiejętności</h3>
+            <app-job-taxonomy [job]="job" [showTags]="false" [skillsLimit]="null" />
+          </div>
+        }
 
         <mat-divider class="divider"></mat-divider>
 

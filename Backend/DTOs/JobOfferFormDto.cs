@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Backend.Helpers;
 using Backend.Models;
 
 namespace Backend.DTOs;
@@ -40,7 +41,33 @@ public abstract class JobOfferFormDto : IValidatableObject
     // data bez strefy traktowana jest jako UTC (patrz GetExpiresAtUtc)
     public DateTime? ExpiresAt { get; set; }
 
+    // Taksonomia (PUT zastępuje wszystkie pola: pominięte wracają do wartości domyślnych).
+    // Kategoria musi istnieć (sprawdza kontroler: 400 "Category not found"); null = bez kategorii
+    public int? CategoryId { get; set; }
+
+    [EnumDataType(typeof(SeniorityLevel))]
+    public SeniorityLevel? Seniority { get; set; }
+
+    // maska bitowa typów umów (0 = nie podano); bity spoza ContractTypes odrzuca Validate
+    public ContractTypes ContractTypes { get; set; }
+
+    [EnumDataType(typeof(Currency))]
+    public Currency SalaryCurrency { get; set; }
+
+    [EnumDataType(typeof(SalaryPeriod))]
+    public SalaryPeriod SalaryPeriod { get; set; }
+
+    // 0-15 umiejętności, każda 1-50 znaków po normalizacji i bez przecinka; nowe są tworzone automatycznie,
+    // dopasowanie bez wielkości liter, duplikaty są scalane (patrz GetSkillNames)
+    public List<string> Skills { get; set; } = new();
+
     public DateTime? GetExpiresAtUtc() => ExpiresAt.HasValue ? ToUtc(ExpiresAt.Value) : null;
+
+    // Nazwy umiejętności po normalizacji, bez duplikatów (bez wielkości liter; zostaje pierwsze wystąpienie)
+    public List<string> GetSkillNames() =>
+        Skills.Where(s => s != null).Select(SkillNames.Normalize)
+            .DistinctBy(SkillNames.KeyOf)
+            .ToList();
 
     // walidacja między polami - uruchamiana po walidacji atrybutów
     public virtual IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
@@ -50,6 +77,22 @@ public abstract class JobOfferFormDto : IValidatableObject
             yield return new ValidationResult(
                 "SalaryMin cannot be greater than SalaryMax",
                 new[] { nameof(SalaryMin), nameof(SalaryMax) });
+        }
+
+        if (!ContractTypesExtensions.IsValidMask((int)ContractTypes))
+        {
+            yield return new ValidationResult("ContractTypes contains an unknown contract type", new[] { nameof(ContractTypes) });
+        }
+
+        if (Skills.Count > SkillNames.MaxPerOffer)
+        {
+            yield return new ValidationResult($"A job offer can have at most {SkillNames.MaxPerOffer} skills", new[] { nameof(Skills) });
+        }
+        else if (Skills.Any(s => s == null || !SkillNames.IsValid(SkillNames.Normalize(s))))
+        {
+            yield return new ValidationResult(
+                $"Each skill must have 1-{SkillNames.MaxLength} characters and must not contain a comma",
+                new[] { nameof(Skills) });
         }
     }
 
