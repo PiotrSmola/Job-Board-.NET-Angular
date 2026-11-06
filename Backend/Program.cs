@@ -150,6 +150,13 @@ builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<IEmailOutbox, EmailOutbox>();
 builder.Services.AddHostedService<EmailOutboxProcessor>();
 
+// Statystyki: agregaty w SQL, zliczanie wyświetleń ofert (deduplikacja HMAC bez surowego IP) i sprzątanie starych
+// wpisów deduplikacji w tle ("dzisiaj" z TimeProvider zarejestrowanego wyżej);
+// adres odwiedzającego to adres klienta po UseForwardedHeaders, ten sam co w limitach żądań per IP
+builder.Services.AddScoped<IStatsService, StatsService>();
+builder.Services.AddScoped<IJobViewTracker, JobViewTracker>();
+builder.Services.AddHostedService<JobViewCleanupService>();
+
 // Magazyn plików załączników wg Storage:Provider (Local - katalog na dysku, S3 - magazyn zgodny z S3, np. SeaweedFS);
 // konfiguracja walidowana w jednym miejscu (StorageSettings.Validate)
 builder.Services.AddOptions<StorageSettings>()

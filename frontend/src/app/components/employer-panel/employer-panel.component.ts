@@ -11,6 +11,7 @@ import { StatusChipComponent } from '../shared/status-chip.component';
 import { AdminJobsTabComponent } from '../admin-panel/admin-jobs-tab/admin-jobs-tab.component';
 import { AdminApplicationsTabComponent } from '../admin-panel/admin-applications-tab/admin-applications-tab.component';
 import { EmployerCompanyTabComponent } from './employer-company-tab/employer-company-tab.component';
+import { StatsDashboardComponent } from '../stats/stats-dashboard.component';
 
 const JOBS_TAB = 0;
 const APPLICATIONS_TAB = 1;
@@ -29,7 +30,9 @@ const LOAD_ERROR = 'Nie udało się wczytać danych firmy';
     StatusChipComponent,
     AdminJobsTabComponent,
     AdminApplicationsTabComponent,
-    EmployerCompanyTabComponent
+    EmployerCompanyTabComponent,
+    // używany wyłącznie w @defer – Angular wydziela go do osobnego chunka
+    StatsDashboardComponent
   ],
   templateUrl: './employer-panel.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,

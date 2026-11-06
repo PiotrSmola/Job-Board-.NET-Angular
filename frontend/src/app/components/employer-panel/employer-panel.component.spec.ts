@@ -3,12 +3,15 @@ import { Component, forwardRef, input, output } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { By } from '@angular/platform-browser';
 import { MATERIAL_ANIMATIONS } from '@angular/material/core';
+import { provideRouter } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 import { EmployerPanelComponent } from './employer-panel.component';
 import { EmployerCompanyTabComponent } from './employer-company-tab/employer-company-tab.component';
 import { AdminJobsTabComponent } from '../admin-panel/admin-jobs-tab/admin-jobs-tab.component';
 import { AdminApplicationsTabComponent } from '../admin-panel/admin-applications-tab/admin-applications-tab.component';
 import { CompanyService } from '../../services/company.service';
+import { StatsService } from '../../services/stats.service';
+import { employerStatsFixture } from '../../../testing/stats-fixtures';
 import { Company, CompanyStatus } from '../../models/company.model';
 import { PanelMode } from '../../models/panel-mode.model';
 import { makeCompany } from '../../../testing/company-fixtures';
@@ -51,6 +54,7 @@ describe('EmployerPanelComponent', () => {
   let fixture: ComponentFixture<EmployerPanelComponent>;
   let component: EmployerPanelComponent;
   let getMyCompany: ReturnType<typeof vi.fn>;
+  let getEmployerStats: ReturnType<typeof vi.fn>;
 
   async function create(company$ = of(makeCompany(3, { name: 'Acme', status: CompanyStatus.Approved }))): Promise<void> {
     getMyCompany.mockReturnValue(company$);
@@ -87,12 +91,15 @@ describe('EmployerPanelComponent', () => {
 
   beforeEach(async () => {
     getMyCompany = vi.fn();
+    getEmployerStats = vi.fn().mockReturnValue(of(employerStatsFixture()));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
       imports: [EmployerPanelComponent],
       providers: [
+        provideRouter([]),
         { provide: CompanyService, useValue: { getMyCompany } },
+        { provide: StatsService, useValue: { getEmployerStats } },
         { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } }
       ]
     })
@@ -170,10 +177,34 @@ describe('EmployerPanelComponent', () => {
   });
 
   describe('tabs', () => {
-    it('renders the three tabs: Oferty, Aplikacje, Profil firmy', async () => {
+    it('renders the tabs: Oferty, Aplikacje, Profil firmy, Statystyki', async () => {
       await create();
 
-      expect(tabLabels()).toEqual(['work Oferty', 'assignment Aplikacje', 'business Profil firmy']);
+      expect(tabLabels()).toEqual(['work Oferty', 'assignment Aplikacje', 'business Profil firmy', 'insights Statystyki']);
+    });
+
+    it('loads the statistics dashboard (lazily, in employer mode) only after visiting the tab', async () => {
+      await create();
+      expect(root().querySelector('app-stats-dashboard')).toBeNull();
+      expect(getEmployerStats).not.toHaveBeenCalled();
+
+      await selectTab(3);
+      await vi.waitFor(() => {
+        fixture.detectChanges();
+        expect(root().querySelector('app-stats-dashboard')).not.toBeNull();
+      });
+
+      expect(getEmployerStats).toHaveBeenCalledTimes(1);
+      expect(root().querySelector('app-stats-jobs-table h3')?.textContent).toContain('Oferty firmy');
+    });
+
+    it('does not reload anything when switching to the statistics tab', async () => {
+      await create();
+      const jobs = fixture.debugElement.query(By.directive(StubJobsTabComponent)).componentInstance as StubJobsTabComponent;
+
+      await selectTab(3);
+
+      expect(jobs.reload).not.toHaveBeenCalled();
     });
 
     it('opens on the offers tab in employer mode with the employer company', async () => {

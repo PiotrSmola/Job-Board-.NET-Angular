@@ -21,6 +21,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
     public DbSet<JobApplication> JobApplications { get; set; }
     public DbSet<ApplicationStatusHistory> ApplicationStatusHistories { get; set; }
     public DbSet<ApplicationAttachment> ApplicationAttachments { get; set; }
+    public DbSet<JobOfferDailyViews> DailyViews { get; set; }
+    public DbSet<JobOfferViewer> JobOfferViewers { get; set; }
     public DbSet<ProfileDocument> ProfileDocuments { get; set; }
     public DbSet<SavedJob> SavedJobs { get; set; }
     public DbSet<EmailMessage> EmailMessages { get; set; }
@@ -79,6 +81,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
 
             // publiczna lista ofert: filtr po statusie i dacie ważności, domyślne sortowanie po dacie utworzenia
             entity.HasIndex(e => new { e.Status, e.ExpiresAt, e.CreatedAt });
+
+            // seria dzienna "nowe oferty" w statystykach
+            entity.HasIndex(e => e.CreatedAt);
 
             entity.HasMany(e => e.Applications)
                 .WithOne(e => e.JobOffer)
@@ -141,6 +146,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
             entity.Property(e => e.AppliedAt);
             entity.Property(e => e.Status).HasConversion<int>();
             entity.Property(e => e.StatusChangedAt).IsConcurrencyToken();
+
+            // zakresy dat w statystykach (seria, lejek, mediana czasu odpowiedzi)
+            entity.HasIndex(e => e.AppliedAt);
 
             // jedna aplikacja użytkownika na ofertę (chroni też przed równoległymi żądaniami)
             entity.HasIndex(e => new { e.JobOfferId, e.UserId }).IsUnique();
@@ -238,6 +246,34 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
+        builder.Entity<JobOfferDailyViews>(entity =>
+        {
+            entity.ToTable(JobOfferDailyViews.TableName);
+            entity.HasKey(e => new { e.JobOfferId, e.Date });
+
+            // wyświetlenia znikają razem z ofertą
+            entity.HasOne(e => e.JobOffer)
+                .WithMany(e => e.DailyViews)
+                .HasForeignKey(e => e.JobOfferId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<JobOfferViewer>(entity =>
+        {
+            entity.ToTable(JobOfferViewer.TableName);
+            // klucz = deduplikacja: jedno wyświetlenie oferty przez odwiedzającego dziennie
+            entity.HasKey(e => new { e.JobOfferId, e.Date, e.VisitorHash });
+            entity.Property(e => e.VisitorHash).HasMaxLength(JobOfferViewer.VisitorHashLength).IsFixedLength();
+
+            // sprzątanie starych wpisów po dacie
+            entity.HasIndex(e => e.Date);
+
+            entity.HasOne(e => e.JobOffer)
+                .WithMany()
+                .HasForeignKey(e => e.JobOfferId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         builder.Entity<ApplicationUser>(entity =>
         {
             entity.Property(e => e.FirstName).HasMaxLength(100);
@@ -261,6 +297,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
                 .WithOne(e => e.User)
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // seria dzienna "nowi użytkownicy" w statystykach
+            entity.HasIndex(e => e.CreatedAt);
 
             // firmy z członkami (pracodawcami) nie można usunąć - konto pracodawcy bez firmy nie ma sensu
             entity.HasOne(e => e.Company)

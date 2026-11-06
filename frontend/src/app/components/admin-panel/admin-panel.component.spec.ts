@@ -8,6 +8,9 @@ import { AuthService } from '../../services/auth.service';
 import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { CompanyService } from '../../services/company.service';
+import { StatsService } from '../../services/stats.service';
+import { adminStatsFixture } from '../../../testing/stats-fixtures';
+import { provideRouter } from '@angular/router';
 import { CategoryService } from '../../services/category.service';
 
 const EMPTY_PAGE = { result: [], pagination: { CurrentPage: 1, ItemsPerPage: 10, TotalItems: 0, TotalPages: 1 } };
@@ -22,6 +25,7 @@ describe('AdminPanelComponent', () => {
   let refreshSeed: ReturnType<typeof vi.fn>;
   let getManagedJobs: ReturnType<typeof vi.fn>;
   let getAllApplications: ReturnType<typeof vi.fn>;
+  let getAdminStats: ReturnType<typeof vi.fn>;
   let getCategories: ReturnType<typeof vi.fn>;
   let logout: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
@@ -55,6 +59,7 @@ describe('AdminPanelComponent', () => {
     refreshSeed = vi.fn().mockReturnValue(of({ message: 'ok', timestamp: 'now' }));
     getManagedJobs = vi.fn().mockReturnValue(of(EMPTY_PAGE));
     getAllApplications = vi.fn().mockReturnValue(of(EMPTY_PAGE));
+    getAdminStats = vi.fn().mockReturnValue(of(adminStatsFixture()));
     getCategories = vi.fn().mockReturnValue(of([]));
     logout = vi.fn();
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
@@ -64,6 +69,8 @@ describe('AdminPanelComponent', () => {
     await TestBed.configureTestingModule({
       imports: [AdminPanelComponent],
       providers: [
+        provideRouter([]),
+        { provide: StatsService, useValue: { getAdminStats } },
         { provide: AdminService, useValue: { getSettings, refreshSeed } },
         { provide: AuthService, useValue: { logout } },
         { provide: JobService, useValue: { getManagedJobs, deleteJob: vi.fn() } },
@@ -191,6 +198,28 @@ describe('AdminPanelComponent', () => {
       await openTab(3);
 
       expect(component.selectedTabIndex()).toBe(3);
+    });
+
+    it('lists the statistics tab last', async () => {
+      await create();
+
+      const labels = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('.mdc-tab__text-label'))
+        .map(label => label.textContent?.replace(/\s+/g, ' ').trim());
+      expect(labels).toEqual(['work Oferty Pracy', 'assignment Aplikacje', 'business Firmy', 'category Kategorie', 'insights Statystyki']);
+    });
+
+    it('loads the statistics dashboard (lazily, in admin mode) only after visiting the tab', async () => {
+      await create();
+      expect((fixture.nativeElement as HTMLElement).querySelector('app-stats-dashboard')).toBeNull();
+      expect(getAdminStats).not.toHaveBeenCalled();
+
+      await openTab(4);
+      await vi.waitFor(() => {
+        fixture.detectChanges();
+        expect((fixture.nativeElement as HTMLElement).querySelector('app-stats-dashboard')).not.toBeNull();
+      });
+
+      expect(getAdminStats).toHaveBeenCalledTimes(1);
     });
   });
 });

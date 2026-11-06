@@ -51,6 +51,7 @@ public class JobOffer
     public Category? Category { get; set; }
     public ICollection<Skill> Skills { get; set; } = new List<Skill>();
     public ICollection<JobApplication> Applications { get; set; } = new List<JobApplication>();
+    public ICollection<JobOfferDailyViews> DailyViews { get; set; } = new List<JobOfferDailyViews>();
 
     // Aktywna, ale z datą ważności w przeszłości (stan wyliczany, nie zapisywany)
     public bool IsExpired(DateTime now) =>

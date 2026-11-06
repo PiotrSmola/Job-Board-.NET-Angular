@@ -65,5 +65,22 @@
         <app-admin-categories-tab></app-admin-categories-tab>
       </ng-template>
     </mat-tab>
+
+    <!-- TAB 5: Statystyki -->
+    <mat-tab label="Statystyki">
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">insights</mat-icon>
+        Statystyki
+      </ng-template>
+
+      <ng-template matTabContent>
+        <!-- Kod wykresów jest ładowany dopiero przy pierwszym wejściu w zakładkę -->
+        @defer (on immediate) {
+          <app-stats-dashboard mode="admin" />
+        } @placeholder {
+          <div class="stats-placeholder" role="status">Wczytywanie statystyk…</div>
+        }
+      </ng-template>
+    </mat-tab>
   </mat-tab-group>
 </div>

@@ -1,0 +1,83 @@
+<section class="stats-dashboard" aria-label="Statystyki">
+  <div class="toolbar">
+    <app-stats-range-picker [range]="range()" (rangeChange)="setRange($event)" />
+    <div class="actions">
+      <button mat-stroked-button type="button" (click)="reload()" aria-label="Odśwież statystyki">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Odśwież
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        class="export-button"
+        (click)="exportCsv()"
+        [disabled]="exporting()"
+        [disabledInteractive]="true">
+        <mat-icon aria-hidden="true">download</mat-icon>
+        {{ exporting() ? 'Eksportowanie…' : 'Eksportuj CSV' }}
+      </button>
+    </div>
+  </div>
+
+  <p class="sr-only" role="status">{{ announcement() }}</p>
+  @if (exportError(); as message) {
+    <p class="export-error" role="alert">{{ message }}</p>
+  }
+
+  @if (loading()) {
+    <div class="skeleton" aria-hidden="true">
+      <div class="skeleton-tiles">
+        @for (item of skeletonTiles; track item) {
+          <div class="skeleton-block tile"></div>
+        }
+      </div>
+      <div class="skeleton-block chart"></div>
+      <div class="skeleton-block funnel"></div>
+      <div class="skeleton-block table"></div>
+    </div>
+  } @else if (errorMessage(); as message) {
+    <div class="state-box" role="alert">
+      <mat-icon aria-hidden="true">cloud_off</mat-icon>
+      <p>{{ message }}</p>
+      <button mat-raised-button color="primary" type="button" (click)="reload()">
+        <mat-icon aria-hidden="true">refresh</mat-icon>
+        Spróbuj ponownie
+      </button>
+    </div>
+  } @else if (view(); as current) {
+    <app-stats-kpi-tiles [tiles]="tiles()" />
+
+    @if (current.statusBreakdown.length) {
+      <div class="breakdown">
+        <h3>Aplikacje według statusu</h3>
+        <ul>
+          @for (item of current.statusBreakdown; track item.label) {
+            <li>{{ item.label }}: <strong>{{ item.count }}</strong></li>
+          }
+        </ul>
+      </div>
+    }
+
+    @if (current.hasData) {
+      <div class="panel">
+        <app-stats-line-chart
+          [title]="current.mode === 'admin' ? 'Aktywność w czasie' : 'Aplikacje i wyświetlenia w czasie'"
+          [dates]="current.dates"
+          [series]="current.series" />
+      </div>
+      <div class="panel">
+        <app-stats-funnel [stages]="current.funnel" />
+      </div>
+    } @else {
+      <div class="state-box empty" role="status">
+        <mat-icon aria-hidden="true">insights</mat-icon>
+        <p>Brak danych w wybranym zakresie dat.</p>
+        <p class="hint">Wybierz dłuższy zakres, aby zobaczyć wykresy i lejek rekrutacji.</p>
+      </div>
+    }
+
+    <div class="panel">
+      <app-stats-jobs-table [title]="current.jobsTitle" [columns]="current.jobColumns" [rows]="current.jobRows" />
+    </div>
+  }
+</section>

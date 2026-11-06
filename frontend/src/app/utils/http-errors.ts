@@ -43,6 +43,9 @@ const KNOWN_API_MESSAGES: Record<string, string> = {
   'Attachments cannot be added in the current application status': 'Na tym etapie rekrutacji nie można już dodawać załączników',
   'Attachment not found': 'Nie znaleziono załącznika',
   'Invalid attachment kind': 'Nieprawidłowy rodzaj załącznika',
+  // statystyki
+  'Date range cannot exceed 366 days': 'Zakres dat nie może przekraczać 366 dni',
+  'Invalid date range': 'Nieprawidłowy zakres dat',
   // błędy odczytu żądania (BadHttpRequestException w backendzie)
   'Request body too large': 'Przesyłane dane są za duże',
   'Request timed out': 'Przekroczono czas wysyłania danych – spróbuj ponownie',

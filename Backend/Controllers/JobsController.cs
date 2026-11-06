@@ -24,6 +24,7 @@ public class JobsController : ControllerBase
     private readonly ICategoryRepository _categoryRepository;
     private readonly ICurrentUserAccess _access;
     private readonly IFileStorage _fileStorage;
+    private readonly IJobViewTracker _viewTracker;
     private readonly ILogger<JobsController> _logger;
 
     public JobsController(
@@ -32,6 +33,7 @@ public class JobsController : ControllerBase
         ICategoryRepository categoryRepository,
         ICurrentUserAccess access,
         IFileStorage fileStorage,
+        IJobViewTracker viewTracker,
         ILogger<JobsController> logger)
     {
         _jobRepository = jobRepository;
@@ -39,6 +41,7 @@ public class JobsController : ControllerBase
         _categoryRepository = categoryRepository;
         _access = access;
         _fileStorage = fileStorage;
+        _viewTracker = viewTracker;
         _logger = logger;
     }
 
@@ -106,6 +109,14 @@ public class JobsController : ControllerBase
         if (job == null || !await _access.CanViewJobAsync(job))
         {
             return NotFound(new { message = JobNotFoundMessage });
+        }
+
+        // wyświetlenia liczą się tylko dla osób spoza zarządzających ofertą (admin i członkowie firmy nie zawyżają
+        // statystyk); błąd zliczania jest tylko logowany w trackerze
+        if (!await _access.CanManageJobAsync(job))
+        {
+            await _viewTracker.TrackAsync(job.Id, _access.UserId, HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Request.Headers.UserAgent.ToString(), HttpContext.RequestAborted);
         }
 
         return Ok(job.ToDto());

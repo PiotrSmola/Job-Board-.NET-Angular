@@ -13,7 +13,7 @@ namespace Backend.Tests.Integration;
 [Trait("Category", "Migrations")]
 public class AddJobTaxonomyMigrationTests
 {
-    private const string PreviousMigration = "20261106152754_AddJobOfferListIndex";
+    private const string PreviousMigration = "20261106160206_AddJobViewStatistics";
     private const string AddJobTaxonomy = "20261106160558_AddJobTaxonomy";
 
     private static ApplicationDbContext CreateContext(string connectionString) =>
