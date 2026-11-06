@@ -12,6 +12,8 @@ namespace Backend.Controllers;
 [ApiController]
 public class AuthController : ControllerBase
 {
+    private const string EmailTakenMessage = "Email is already taken";
+
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly ITokenService _tokenService;
@@ -39,7 +41,7 @@ public class AuthController : ControllerBase
     {
         if (await _userManager.FindByEmailAsync(registerDto.Email) != null)
         {
-            return BadRequest(new { message = "Email is already taken" });
+            return EmailTaken();
         }
 
         var user = new ApplicationUser
@@ -50,11 +52,10 @@ public class AuthController : ControllerBase
             LastName = registerDto.LastName
         };
 
-        var result = await _userManager.CreateAsync(user, registerDto.Password);
-
-        if (!result.Succeeded)
+        var (result, error) = await CreateUserAsync(user, registerDto.Password);
+        if (error != null)
         {
-            return BadRequest(result.Errors);
+            return error;
         }
 
         // default role "User"
@@ -71,7 +72,7 @@ public class AuthController : ControllerBase
     {
         if (await _userManager.FindByEmailAsync(registerDto.Email) != null)
         {
-            return BadRequest(new { message = "Email is already taken" });
+            return EmailTaken();
         }
 
         var companyName = CompanyNames.Normalize(registerDto.CompanyName);
@@ -113,10 +114,10 @@ public class AuthController : ControllerBase
         };
 
         // wycofanie transakcji (dispose bez commit) usuwa też utworzoną firmę
-        var result = await _userManager.CreateAsync(user, registerDto.Password);
-        if (!result.Succeeded)
+        var (_, error) = await CreateUserAsync(user, registerDto.Password);
+        if (error != null)
         {
-            return BadRequest(result.Errors);
+            return error;
         }
 
         var roleResult = await _userManager.AddToRoleAsync(user, Roles.Employer);
@@ -157,6 +158,33 @@ public class AuthController : ControllerBase
         }
 
         return await ToUserDtoAsync(user);
+    }
+
+    private BadRequestObjectResult EmailTaken() => BadRequest(new { message = EmailTakenMessage });
+
+    // Tworzy konto; zajęty e-mail zgłoszony przez walidator Identity albo przez unikalny indeks
+    // (równoległa rejestracja na ten sam adres wygrała wyścig z FindByEmailAsync) daje 400 zamiast 500
+    private async Task<(IdentityResult? Result, ActionResult? Error)> CreateUserAsync(ApplicationUser user, string password)
+    {
+        IdentityResult result;
+        try
+        {
+            result = await _userManager.CreateAsync(user, password);
+        }
+        catch (Exception ex) when (ex.IsDuplicateKey() || ex.IsConcurrentChangeConflict())
+        {
+            // duplikat klucza albo (obronnie) deadlock z równoległym INSERT tego samego konta - zapis wycofany
+            return (null, EmailTaken());
+        }
+
+        if (result.Succeeded)
+        {
+            return (result, null);
+        }
+
+        var duplicate = result.Errors.Any(e =>
+            e.Code is nameof(IdentityErrorDescriber.DuplicateEmail) or nameof(IdentityErrorDescriber.DuplicateUserName));
+        return (result, duplicate ? EmailTaken() : BadRequest(result.Errors));
     }
 
     private async Task<UserDto> ToUserDtoAsync(ApplicationUser user)

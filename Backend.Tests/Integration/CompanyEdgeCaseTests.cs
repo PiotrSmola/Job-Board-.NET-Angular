@@ -54,8 +54,8 @@ public class CompanyEdgeCaseTests
         Assert.Equal(1, company.MembersCount);
     }
 
-    [Fact(Skip = "Bug: concurrent register-employer requests with the same e-mail return 500 (unhandled DbUpdateException " +
-                 "from the unique user index) instead of 400 - AuthController.cs RegisterEmployer, UserManager.CreateAsync")]
+    // przegrane żądania: 400 "Email is already taken" (unikalny indeks albo walidator Identity), nigdy 500
+    [Fact]
     public async Task RegisterEmployer_ConcurrentRequestsWithSameEmail_NeverReturnServerError()
     {
         var prefix = ApiFixture.UniqueName("Wyscig 500");
@@ -65,10 +65,17 @@ public class CompanyEdgeCaseTests
 
         Assert.DoesNotContain(responses, r => (int)r.StatusCode >= 500);
         Assert.Equal(1, responses.Count(r => r.StatusCode == HttpStatusCode.OK));
+        foreach (var rejected in responses.Where(r => r.StatusCode != HttpStatusCode.OK))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+            Assert.Equal("Email is already taken", await rejected.ReadMessageAsync());
+        }
+
+        // cała transakcja przegranych wycofana - jedyna firma to firma zwycięzcy
+        Assert.Single(await AdminFindAsync(prefix));
     }
 
-    [Fact(Skip = "Bug: concurrent register requests with the same e-mail return 500 instead of 400 (race between " +
-                 "FindByEmailAsync and the unique user index) - AuthController.cs Register (stage 1 endpoint, same cause as register-employer)")]
+    [Fact]
     public async Task Register_ConcurrentRequestsWithSameEmail_NeverReturnServerError()
     {
         var email = $"race_{Guid.NewGuid():N}@test.local";
@@ -82,6 +89,11 @@ public class CompanyEdgeCaseTests
 
         Assert.DoesNotContain(responses, r => (int)r.StatusCode >= 500);
         Assert.Equal(1, responses.Count(r => r.StatusCode == HttpStatusCode.OK));
+        foreach (var rejected in responses.Where(r => r.StatusCode != HttpStatusCode.OK))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+            Assert.Equal("Email is already taken", await rejected.ReadMessageAsync());
+        }
     }
 
     [Theory]
