@@ -63,18 +63,6 @@ public class JobApplicationRepository : IJobApplicationRepository
             .ToListAsync();
     }
 
-    public async Task<IEnumerable<JobApplication>> GetApplicationsByJobIdAsync(int jobId)
-    {
-        return await _context.JobApplications
-            .Include(a => a.JobOffer).ThenInclude(j => j.Company)
-            .Include(a => a.User)
-            .Include(a => a.Attachments)
-            .AsNoTracking()
-            .Where(a => a.JobOfferId == jobId)
-            .OrderByDescending(a => a.AppliedAt)
-            .ToListAsync();
-    }
-
     public async Task<PagedList<JobApplication>> GetApplicationsAsync(ApplicationParams applicationParams, ManagementScope scope)
     {
         var query = _context.JobApplications

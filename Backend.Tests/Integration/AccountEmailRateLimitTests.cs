@@ -13,7 +13,7 @@ public class DefaultAccountEmailsRateLimitFixture : ApiFixture
     }
 }
 
-// forgot-password - limit per adres IP (wszystkie żądania testowe mają ten sam adres), resend-confirmation - per
+// forgot-password - limit per adres IP (żądania testowe bez X-Forwarded-For mają ten sam adres), resend-confirmation - per
 // użytkownik; przekroczenie -> 429 z Retry-After i komunikatem API
 public class AccountEmailRateLimitTests : IClassFixture<DefaultAccountEmailsRateLimitFixture>
 {
@@ -77,5 +77,26 @@ public class AccountEmailRateLimitTests : IClassFixture<DefaultAccountEmailsRate
         // logowanie i rejestracja nie są objęte tym limitem
         Assert.NotEmpty(await _api.LoginAsync(TestUsers.UserEmail, TestUsers.UserPassword));
         await _api.RegisterUserAsync("limit");
+    }
+
+    // adres IP to adres klienta z X-Forwarded-For dopisanego przez nginx (UseForwardedHeaders) - klienci za tym samym
+    // proxy mają osobne limity
+    [Fact]
+    public async Task ForgotPassword_IsLimitedPerForwardedClientAddress()
+    {
+        var bytes = Guid.NewGuid().ToByteArray();
+        using var client = _api.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Forwarded-For", $"10.{bytes[0]}.{bytes[1]}.{bytes[2]}");
+        using var other = _api.CreateClient();
+        other.DefaultRequestHeaders.Add("X-Forwarded-For", $"10.{bytes[0]}.{bytes[1]}.{(byte)(bytes[2] + 1)}");
+        var email = $"nobody_{Guid.NewGuid():N}@test.local";
+
+        for (var i = 0; i < PermitLimit; i++)
+        {
+            Assert.Equal(HttpStatusCode.Accepted, (await client.ForgotPasswordAsync(email)).StatusCode);
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await client.ForgotPasswordAsync(email)).StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, (await other.ForgotPasswordAsync(email)).StatusCode);
     }
 }

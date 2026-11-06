@@ -88,6 +88,54 @@ public class DockerComposeTests
     }
 
     [Fact]
+    public void Backend_EnablesSwaggerByDefaultWithOverride()
+    {
+        // backend w środowisku Production udostępnia Swaggera tylko po jawnym Swagger:Enabled; SWAGGER_ENABLED=false wyłącza
+        var backend = ServiceBlock(File.ReadAllText(RepositoryFiles.Find("docker-compose.yml")), "backend");
+
+        Assert.Contains("ASPNETCORE_ENVIRONMENT: Production", backend);
+        Assert.Contains("Swagger__Enabled: ${SWAGGER_ENABLED:-true}", backend);
+        Assert.Contains("SWAGGER_ENABLED=true", File.ReadAllText(RepositoryFiles.Find(".env.example")));
+    }
+
+    [Fact]
+    public void Backend_RequiresTheAdminPasswordFromEnv()
+    {
+        // hasło nowych kont adminów z .env (docker-up.ps1 je generuje) - bez niego compose nie wystartuje
+        var backend = ServiceBlock(File.ReadAllText(RepositoryFiles.Find("docker-compose.yml")), "backend");
+
+        Assert.Contains("Seed__AdminPassword: \"${ADMIN_PASSWORD:?ADMIN_PASSWORD is not set", backend);
+        Assert.Contains("ADMIN_PASSWORD=", File.ReadAllText(RepositoryFiles.Find(".env.example")));
+    }
+
+    [Theory]
+    [InlineData("db")]
+    [InlineData("storage")]
+    [InlineData("mailpit")]
+    [InlineData("backend")]
+    [InlineData("frontend")]
+    public void EveryService_RunsWithNoNewPrivileges(string service)
+    {
+        var block = ServiceBlock(File.ReadAllText(RepositoryFiles.Find("docker-compose.yml")), service);
+
+        Assert.Matches(new Regex(@"security_opt:\s+- no-new-privileges:true"), block);
+    }
+
+    // Backend/Dockerfile: aplikacja nie działa jako root, a katalog magazynu Local jest zapisywalny dla jej użytkownika
+    [Fact]
+    public void BackendImage_RunsAsTheAppUser()
+    {
+        var dockerfile = File.ReadAllText(RepositoryFiles.Find(Path.Combine("Backend", "Dockerfile"))).Replace("\r\n", "\n");
+        var runtime = dockerfile[dockerfile.LastIndexOf("\nFROM ", StringComparison.Ordinal)..];
+
+        var users = Regex.Matches(runtime, @"^USER\s+(\S+)", RegexOptions.Multiline).Select(m => m.Groups[1].Value).ToList();
+        Assert.Equal("app", users.Last());
+        Assert.Contains("RUN mkdir -p /app/storage && chown app:app /app/storage", runtime);
+        Assert.True(runtime.IndexOf("chown app:app", StringComparison.Ordinal) < runtime.IndexOf("USER app", StringComparison.Ordinal));
+        Assert.Contains("ASPNETCORE_HTTP_PORTS=8080", runtime);
+    }
+
+    [Fact]
     public void Mailpit_IsPinnedWithTheUiOnLocalhostAndSmtpOnlyInsideCompose()
     {
         var compose = File.ReadAllText(RepositoryFiles.Find("docker-compose.yml"));

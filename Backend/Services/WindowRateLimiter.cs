@@ -2,14 +2,14 @@ using System.Threading.RateLimiting;
 
 namespace Backend.Services;
 
-// Limiter polityki "uploads" dla jednego użytkownika (polityka "account-emails" używa go bez limitu równoległości):
+// Limiter jednej partycji (użytkownika albo adresu IP) polityk "uploads", "auth", "public-lists" i "account-emails":
 // - okno stałe: najwyżej permitLimit żądań w oknie liczonym od pierwszego żądania po wygaśnięciu poprzedniego okna;
 //   odrzucenie podaje RetryAfter = czas do końca bieżącego okna (wbudowany FixedWindowRateLimiter podaje zawsze
 //   pełną długość okna),
-// - wspólny dla wszystkich użytkowników limit równoległych uploadów (shared, np. ConcurrencyLimiter bez kolejki) -
-//   lease trzymany do końca żądania; odrzucenie przez ten limit nie zużywa limitu okna użytkownika.
+// - opcjonalny, wspólny dla wszystkich partycji limit równoległych żądań (shared, np. ConcurrencyLimiter bez kolejki) -
+//   lease trzymany do końca żądania; odrzucenie przez ten limit nie zużywa limitu okna partycji.
 // Bez kolejki: AcquireAsync działa jak AttemptAcquire. Nie jest właścicielem shared (singleton w DI).
-public sealed class UploadRateLimiter : RateLimiter
+public sealed class WindowRateLimiter : RateLimiter
 {
     private readonly int _permitLimit;
     private readonly TimeSpan _window;
@@ -23,7 +23,7 @@ public sealed class UploadRateLimiter : RateLimiter
     private long _successfulLeases;
     private long _failedLeases;
 
-    public UploadRateLimiter(int permitLimit, TimeSpan window, RateLimiter? shared, TimeProvider time)
+    public WindowRateLimiter(int permitLimit, TimeSpan window, RateLimiter? shared, TimeProvider time)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(permitLimit, 1);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(window, TimeSpan.Zero);

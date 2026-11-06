@@ -14,26 +14,45 @@ public static class DatabaseSeeder
     public const string PendingEmployerCompany = "Nowa Firma Sp. z o.o.";
     public const string EmployerPassword = "Employer123!";
 
+    // hasło kont adminów (admin@jobboard.com, superadmin@jobboard.com): Seed:AdminPassword, w Development domyślnie
+    // AdminDevelopmentPassword; stack Dockera podaje losowe hasło z .env (ADMIN_PASSWORD, docker-up.ps1)
+    public const string AdminPasswordKey = "Seed:AdminPassword";
+    public const string AdminDevelopmentPassword = "Admin123!";
+
     // Konta demo (kandydaci i pracodawcy ze znanymi hasłami) tylko lokalnie: domyślnie w Development,
     // poza nim po jawnym włączeniu Seed:DemoAccounts=true (lokalny stack Dockera); jawna wartość ma pierwszeństwo.
     // Konta adminów są tworzone zawsze.
     public static bool DemoAccountsEnabled(IHostEnvironment environment, IConfiguration configuration) =>
         configuration.GetValue<bool?>("Seed:DemoAccounts") ?? environment.IsDevelopment();
 
+    // Hasło dla nowo tworzonych kont adminów; null - brak (poza Development hasło musi być skonfigurowane).
+    // Istniejące konta adminów nie są zmieniane - ustawienie działa przy pierwszym seedzie i po resecie danych.
+    public static string? AdminPassword(IHostEnvironment environment, IConfiguration configuration)
+    {
+        var configured = configuration[AdminPasswordKey];
+        if (!string.IsNullOrEmpty(configured))
+        {
+            return configured;
+        }
+
+        return environment.IsDevelopment() ? AdminDevelopmentPassword : null;
+    }
+
     public static async Task SeedAsync(IServiceProvider serviceProvider)
     {
         var context = serviceProvider.GetRequiredService<ApplicationDbContext>();
         var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = serviceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-        var includeDemoAccounts = DemoAccountsEnabled(
-            serviceProvider.GetRequiredService<IHostEnvironment>(),
-            serviceProvider.GetRequiredService<IConfiguration>());
+        var environment = serviceProvider.GetRequiredService<IHostEnvironment>();
+        var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+        var includeDemoAccounts = DemoAccountsEnabled(environment, configuration);
+        var adminPassword = AdminPassword(environment, configuration);
 
         await context.Database.MigrateAsync();
 
         await SeedRoles(roleManager);
 
-        await SeedAdmins(userManager);
+        await SeedAdmins(userManager, adminPassword);
 
         await SeedJobOffers(context);
 
@@ -50,8 +69,12 @@ public static class DatabaseSeeder
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
         RoleManager<IdentityRole> roleManager,
-        bool includeDemoAccounts)
+        bool includeDemoAccounts,
+        string? adminPassword)
     {
+        // konta adminów są odtwarzane - bez hasła reset nie ma sensu (sprawdzenie przed usunięciem czegokolwiek)
+        EnsureAdminPassword(adminPassword);
+
         await using var transaction = await context.Database.BeginTransactionAsync();
 
         await context.JobApplications.ExecuteDeleteAsync();
@@ -68,7 +91,7 @@ public static class DatabaseSeeder
 
         await SeedRoles(roleManager);
 
-        await SeedAdmins(userManager);
+        await SeedAdmins(userManager, adminPassword);
 
         await SeedJobOffers(context, forceReseed: true);
 
@@ -92,12 +115,18 @@ public static class DatabaseSeeder
         }
     }
 
-    private static async Task SeedAdmins(UserManager<ApplicationUser> userManager)
+    private static string EnsureAdminPassword(string? adminPassword) =>
+        string.IsNullOrEmpty(adminPassword)
+            ? throw new InvalidOperationException(
+                $"{AdminPasswordKey} is not configured - set it (e.g. the Seed__AdminPassword environment variable) to create the admin accounts.")
+            : adminPassword;
+
+    private static async Task SeedAdmins(UserManager<ApplicationUser> userManager, string? adminPassword)
     {
         var admins = new[]
         {
-            new { Email = "admin@jobboard.com", FirstName = "Admin", LastName = "Główny", Password = "Admin123!" },
-            new { Email = "superadmin@jobboard.com", FirstName = "Super", LastName = "Admin", Password = "Admin123!" }
+            new { Email = "admin@jobboard.com", FirstName = "Admin", LastName = "Główny" },
+            new { Email = "superadmin@jobboard.com", FirstName = "Super", LastName = "Admin" }
         };
 
         foreach (var adminData in admins)
@@ -114,11 +143,16 @@ public static class DatabaseSeeder
                     CreatedAt = DateTime.UtcNow
                 };
 
-                var result = await userManager.CreateAsync(admin, adminData.Password);
-                if (result.Succeeded)
+                // hasło niespełniające polityki Identity przerywa start czytelnym błędem (bez treści hasła)
+                var result = await userManager.CreateAsync(admin, EnsureAdminPassword(adminPassword));
+                if (!result.Succeeded)
                 {
-                    await userManager.AddToRoleAsync(admin, "Admin");
+                    throw new InvalidOperationException(
+                        $"Could not create the admin account {adminData.Email} - check {AdminPasswordKey}: " +
+                        string.Join(", ", result.Errors.Select(e => e.Code)));
                 }
+
+                await userManager.AddToRoleAsync(admin, Roles.Admin);
             }
         }
     }

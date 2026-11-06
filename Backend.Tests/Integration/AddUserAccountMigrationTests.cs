@@ -10,6 +10,7 @@ namespace Backend.Tests.Integration;
 // Migracja AddUserAccount na bazie z danymi: istniejące konta dostają puste pola profilu i włączone powiadomienia,
 // nowe tabele (dokumenty profilu, zapisane oferty, outbox e-maili, klucze Data Protection) z kluczami obcymi
 // kaskadowymi; Down usuwa je i nie rusza reszty danych. Dane sprzed migracji wstawiane są surowym SQL-em.
+[Trait("Category", "Migrations")]
 public class AddUserAccountMigrationTests
 {
     private const string PreviousMigration = "20261106103645_AddApplicationAttachments";
@@ -222,7 +223,8 @@ public class AddUserAccountMigrationTests
             await using var context = CreateContext(cs);
             await context.Database.MigrateAsync();
             Assert.Equal(NewTables, (await TablesAsync(cs)).Intersect(NewTables).Order());
-            Assert.Equal(AddUserAccount, context.Database.GetAppliedMigrations().Last());
+            // migracja jest zastosowana (późniejsze migracje mogą być po niej)
+            Assert.Contains(AddUserAccount, context.Database.GetAppliedMigrations());
         });
     }
 }

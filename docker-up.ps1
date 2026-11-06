@@ -65,7 +65,21 @@ function New-RandomSecret([int]$Length) {
     return $sb.ToString()
 }
 
-# hasło do bazy, sekret JWT, klucze S3, ALLOW_SEED_REFRESH i SEED_DEMO_ACCOUNTS zachowujemy z poprzedniego .env
+# hasło adminów: same litery i cyfry (bez escapowania w .env i compose), min. 16 znaków, z małą i wielką literą oraz
+# cyfrą - spełnia politykę haseł backendu; -cmatch, bo -match nie rozróżnia wielkości liter
+function Test-AdminPassword([string]$Password) {
+    return $Password -cmatch '^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])[A-Za-z0-9]{16,}$'
+}
+
+function New-AdminPassword {
+    do {
+        $password = New-RandomSecret 20
+    } while (-not (Test-AdminPassword $password))
+    return $password
+}
+
+# hasło do bazy, sekret JWT, klucze S3, hasło adminów, ALLOW_SEED_REFRESH, SEED_DEMO_ACCOUNTS i SWAGGER_ENABLED zachowujemy
+# z poprzedniego .env
 $dbPassword = Get-EnvValue 'DB_PASSWORD' 'jobboard'
 $jwtSecret = Get-EnvValue 'JWT_SECRET' ''
 if (-not $jwtSecret) {
@@ -88,13 +102,25 @@ if (-not $s3AccessKey -or -not $s3SecretKey) {
     $s3SecretKey = New-RandomSecret 40
     Write-Warning 'S3_ACCESS_KEY lub S3_SECRET_KEY w .env nie jest ciągiem co najmniej 16 liter i cyfr - wygenerowano nowe klucze (zapisane w .env).'
 }
+# hasło kont adminów tworzonych przez seeder (Seed__AdminPassword) - istniejące w bazie konta adminów zachowują swoje
+$adminPassword = Get-EnvValue 'ADMIN_PASSWORD' ''
+if (-not $adminPassword) {
+    $adminPassword = New-AdminPassword
+    Write-Host 'Wygenerowano nowe ADMIN_PASSWORD (zapisane w .env).'
+} elseif (-not (Test-AdminPassword $adminPassword)) {
+    $adminPassword = New-AdminPassword
+    Write-Warning 'ADMIN_PASSWORD w .env nie jest ciągiem co najmniej 16 liter i cyfr z małą i wielką literą oraz cyfrą - wygenerowano nowe hasło (zapisane w .env).'
+}
 $allowSeedRefresh = Get-EnvValue 'ALLOW_SEED_REFRESH' ''
 $seedDemoAccounts = Get-EnvValue 'SEED_DEMO_ACCOUNTS' ''
+$swaggerEnabled = Get-EnvValue 'SWAGGER_ENABLED' ''
 
-# docker compose wymaga JWT_SECRET i kluczy S3 już przy "down" (interpolacja całego pliku), a .env może ich jeszcze nie mieć
+# docker compose wymaga JWT_SECRET, kluczy S3 i ADMIN_PASSWORD już przy "down" (interpolacja całego pliku), a .env może
+# ich jeszcze nie mieć
 $env:JWT_SECRET = $jwtSecret
 $env:S3_ACCESS_KEY = $s3AccessKey
 $env:S3_SECRET_KEY = $s3SecretKey
+$env:ADMIN_PASSWORD = $adminPassword
 try {
     # zatrzymanie wcześniej uruchomionych kontenerów tego projektu, żeby nie blokowały własnych portów
     docker compose down
@@ -108,19 +134,26 @@ try {
     }
 
     $envLines = @($ports.Keys | ForEach-Object { "$_=$($ports[$_])" }) + "DB_PASSWORD=$dbPassword" + "JWT_SECRET=$jwtSecret" +
-        "S3_ACCESS_KEY=$s3AccessKey" + "S3_SECRET_KEY=$s3SecretKey"
+        "S3_ACCESS_KEY=$s3AccessKey" + "S3_SECRET_KEY=$s3SecretKey" + "ADMIN_PASSWORD=$adminPassword"
     if ($allowSeedRefresh) { $envLines += "ALLOW_SEED_REFRESH=$allowSeedRefresh" }
     if ($seedDemoAccounts) { $envLines += "SEED_DEMO_ACCOUNTS=$seedDemoAccounts" }
+    if ($swaggerEnabled) { $envLines += "SWAGGER_ENABLED=$swaggerEnabled" }
     [System.IO.File]::WriteAllLines((Join-Path $PSScriptRoot '.env'), $envLines, [System.Text.UTF8Encoding]::new($false))
 
     docker compose up -d --build
     if ($LASTEXITCODE -ne 0) { throw 'docker compose up nie powiodło się' }
 } finally {
-    Remove-Item Env:JWT_SECRET, Env:S3_ACCESS_KEY, Env:S3_SECRET_KEY -ErrorAction SilentlyContinue
+    Remove-Item Env:JWT_SECRET, Env:S3_ACCESS_KEY, Env:S3_SECRET_KEY, Env:ADMIN_PASSWORD -ErrorAction SilentlyContinue
 }
 
 Write-Host ''
 Write-Host "Frontend: http://localhost:$($ports.FRONTEND_PORT)"
-Write-Host "Swagger:  http://localhost:$($ports.BACKEND_PORT)/swagger"
+if ($swaggerEnabled -eq 'false') {
+    Write-Host 'Swagger:  wyłączony (SWAGGER_ENABLED=false)'
+} else {
+    Write-Host "Swagger:  http://localhost:$($ports.BACKEND_PORT)/swagger"
+}
 Write-Host "MySQL:    localhost:$($ports.DB_PORT) (root / $dbPassword)"
 Write-Host "Mailpit:  http://localhost:$($ports.MAILPIT_PORT) (e-maile aplikacji)"
+# hasło z .env działa dla kont adminów utworzonych z tym ustawieniem (nowa baza albo reset danych demo)
+Write-Host "Admin:    admin@jobboard.com / $adminPassword (konta adminów utworzone wcześniej zachowują dotychczasowe hasło)"

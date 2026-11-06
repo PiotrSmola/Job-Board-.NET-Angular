@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Backend.Helpers;
 
 namespace Backend.DTOs;
 
@@ -7,7 +8,7 @@ public class ResetPasswordDto
 {
     [Required]
     [EmailAddress]
-    [MaxLength(256)]
+    [MaxLength(CredentialLimits.MaxEmailLength)]
     public string Email { get; set; } = string.Empty;
 
     [Required]
@@ -15,6 +16,6 @@ public class ResetPasswordDto
     public string Token { get; set; } = string.Empty;
 
     [Required]
-    [MaxLength(100)]
+    [MaxLength(CredentialLimits.MaxPasswordLength)]
     public string NewPassword { get; set; } = string.Empty;
 }

@@ -11,6 +11,7 @@ public class CompanyParams : PaginationParams
     public const string JobsDesc = "jobsDesc";
 
     // Filtrowanie po nazwie i lokalizacji
+    [MaxLength(MaxSearchLength)]
     public string? SearchTerm { get; set; }
 
     // Sortowanie: nameAsc (domyślnie), nameDesc, jobsDesc (najwięcej aktywnych ofert)
@@ -23,6 +24,7 @@ public class AdminCompanyParams : PaginationParams
     public const string Newest = "newest";
     public const string Oldest = "oldest";
 
+    [MaxLength(MaxSearchLength)]
     public string? SearchTerm { get; set; }
 
     [EnumDataType(typeof(CompanyStatus))]

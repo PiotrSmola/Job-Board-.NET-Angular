@@ -53,8 +53,6 @@ public class AttachmentDtoTests
             ["GET {id} (owner)"] = () => Single(owner, $"{Url}/{id}"),
             ["GET {id} (employer)"] = () => Single(employer, $"{Url}/{id}"),
             ["GET {id} (admin)"] = () => Single(admin, $"{Url}/{id}"),
-            ["job/{id} (employer)"] = () => FromList(employer, $"{Url}/job/{setup.Job.Id}"),
-            ["job/{id} (admin)"] = () => FromList(admin, $"{Url}/job/{setup.Job.Id}"),
             ["all (employer)"] = () => FromList(employer, $"{Url}/all?pageSize=50&jobOfferId={setup.Job.Id}"),
             ["all (admin)"] = () => FromList(admin, $"{Url}/all?pageSize=50&jobOfferId={setup.Job.Id}")
         };

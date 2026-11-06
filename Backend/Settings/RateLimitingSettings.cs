@@ -1,37 +1,46 @@
 namespace Backend.Settings;
 
 // Ograniczanie liczby żądań (sekcja "RateLimiting"):
-// - polityka "uploads" - upload plików (załączniki, dokumenty profilu), osobny limit dla każdego zalogowanego
-//   użytkownika i wspólny limit równoległych uploadów,
-// - polityka "account-emails" - żądania wysyłające e-maile bezpieczeństwa (reset hasła - per adres IP, ponowne
-//   wysłanie potwierdzenia - per użytkownik)
+// - "uploads" - upload plików (załączniki, dokumenty profilu), osobny limit dla każdego zalogowanego użytkownika
+//   i wspólny limit równoległych uploadów,
+// - "auth" - logowanie, rejestracja i pozostałe endpointy AuthController (każdy przyszły też), osobny limit dla
+//   każdego adresu IP (brute force) i wspólny limit równoległych żądań (haszowanie haseł obciąża CPU),
+// - "account-emails" - żądania wysyłające e-maile bezpieczeństwa (reset hasła - per adres IP, ponowne wysłanie
+//   potwierdzenia - per użytkownik); na tych endpointach zastępuje "auth" (atrybut akcji ma pierwszeństwo),
+// - "public-lists" - publiczne listy ofert i firm (z wyszukiwaniem), osobny limit dla każdego adresu IP.
 public class RateLimitingSettings
 {
     public const string SectionName = "RateLimiting";
     public const string UploadsPolicy = "uploads";
+    public const string AuthPolicy = "auth";
+    public const string PublicListsPolicy = "public-lists";
     public const string AccountEmailsPolicy = "account-emails";
     public const string RejectedMessage = "Too many requests - try again later";
 
-    public RateLimitRule Uploads { get; set; } = new();
+    public RateLimitRule Uploads { get; set; } = new() { PermitLimit = 30, WindowSeconds = 600, ConcurrencyLimit = 8 };
 
-    public RateLimitWindow AccountEmails { get; set; } = new() { PermitLimit = 5, WindowSeconds = 900 };
+    public RateLimitRule Auth { get; set; } = new() { PermitLimit = 10, WindowSeconds = 60, ConcurrencyLimit = 4 };
+
+    public WindowRateLimitRule PublicLists { get; set; } = new() { PermitLimit = 120, WindowSeconds = 60 };
+
+    public WindowRateLimitRule AccountEmails { get; set; } = new() { PermitLimit = 5, WindowSeconds = 900 };
 
     // rzuca InvalidOperationException przy złej konfiguracji (przerywa start aplikacji)
     public void Validate()
     {
         Uploads.Validate($"{SectionName}:Uploads");
+        Auth.Validate($"{SectionName}:Auth");
+        PublicLists.Validate($"{SectionName}:PublicLists");
         AccountEmails.Validate($"{SectionName}:AccountEmails");
     }
 }
 
-// Najwyżej PermitLimit żądań w oknie WindowSeconds na partycję (okno stałe liczone od pierwszego żądania;
-// Retry-After = czas do końca okna)
-public class RateLimitWindow
+// Najwyżej PermitLimit żądań w oknie WindowSeconds na partycję (użytkownika albo adres IP); okno stałe liczone od
+// pierwszego żądania partycji, Retry-After = czas do końca okna
+public class WindowRateLimitRule
 {
-    public int PermitLimit { get; set; } = 30;
-    public int WindowSeconds { get; set; } = 600;
-
-    public TimeSpan Window => TimeSpan.FromSeconds(WindowSeconds);
+    public int PermitLimit { get; set; }
+    public int WindowSeconds { get; set; }
 
     public virtual void Validate(string prefix)
     {
@@ -47,11 +56,11 @@ public class RateLimitWindow
     }
 }
 
-// Okno na użytkownika (jak RateLimitWindow) i najwyżej ConcurrencyLimit żądań naraz łącznie dla wszystkich
-// użytkowników (bez kolejki - nadmiarowe dostają od razu 429)
-public class RateLimitRule : RateLimitWindow
+// Okno jak w WindowRateLimitRule i dodatkowo najwyżej ConcurrencyLimit żądań naraz łącznie dla wszystkich partycji
+// (bez kolejki - nadmiarowe dostają od razu 429)
+public class RateLimitRule : WindowRateLimitRule
 {
-    public int ConcurrencyLimit { get; set; } = 8;
+    public int ConcurrencyLimit { get; set; }
 
     public override void Validate(string prefix)
     {

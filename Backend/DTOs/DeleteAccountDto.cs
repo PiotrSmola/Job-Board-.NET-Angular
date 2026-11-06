@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Backend.Helpers;
 
 namespace Backend.DTOs;
 
@@ -6,6 +7,6 @@ namespace Backend.DTOs;
 public class DeleteAccountDto
 {
     [Required]
-    [MaxLength(100)]
+    [MaxLength(CredentialLimits.MaxPasswordLength)]
     public string Password { get; set; } = string.Empty;
 }

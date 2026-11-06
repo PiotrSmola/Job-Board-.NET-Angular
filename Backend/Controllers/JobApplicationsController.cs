@@ -100,26 +100,6 @@ public class JobApplicationsController : ControllerBase
         return Ok(application.ToDto(includeHistory: true, includeChangedBy: canManage));
     }
 
-    // Aplikacje do oferty - admin albo pracodawca firmy oferty (oferta innej firmy - 404)
-    [HttpGet("job/{jobId}")]
-    [Authorize(Roles = Roles.AdminOrEmployer)]
-    [ProducesResponseType(typeof(IEnumerable<JobApplicationDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<IEnumerable<JobApplicationDto>>> GetApplicationsByJobId(int jobId)
-    {
-        var job = await _jobRepository.GetJobByIdAsync(jobId);
-        if (job == null || !await _access.CanManageJobAsync(job))
-        {
-            return NotFound(new { message = JobNotFoundMessage });
-        }
-
-        var applications = await _applicationRepository.GetApplicationsByJobIdAsync(jobId);
-
-        return Ok(applications.Select(a => a.ToDto()));
-    }
-
     // Złożenie aplikacji (tylko kandydaci - nie admin ani pracodawca); na ofertę, z której kandydat wcześniej
     // się wycofał, reaktywuje tę samą aplikację. E-maile (potwierdzenie dla kandydata, nowa aplikacja dla członków
     // firmy - wg ich preferencji) zapisywane w outboksie razem z aplikacją

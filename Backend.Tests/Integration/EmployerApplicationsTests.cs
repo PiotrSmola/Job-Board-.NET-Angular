@@ -5,13 +5,12 @@ using Backend.Tests.Infrastructure;
 
 namespace Backend.Tests.Integration;
 
-// Aplikacje z perspektywy pracodawcy: lista /all, /job/{id}, szczegóły, zmiana statusu, usuwanie i aplikowanie
+// Aplikacje z perspektywy pracodawcy: lista /all (także dla jednej oferty), szczegóły, zmiana statusu, usuwanie i aplikowanie
 [Collection(ApiCollection.Name)]
 public class EmployerApplicationsTests
 {
     private const string Url = "/api/jobapplications";
     private const string ApplicationNotFound = "Application not found";
-    private const string JobNotFound = "Job offer not found";
 
     private readonly ApiFixture _api;
 
@@ -190,56 +189,39 @@ public class EmployerApplicationsTests
         Assert.Equal(setup.Employer.CompanyName, item.JobOffer.Company);
     }
 
-    // --- /job/{id} ---
+    // --- aplikacje do jednej oferty: /all?jobOfferId= (osobny endpoint /job/{id} usunięto) ---
 
     [Fact]
-    public async Task ByJob_AsEmployer_ReturnsApplicationsToOwnOffer()
+    public async Task AllByJob_AsEmployer_ReturnsApplicationsToOwnOffer()
     {
         var setup = await NewSetupAsync();
         using var client = _api.CreateClient(setup.Employer);
 
-        var response = await client.GetAsync($"{Url}/job/{setup.Job.Id}");
+        var items = await AllAsync(client, $"?jobOfferId={setup.Job.Id}");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(setup.Application.Id, Assert.Single(await response.ReadJsonAsync<JobApplicationDto[]>()).Id);
+        Assert.Equal(setup.Application.Id, Assert.Single(items).Id);
     }
 
     [Fact]
-    public async Task ByJob_AsEmployer_ForAnotherCompanysOffer_ReturnsNotFound()
-    {
-        var mine = await NewSetupAsync();
-        var theirs = await NewSetupAsync();
-        using var client = _api.CreateClient(mine.Employer);
-
-        var response = await client.GetAsync($"{Url}/job/{theirs.Job.Id}");
-        var missing = await client.GetAsync($"{Url}/job/{int.MaxValue}");
-
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Equal(JobNotFound, await response.ReadMessageAsync());
-        Assert.Equal(missing.StatusCode, response.StatusCode);
-        Assert.Equal(await missing.ReadMessageAsync(), await response.ReadMessageAsync());
-    }
-
-    [Fact]
-    public async Task ByJob_AsAdmin_WorksForAnyCompany()
+    public async Task AllByJob_AsAdmin_WorksForAnyCompany()
     {
         var setup = await NewSetupAsync();
         using var admin = await _api.AdminClientAsync();
 
-        var response = await admin.GetAsync($"{Url}/job/{setup.Job.Id}");
+        var items = await AllAsync(admin, $"?jobOfferId={setup.Job.Id}");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(setup.Application.Id, Assert.Single(items).Id);
     }
 
     [Fact]
-    public async Task ByJob_AsRegularUser_ReturnsForbidden_AndWithoutTokenUnauthorized()
+    public async Task RemovedByJobEndpoint_ReturnsNotFoundForEmployerAndAdmin()
     {
         var setup = await NewSetupAsync();
-        using var user = await _api.UserClientAsync();
-        using var anonymous = _api.CreateClient();
+        using var employer = _api.CreateClient(setup.Employer);
+        using var admin = await _api.AdminClientAsync();
 
-        Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync($"{Url}/job/{setup.Job.Id}")).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync($"{Url}/job/{setup.Job.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await employer.GetAsync($"{Url}/job/{setup.Job.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync($"{Url}/job/{setup.Job.Id}")).StatusCode);
     }
 
     // --- GET /{id} ---

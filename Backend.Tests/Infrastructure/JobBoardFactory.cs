@@ -1,3 +1,4 @@
+using Backend.Data;
 using Backend.Interfaces;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -18,6 +19,9 @@ public class JobBoardFactory : WebApplicationFactory<Program>
 
     public const string UploadPermitLimitKey = "RateLimiting:Uploads:PermitLimit";
     public const string UploadConcurrencyLimitKey = "RateLimiting:Uploads:ConcurrencyLimit";
+    public const string AuthPermitLimitKey = "RateLimiting:Auth:PermitLimit";
+    public const string AuthConcurrencyLimitKey = "RateLimiting:Auth:ConcurrencyLimit";
+    public const string PublicListsPermitLimitKey = "RateLimiting:PublicLists:PermitLimit";
     public const string AccountEmailsPermitLimitKey = "RateLimiting:AccountEmails:PermitLimit";
 
     // adres frontendu w linkach e-maili wysyłanych w testach
@@ -57,6 +61,11 @@ public class JobBoardFactory : WebApplicationFactory<Program>
             // testy limitów ustawiają własne wartości (WithSetting) albo przywracają domyślne (null)
             [UploadPermitLimitKey] = "100000",
             [UploadConcurrencyLimitKey] = "1000",
+            // wszystkie żądania testów mają ten sam adres klienta (TestServer) i logują się wielokrotnie, także równolegle -
+            // limity logowania i list publicznych podniesione; testy tych limitów ustawiają własne wartości
+            [AuthPermitLimitKey] = "100000",
+            [AuthConcurrencyLimitKey] = "1000",
+            [PublicListsPermitLimitKey] = "100000",
             // e-maile: wysyłka przez FakeEmailSender (host SMTP tylko włącza procesor outboksu), szybkie odpytywanie;
             // limit żądań e-maili bezpieczeństwa podniesiony jak limit uploadów (testy limitu ustawiają własny)
             ["Frontend:BaseUrl"] = FrontendBaseUrl,
@@ -64,6 +73,12 @@ public class JobBoardFactory : WebApplicationFactory<Program>
             ["Email:Outbox:PollIntervalSeconds"] = "1",
             [AccountEmailsPermitLimitKey] = "100000"
         };
+
+        // poza Development hasło kont adminów z seeda musi być skonfigurowane - testy logują się tym samym co w Development
+        if (environment != "Development")
+        {
+            _settings[DatabaseSeeder.AdminPasswordKey] = TestUsers.AdminPassword;
+        }
 
         // brak wartości = domyślne zachowanie seedera (konta demo tylko w Development)
         if (demoAccounts.HasValue)
