@@ -27,6 +27,9 @@ const KNOWN_API_MESSAGES: Record<string, string> = {
   'Company has job offers or members': 'Nie można usunąć firmy, która ma oferty lub członków zespołu',
   'Company not found': 'Firma nie została znaleziona',
   'Job offer has applications - close it instead': 'Oferta ma aplikacje – zamiast usuwać, zamknij ją.',
+  // kategorie ofert
+  'Category name or slug is already taken': 'Kategoria o takiej nazwie lub slugu już istnieje',
+  'Category not found': 'Kategoria nie została znaleziona',
   // załączniki aplikacji
   'Unsupported file type - upload a PDF, DOCX, PNG or JPEG file': 'Nieobsługiwany typ pliku – prześlij plik PDF, DOCX, PNG lub JPEG',
   'File is too large - maximum size is 5 MB': 'Plik jest za duży – maksymalny rozmiar to 5 MB',

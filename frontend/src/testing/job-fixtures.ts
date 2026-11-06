@@ -1,5 +1,5 @@
 // Dane testowe ofert pracy współdzielone przez specy komponentów
-import { JobOffer, JobOfferStatus, WorkType } from '../app/models/job-offer.model';
+import { Currency, JobOffer, JobOfferStatus, SalaryPeriod, WorkType } from '../app/models/job-offer.model';
 import { PaginatedResult } from '../app/models/pagination.model';
 
 export function makeJob(id = 1, overrides: Partial<JobOffer> = {}): JobOffer {
@@ -17,6 +17,14 @@ export function makeJob(id = 1, overrides: Partial<JobOffer> = {}): JobOffer {
     status: JobOfferStatus.Active,
     expiresAt: null,
     isExpired: false,
+    categoryId: null,
+    categoryName: null,
+    categorySlug: null,
+    seniority: null,
+    contractTypes: 0,
+    salaryCurrency: Currency.PLN,
+    salaryPeriod: SalaryPeriod.Month,
+    skills: [],
     ...overrides
   };
 }

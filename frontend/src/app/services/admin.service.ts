@@ -4,6 +4,7 @@ import { Observable, map } from 'rxjs';
 import { AdminSettings } from '../models/admin-settings.model';
 import { Company, SaveCompany } from '../models/company.model';
 import { AdminCompanyParams } from '../models/company-params.model';
+import { Category, SaveCategory } from '../models/taxonomy.model';
 import { PaginatedResult } from '../models/pagination.model';
 import { SKIP_FORBIDDEN_NOTICE } from '../interceptors/auth.interceptor';
 import { toPaginatedResult } from '../utils/pagination';
@@ -15,6 +16,7 @@ export class AdminService {
   private http = inject(HttpClient);
   private readonly API_URL = '/api/admin';
   private readonly COMPANIES_URL = '/api/admin/companies';
+  private readonly CATEGORIES_URL = '/api/admin/categories';
 
   getSettings(): Observable<AdminSettings> {
     return this.http.get<AdminSettings>(`${this.API_URL}/settings`);
@@ -69,5 +71,20 @@ export class AdminService {
   /** 400, gdy firma ma oferty lub członków. */
   deleteCompany(id: number): Observable<void> {
     return this.http.delete<void>(`${this.COMPANIES_URL}/${id}`);
+  }
+
+  // --- kategorie ofert (lista: CategoryService, publiczny GET /api/categories) ---
+
+  createCategory(category: SaveCategory): Observable<Category> {
+    return this.http.post<Category>(this.CATEGORIES_URL, category);
+  }
+
+  updateCategory(id: number, category: SaveCategory): Observable<Category> {
+    return this.http.put<Category>(`${this.CATEGORIES_URL}/${id}`, category);
+  }
+
+  /** Oferty usuniętej kategorii tracą kategorię (null). */
+  deleteCategory(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.CATEGORIES_URL}/${id}`);
   }
 }
