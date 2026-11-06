@@ -102,12 +102,22 @@ public class ApplicationConcurrencyTests
             }
         }
 
-        public Task<JobApplication?> GetApplicationByIdAsync(int id, bool includeHistory = false) => _inner.GetApplicationByIdAsync(id, includeHistory);
+        public Task<JobApplication?> GetApplicationByIdAsync(int id, bool includeHistory = false, CancellationToken cancellationToken = default) =>
+            _inner.GetApplicationByIdAsync(id, includeHistory, cancellationToken);
         public Task<IEnumerable<JobApplication>> GetApplicationsByUserIdAsync(string userId) => _inner.GetApplicationsByUserIdAsync(userId);
         public Task<IEnumerable<JobApplication>> GetApplicationsByJobIdAsync(int jobId) => _inner.GetApplicationsByJobIdAsync(jobId);
         public Task<PagedList<JobApplication>> GetApplicationsAsync(ApplicationParams applicationParams, ManagementScope scope) => _inner.GetApplicationsAsync(applicationParams, scope);
         public Task<JobApplication> AddApplicationAsync(JobApplication application) => _inner.AddApplicationAsync(application);
-        public Task<bool> DeleteApplicationAsync(int id) => _inner.DeleteApplicationAsync(id);
+        public Task<ApplicationOwnership?> GetOwnershipAsync(int id, CancellationToken cancellationToken = default) =>
+            _inner.GetOwnershipAsync(id, cancellationToken);
+        public Task<AttachmentsAddResult> AddAttachmentsAsync(int applicationId, string userId,
+            IReadOnlyList<ApplicationAttachment> attachments, CancellationToken cancellationToken = default) =>
+            _inner.AddAttachmentsAsync(applicationId, userId, attachments, cancellationToken);
+        public Task<(AttachmentDeleteResult Result, string? FileKey)> DeleteAttachmentAsync(int applicationId, int attachmentId, string userId,
+            CancellationToken cancellationToken = default) => _inner.DeleteAttachmentAsync(applicationId, attachmentId, userId, cancellationToken);
+        public Task<(bool Deleted, IReadOnlyList<string> FileKeys)> DeleteApplicationAsync(int id) => _inner.DeleteApplicationAsync(id);
+        public Task<IReadOnlyList<string>> GetExistingFileKeysAsync(IReadOnlyCollection<string> fileKeys, CancellationToken cancellationToken = default) =>
+            _inner.GetExistingFileKeysAsync(fileKeys, cancellationToken);
     }
 
     // Aplikacja na tej samej bazie, ale z repozytorium czekającym na wszystkich uczestników wyścigu

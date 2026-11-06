@@ -36,8 +36,14 @@ public class JobApplication
     public JobOffer JobOffer { get; set; } = null!;
     public ApplicationUser User { get; set; } = null!;
     public ICollection<ApplicationStatusHistory> StatusHistory { get; set; } = new List<ApplicationStatusHistory>();
+    public ICollection<ApplicationAttachment> Attachments { get; set; } = new List<ApplicationAttachment>();
+
+    // statusy, w których kandydat może dodawać załączniki (te same co przy wycofaniu); usuwać może w każdym statusie
+    public static readonly IReadOnlySet<ApplicationStatus> AttachmentUploadStatuses = WithdrawableStatuses;
 
     public bool CanBeWithdrawn => WithdrawableStatuses.Contains(Status);
+
+    public bool CanAddAttachments => AttachmentUploadStatuses.Contains(Status);
 
     // Nowa aplikacja ze statusem Submitted i pierwszym wpisem w historii (autor = kandydat)
     public static JobApplication Submit(int jobOfferId, string userId, string? note, DateTime now)

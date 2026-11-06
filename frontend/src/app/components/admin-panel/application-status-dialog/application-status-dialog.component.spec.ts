@@ -11,7 +11,8 @@ function makeApplication(status = ApplicationStatus.Submitted): JobApplication {
   return {
     id: 7, jobOfferId: 3, userId: 'u1', userEmail: 'jan@example.com', userFullName: 'Jan Kowalski',
     jobTitle: 'Programista Angular', company: 'Acme', companyId: 1, note: null, appliedAt: new Date('2026-01-01T10:00:00Z'),
-    status, statusChangedAt: '2026-01-01T10:00:00Z'
+    status, statusChangedAt: '2026-01-01T10:00:00Z',
+    attachments: [], attachmentsTotalSize: 0
   };
 }
 

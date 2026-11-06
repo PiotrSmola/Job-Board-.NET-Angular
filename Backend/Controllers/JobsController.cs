@@ -20,12 +20,21 @@ public class JobsController : ControllerBase
     private readonly IJobRepository _jobRepository;
     private readonly ICompanyRepository _companyRepository;
     private readonly ICurrentUserAccess _access;
+    private readonly IFileStorage _fileStorage;
+    private readonly ILogger<JobsController> _logger;
 
-    public JobsController(IJobRepository jobRepository, ICompanyRepository companyRepository, ICurrentUserAccess access)
+    public JobsController(
+        IJobRepository jobRepository,
+        ICompanyRepository companyRepository,
+        ICurrentUserAccess access,
+        IFileStorage fileStorage,
+        ILogger<JobsController> logger)
     {
         _jobRepository = jobRepository;
         _companyRepository = companyRepository;
         _access = access;
+        _fileStorage = fileStorage;
+        _logger = logger;
     }
 
     // Publiczna lista - wyłącznie oferty aktywne i niewygasłe firm zatwierdzonych (opcjonalny filtr companyId)
@@ -190,7 +199,7 @@ public class JobsController : ControllerBase
         return Ok(job.ToDto(now));
     }
 
-    // Admin usuwa ofertę razem z aplikacjami (kaskadowo); pracodawca tylko ofertę bez aplikacji -
+    // Admin usuwa ofertę razem z aplikacjami (kaskadowo, z plikami załączników); pracodawca tylko ofertę bez aplikacji -
     // ofertę z aplikacjami kandydatów może zamknąć, ale nie usunąć ich danych
     [HttpDelete("{id}")]
     [Authorize(Roles = Roles.AdminOrEmployer)]
@@ -209,7 +218,15 @@ public class JobsController : ControllerBase
 
         if (_access.IsAdmin)
         {
-            return await _jobRepository.DeleteJobAsync(id) ? NoContent() : NotFound(new { message = JobNotFoundMessage });
+            var (deleted, fileKeys) = await _jobRepository.DeleteJobAsync(id);
+            if (!deleted)
+            {
+                return NotFound(new { message = JobNotFoundMessage });
+            }
+
+            // pliki załączników usuniętych aplikacji dopiero po zatwierdzeniu usunięcia w bazie
+            await _fileStorage.DeleteQuietlyAsync(fileKeys, _logger);
+            return NoContent();
         }
 
         if (await _jobRepository.DeleteJobWithoutApplicationsAsync(id))

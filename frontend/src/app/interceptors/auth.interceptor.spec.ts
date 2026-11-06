@@ -305,4 +305,42 @@ describe('authInterceptor', () => {
       expect(body).toEqual({ id: 1 });
     });
   });
+
+  describe('blob requests (file downloads)', () => {
+    it('adds the Bearer token to blob requests', () => {
+      const token = makeJwtExpiringIn(3600);
+      storeSession(token);
+      init();
+
+      http.get('/api/jobapplications/1/attachments/2', { responseType: 'blob' }).subscribe();
+
+      const req = controller.expectOne('/api/jobapplications/1/attachments/2');
+      expect(req.request.headers.get('Authorization')).toBe(`Bearer ${token}`);
+      req.flush(new Blob(['%PDF-']));
+    });
+
+    it('never sends the token to a blob URL outside /api', () => {
+      storeSession(makeJwtExpiringIn(3600));
+      init();
+
+      http.get('https://files.example.com/cv.pdf', { responseType: 'blob' }).subscribe();
+
+      const req = controller.expectOne('https://files.example.com/cv.pdf');
+      expect(req.request.headers.has('Authorization')).toBe(false);
+      req.flush(new Blob(['%PDF-']));
+    });
+
+    it('logs out on 401 for a blob request and passes the error on', () => {
+      storeSession(makeJwtExpiringIn(3600));
+      init();
+      const auth = TestBed.inject(AuthService);
+
+      let status: number | undefined;
+      http.get('/api/jobapplications/1/attachments/2', { responseType: 'blob' }).subscribe({ error: e => (status = e.status) });
+      controller.expectOne('/api/jobapplications/1/attachments/2').flush(new Blob([]), { status: 401, statusText: 'Unauthorized' });
+
+      expect(status).toBe(401);
+      expect(auth.isAuthenticated()).toBe(false);
+    });
+  });
 });

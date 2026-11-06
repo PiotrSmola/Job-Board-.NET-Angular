@@ -1,4 +1,5 @@
-import { Component, inject, OnInit, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, OnInit, ChangeDetectorRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -8,7 +9,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDividerModule } from '@angular/material/divider';
-import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MAT_DIALOG_DATA, MatDialog, MatDialogConfig, MatDialogModule } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -17,24 +18,45 @@ import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
-import { ApplicationStatus, JobApplication } from '../../models/job-application.model';
+import { ApplicationAttachment, ApplicationStatus, AttachmentUploadItem, JobApplication } from '../../models/job-application.model';
 import { getApplicationStatusPresentation, getJobState, StatusPresentation } from '../../utils/status-labels';
 import { StatusChipComponent } from '../shared/status-chip.component';
+import { AttachmentsPickerComponent } from '../shared/attachments-picker.component';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
 
 const ALREADY_APPLIED_MESSAGE = 'You have already applied to this job';
 const NOT_ACCEPTING_MESSAGE = 'This job offer is not accepting applications';
 
+export const ATTACHMENTS_UPLOAD_FAILED_MESSAGE =
+  'Aplikacja złożona, ale nie udało się dołączyć załączników – możesz dodać je w Moich aplikacjach';
+
+/** Konfiguracja dialogu aplikowania (modalny dla czytników ekranu, miejsce na listę plików). */
+export const APPLY_DIALOG_CONFIG: MatDialogConfig = { width: '600px', maxWidth: '95vw', ariaModal: true };
+
+/** Dane dialogu aplikowania: załączniki, które aplikacja już ma (ponowne aplikowanie po wycofaniu je zachowuje). */
+export interface ApplyDialogData {
+  existing: readonly ApplicationAttachment[];
+}
+
+/** Wynik dialogu aplikowania (undefined = anulowano). */
+export interface ApplyDialogResult {
+  confirmed: boolean;
+  note: string;
+  attachments: AttachmentUploadItem[];
+}
+
 @Component({
   selector: 'app-apply-dialog',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     FormsModule,
     MatDialogModule,
     MatFormFieldModule,
     MatInputModule,
-    MatButtonModule
+    MatButtonModule,
+    AttachmentsPickerComponent
   ],
   template: `
     <h2 mat-dialog-title>Aplikuj na stanowisko</h2>
@@ -44,20 +66,29 @@ const NOT_ACCEPTING_MESSAGE = 'This job offer is not accepting applications';
         <mat-label>Notatka</mat-label>
         <textarea matInput [(ngModel)]="note" rows="4" placeholder="Dlaczego jesteś idealnym kandydatem..."></textarea>
       </mat-form-field>
+      <p>Dołącz CV, list motywacyjny lub inne pliki (opcjonalnie):</p>
+      <app-attachments-picker [(items)]="attachments" [existing]="existing" />
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close>Anuluj</button>
-      <button mat-raised-button color="primary" [mat-dialog-close]="{ confirmed: true, note: note }">Aplikuj</button>
+      <button mat-raised-button color="primary" [mat-dialog-close]="result()">Aplikuj</button>
     </mat-dialog-actions>
   `,
-  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .full-width { width: 100%; }
-    mat-dialog-content { min-width: 400px; padding: 20px; }
+    mat-dialog-content { min-width: 460px; padding: 20px; }
+    @media (max-width: 600px) { mat-dialog-content { min-width: 0; } }
   `]
 })
 export class ApplyDialogComponent {
+  /** Limity (10 plików, 25 MB) i domyślny rodzaj nowych plików liczone łącznie z tymi załącznikami. */
+  readonly existing = inject<ApplyDialogData | null>(MAT_DIALOG_DATA, { optional: true })?.existing ?? [];
   note = '';
+  attachments: AttachmentUploadItem[] = [];
+
+  result(): ApplyDialogResult {
+    return { confirmed: true, note: this.note, attachments: this.attachments };
+  }
 }
 
 @Component({
@@ -88,16 +119,35 @@ export class JobDetailComponent implements OnInit {
   private dialog = inject(MatDialog);
   private cdr = inject(ChangeDetectorRef);
   private snackBar = inject(MatSnackBar);
+  private destroyRef = inject(DestroyRef);
 
   job: JobOffer | null = null;
   loading = false;
   hasApplied = false;
   /** Status aplikacji bieżącego użytkownika (także wycofanej); null = nie aplikował. */
   applicationStatus: ApplicationStatus | null = null;
+  /** Załączniki wycofanej aplikacji – zostają po ponownym aplikowaniu, więc dialog liczy limity razem z nimi. */
+  private withdrawnAttachments: readonly ApplicationAttachment[] = [];
   checkingApplication = false;
   applying = false;
+  /** Postęp wysyłania załączników po złożeniu aplikacji (null = nic nie jest wysyłane). */
+  attachmentsUploadProgress: number | null = null;
+  /** Tekst regionu `role="status"`: etap wysyłania załączników (bez kolejnych procentów). */
+  uploadAnnouncement = '';
+  private destroyed = false;
 
   WorkType = WorkType;
+
+  constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+      // opuszczenie strony w trakcie wysyłania przerywa żądanie (takeUntilDestroyed) – aplikacja jest już złożona
+      if (this.attachmentsUploadProgress !== null) {
+        this.attachmentsUploadProgress = null;
+        this.notify(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 8000);
+      }
+    });
+  }
 
   /** Oferta przyjmuje aplikacje: aktywna i niewygasła. */
   get acceptsApplications(): boolean {
@@ -168,6 +218,12 @@ export class JobDetailComponent implements OnInit {
       next: (result) => {
         this.hasApplied = result.hasApplied;
         this.applicationStatus = result.status ?? null;
+        this.withdrawnAttachments = [];
+        if (this.hasWithdrawn && result.applicationId) {
+          // przycisk „Aplikuj ponownie” czeka (checkingApplication) na załączniki wycofanej aplikacji
+          this.loadWithdrawnAttachments(result.applicationId);
+          return;
+        }
         this.checkingApplication = false;
         this.cdr.detectChanges();
       },
@@ -180,19 +236,37 @@ export class JobDetailComponent implements OnInit {
     });
   }
 
-  openApplyDialog(): void {
-    if (!this.job) return;
-
-    const dialogRef = this.dialog.open(ApplyDialogComponent);
-
-    dialogRef.afterClosed().subscribe((result: { confirmed: boolean, note: string } | undefined) => {
-      if (result?.confirmed && this.job) {
-        this.applyToJob(result.note);
+  private loadWithdrawnAttachments(applicationId: number): void {
+    this.applicationService.getApplication(applicationId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (application) => {
+        this.withdrawnAttachments = application.attachments ?? [];
+        this.checkingApplication = false;
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        // bez listy dialog liczy tylko nowe pliki – limity łączne i tak sprawdza serwer
+        console.error('Error loading the withdrawn application:', error);
+        this.checkingApplication = false;
+        this.cdr.detectChanges();
       }
     });
   }
 
-  applyToJob(note: string): void {
+  openApplyDialog(): void {
+    if (!this.job) return;
+
+    const data: ApplyDialogData = { existing: this.hasWithdrawn ? this.withdrawnAttachments : [] };
+    const dialogRef = this.dialog.open(ApplyDialogComponent, { ...APPLY_DIALOG_CONFIG, data });
+
+    dialogRef.afterClosed().subscribe((result: ApplyDialogResult | undefined) => {
+      if (result?.confirmed && this.job) {
+        this.applyToJob(result.note, result.attachments);
+      }
+    });
+  }
+
+  /** Najpierw składa aplikację, potem (opcjonalnie) jednym żądaniem dołącza załączniki – ich błąd nie cofa aplikacji. */
+  applyToJob(note: string, attachments: readonly AttachmentUploadItem[] = []): void {
     if (!this.job) return;
 
     this.applying = true;
@@ -204,9 +278,16 @@ export class JobDetailComponent implements OnInit {
         const reapplied = this.hasWithdrawn;
         this.hasApplied = true;
         this.applicationStatus = application?.status ?? ApplicationStatus.Submitted;
+        const successMessage = reapplied ? 'Aplikacja została złożona ponownie!' : 'Aplikacja wysłana pomyślnie!';
+
+        if (attachments.length) {
+          this.uploadAttachments(application?.id ?? null, attachments, successMessage);
+          return;
+        }
+
         this.applying = false;
         this.cdr.detectChanges();
-        this.notify(reapplied ? 'Aplikacja została złożona ponownie!' : 'Aplikacja wysłana pomyślnie!');
+        this.notify(successMessage);
       },
       error: (error) => {
         this.applying = false;
@@ -230,8 +311,46 @@ export class JobDetailComponent implements OnInit {
     });
   }
 
-  private notify(message: string): void {
-    this.snackBar.open(message, 'OK', { duration: 5000 });
+  private uploadAttachments(applicationId: number | null, items: readonly AttachmentUploadItem[], successMessage: string): void {
+    // brak id albo użytkownik opuścił już stronę (aplikacja złożona, pliki nie zostały wysłane)
+    if (applicationId === null || this.destroyed) {
+      this.finishAttachmentsUpload(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 'Przerwano wysyłanie', 8000);
+      return;
+    }
+
+    this.attachmentsUploadProgress = 0;
+    this.uploadAnnouncement = 'Wysyłanie załączników…';
+    this.cdr.detectChanges();
+    // opuszczenie strony przerywa wysyłanie (komunikat pokazuje hook onDestroy z konstruktora)
+    this.applicationService.uploadAttachments(applicationId, items).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (event) => {
+        if (event.type === 'progress') {
+          this.attachmentsUploadProgress = event.percent;
+          this.cdr.detectChanges();
+        } else {
+          this.finishAttachmentsUpload(`${successMessage} Załączniki zostały dołączone.`, 'Załączniki przesłane');
+        }
+      },
+      error: (error) => {
+        console.error('Error uploading attachments:', error);
+        // Aplikacja jest już złożona – informujemy o tym zawsze, także przy 401/403
+        this.finishAttachmentsUpload(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 'Przerwano wysyłanie', 8000);
+      }
+    });
+  }
+
+  private finishAttachmentsUpload(message: string, announcement: string, duration?: number): void {
+    this.applying = false;
+    this.attachmentsUploadProgress = null;
+    if (!this.destroyed) {
+      this.uploadAnnouncement = announcement;
+      this.cdr.detectChanges();
+    }
+    this.notify(message, duration);
+  }
+
+  private notify(message: string, duration = 5000): void {
+    this.snackBar.open(message, 'OK', { duration });
   }
 
   getWorkTypeLabel(): string {

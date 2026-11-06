@@ -6,6 +6,11 @@ export function isHandledByInterceptor(error: unknown): boolean {
   return error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403);
 }
 
+const TOO_MANY_REQUESTS = 'Too many requests - try again later';
+const TOO_MANY_REQUESTS_PL = 'Zbyt wiele żądań – spróbuj ponownie za kilka minut';
+/** 413 bez komunikatu API – limit nginx dla uploadu załączników (strona HTML). */
+const FILES_TOO_LARGE_PL = 'Przesyłane pliki są za duże – maksymalnie 5 MB na plik i 25 MB łącznie';
+
 // Znane komunikaty API (po angielsku) tłumaczone na polski
 const KNOWN_API_MESSAGES: Record<string, string> = {
   'You have already applied to this job': 'Już aplikowałeś na tę ofertę',
@@ -24,9 +29,30 @@ const KNOWN_API_MESSAGES: Record<string, string> = {
   'Company has job offers or members': 'Nie można usunąć firmy, która ma oferty lub członków zespołu',
   'Company not found': 'Firma nie została znaleziona',
   'Job offer has applications - close it instead': 'Oferta ma aplikacje – zamiast usuwać, zamknij ją.',
+  // załączniki aplikacji
+  'Unsupported file type - upload a PDF, DOCX, PNG or JPEG file': 'Nieobsługiwany typ pliku – prześlij plik PDF, DOCX, PNG lub JPEG',
+  'File is too large - maximum size is 5 MB': 'Plik jest za duży – maksymalny rozmiar to 5 MB',
+  'File is empty': 'Plik jest pusty',
+  'Total size of attachments cannot exceed 25 MB': 'Łączny rozmiar załączników nie może przekroczyć 25 MB',
+  'An application can have at most 10 attachments': 'Aplikacja może mieć maksymalnie 10 załączników',
+  "No file uploaded - send files in the 'files' form field": 'Nie wybrano plików do przesłania',
+  'Invalid multipart form data': 'Nie udało się odczytać przesłanych plików',
+  'Attachments cannot be added in the current application status': 'Na tym etapie rekrutacji nie można już dodawać załączników',
+  'Attachment not found': 'Nie znaleziono załącznika',
+  'Invalid attachment kind': 'Nieprawidłowy rodzaj załącznika',
+  // błędy odczytu żądania (BadHttpRequestException w backendzie)
+  'Request body too large': 'Przesyłane dane są za duże',
+  'Request timed out': 'Przekroczono czas wysyłania danych – spróbuj ponownie',
+  'Invalid request': 'Nieprawidłowe żądanie',
+  [TOO_MANY_REQUESTS]: TOO_MANY_REQUESTS_PL,
   // m.in. 'Company must be approved before publishing offers'
   ...FORBIDDEN_API_MESSAGES
 };
+
+/** Tłumaczenie znanego komunikatu API (tylko własne klucze słownika – nie np. „constructor”). */
+function knownApiMessage(message: unknown): string | undefined {
+  return typeof message === 'string' && Object.hasOwn(KNOWN_API_MESSAGES, message) ? KNOWN_API_MESSAGES[message] : undefined;
+}
 
 /**
  * Komunikat błędu HTTP dla użytkownika: przetłumaczony `message` z API dla błędów 4xx,
@@ -38,11 +64,17 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
 
   if (error.status === 0) return 'Brak połączenia z serwerem';
   if (error.status >= 500) return fallback;
+  // Rate limiting – treść może być pusta (np. odrzucenie przez proxy)
+  if (error.status === 429) return TOO_MANY_REQUESTS_PL;
 
   const body = error.error;
   const message = body?.message;
+  // Limit rozmiaru żądania: backend zwraca JSON ze znanym komunikatem, nginx – stronę HTML (upload załączników)
+  if (error.status === 413) {
+    return knownApiMessage(message) ?? FILES_TOO_LARGE_PL;
+  }
   if (typeof message === 'string' && message.trim()) {
-    return KNOWN_API_MESSAGES[message] ?? message;
+    return knownApiMessage(message) ?? message;
   }
 
   if (error.status === 400 && body?.errors && typeof body.errors === 'object') {

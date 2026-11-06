@@ -1,4 +1,5 @@
-import { Component, inject, OnInit, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, DestroyRef, inject, OnInit, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { MatTableModule } from '@angular/material/table';
@@ -8,12 +9,21 @@ import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatDialog } from '@angular/material/dialog';
 import { JobApplicationService } from '../../services/job-application.service';
-import { ApplicationStatus, ApplicationStatusHistoryEntry, JobApplication } from '../../models/job-application.model';
+import { ApplicationAttachment, ApplicationStatus, ApplicationStatusHistoryEntry, JobApplication } from '../../models/job-application.model';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
-import { canWithdraw, getApplicationStatusPresentation, StatusPresentation } from '../../utils/status-labels';
+import { canAddAttachments, canWithdraw, getApplicationStatusPresentation, StatusPresentation } from '../../utils/status-labels';
+import { ATTACHMENTS_MAX_COUNT } from '../../utils/attachments';
 import { StatusChipComponent } from '../shared/status-chip.component';
 import { StatusTimelineComponent } from '../shared/status-timeline.component';
+import { AttachmentListComponent } from '../shared/attachment-list.component';
+import {
+  ATTACHMENTS_DIALOG_CONFIG,
+  ATTACHMENTS_UPLOAD_ABORTED,
+  AttachmentsDialogComponent,
+  AttachmentsDialogResult
+} from './attachments-dialog.component';
 
 @Component({
   selector: 'app-my-applications',
@@ -28,7 +38,8 @@ import { StatusTimelineComponent } from '../shared/status-timeline.component';
     MatProgressSpinnerModule,
     MatTooltipModule,
     StatusChipComponent,
-    StatusTimelineComponent
+    StatusTimelineComponent,
+    AttachmentListComponent
   ],
   templateUrl: './my-applications.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -39,11 +50,16 @@ export class MyApplicationsComponent implements OnInit {
   private router = inject(Router);
   private cdr = inject(ChangeDetectorRef);
   private snackBar = inject(MatSnackBar);
+  private dialog = inject(MatDialog);
+  private destroyRef = inject(DestroyRef);
 
   applications: JobApplication[] = [];
-  displayedColumns: string[] = ['jobTitle', 'company', 'location', 'status', 'appliedAt', 'note', 'actions'];
+  displayedColumns: string[] = ['jobTitle', 'company', 'location', 'status', 'appliedAt', 'note', 'attachments', 'actions'];
   loading = false;
   withdrawingId: number | null = null;
+
+  /** Wiersze śledzone po id – podmiana aplikacji (np. po usunięciu załącznika) nie odtwarza wiersza, więc fokus zostaje. */
+  readonly trackById = (_: number, application: JobApplication): number => application.id;
 
   /** Aplikacja z rozwiniętą historią (null = żadna). */
   expandedId: number | null = null;
@@ -80,6 +96,68 @@ export class MyApplicationsComponent implements OnInit {
 
   canWithdraw(application: JobApplication): boolean {
     return canWithdraw(application.status);
+  }
+
+  /** Dodawanie załączników: dozwolony status i wolne miejsce w limicie liczby plików (usuwać można zawsze). */
+  canAddAttachments(application: JobApplication): boolean {
+    return canAddAttachments(application.status) && application.attachments.length < ATTACHMENTS_MAX_COUNT;
+  }
+
+  /** Dodanie załączników w dialogu z paskiem postępu. */
+  openAttachmentsDialog(application: JobApplication): void {
+    const dialogRef = this.dialog.open<AttachmentsDialogComponent, JobApplication, AttachmentsDialogResult>(
+      AttachmentsDialogComponent, { ...ATTACHMENTS_DIALOG_CONFIG, data: application });
+
+    dialogRef.afterClosed().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(result => {
+      if (result === ATTACHMENTS_UPLOAD_ABORTED) {
+        // przerwanie w fazie przetwarzania – serwer mógł już zapisać pliki, więc bierzemy stan z serwera
+        this.notify('Przerwano wysyłanie załączników');
+        this.refreshApplication(application.id);
+        return;
+      }
+      if (!result) return;
+      this.replaceApplication(result);
+      this.cdr.detectChanges();
+      this.notify('Załączniki zostały dodane do aplikacji');
+    });
+  }
+
+  /** Załącznik usunięty w liście – aktualizujemy aplikację bez ponownego pobierania. */
+  onAttachmentDeleted(applicationId: number, attachment: ApplicationAttachment): void {
+    const current = this.applications.find(app => app.id === applicationId);
+    if (!current) return;
+
+    this.replaceApplication({
+      ...current,
+      attachments: current.attachments.filter(a => a.id !== attachment.id),
+      attachmentsTotalSize: Math.max(0, current.attachmentsTotalSize - attachment.size)
+    });
+    this.cdr.detectChanges();
+    this.notify('Załącznik został usunięty');
+  }
+
+  private refreshApplication(id: number): void {
+    this.applicationService.getApplication(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (details) => {
+        // szczegóły zawierają też historię – od razu aktualizujemy jej cache
+        const { history, ...application } = details;
+        this.replaceApplication(application);
+        if (history) {
+          this.histories = { ...this.histories, [id]: history };
+        }
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        console.error('Error refreshing application:', error);
+        if (!isHandledByInterceptor(error)) {
+          this.notify(getApiErrorMessage(error, 'Nie udało się odświeżyć aplikacji – odśwież stronę'));
+        }
+      }
+    });
+  }
+
+  private replaceApplication(updated: JobApplication): void {
+    this.applications = this.applications.map(app => app.id === updated.id ? { ...app, ...updated } : app);
   }
 
   /** Rozwija/zwija historię; przy pierwszym rozwinięciu pobiera ją z API. */

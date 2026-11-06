@@ -25,11 +25,12 @@ import { APPLICATION_STATUS_FILTER_OPTIONS, getApplicationStatusPresentation } f
 import { StatusChipComponent } from '../../shared/status-chip.component';
 import { ApplicationStatusDialogComponent } from '../application-status-dialog/application-status-dialog.component';
 import { ApplicationHistoryDialogComponent } from '../application-history-dialog/application-history-dialog.component';
+import { AttachmentListComponent } from '../../shared/attachment-list.component';
 
 // API sortuje aplikacje tylko po dacie złożenia
 const DEFAULT_SORT: Sort = { active: 'appliedAt', direction: 'desc' };
 
-const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt', 'note', 'actions'];
+const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt', 'note', 'attachments', 'actions'];
 
 @Component({
   selector: 'app-admin-applications-tab',
@@ -48,7 +49,8 @@ const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt',
     MatSelectModule,
     MatPaginatorModule,
     MatSortModule,
-    StatusChipComponent
+    StatusChipComponent,
+    AttachmentListComponent
   ],
   templateUrl: './admin-applications-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -139,7 +141,7 @@ export class AdminApplicationsTabComponent {
   }
 
   openStatusDialog(application: JobApplication): void {
-    const dialogRef = this.dialog.open(ApplicationStatusDialogComponent, { width: '520px', data: application });
+    const dialogRef = this.dialog.open(ApplicationStatusDialogComponent, { width: '520px', ariaModal: true, data: application });
 
     dialogRef.afterClosed().subscribe(updated => {
       if (updated) {
@@ -150,7 +152,7 @@ export class AdminApplicationsTabComponent {
   }
 
   openHistoryDialog(application: JobApplication): void {
-    this.dialog.open(ApplicationHistoryDialogComponent, { width: '560px', data: application });
+    this.dialog.open(ApplicationHistoryDialogComponent, { width: '560px', ariaModal: true, data: application });
   }
 
   onSortChange(sort: Sort): void {

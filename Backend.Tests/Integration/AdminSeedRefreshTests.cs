@@ -217,6 +217,27 @@ public class AdminSeedRefreshEnabledTests : IClassFixture<ProductionRefreshEnabl
         using var anonymous = _api.CreateClient();
         Assert.Equal(20, (await anonymous.GetAsync("/api/jobs")).ReadPagination().TotalItems);
     }
+
+    [Fact]
+    public async Task RefreshSeed_DeletesAllAttachmentFiles()
+    {
+        var user = await _api.RegisterUserAsync("attwipe");
+        var job = await _api.CreateJobAsync();
+        var application = await _api.ApplyAsync(user, job.Id);
+        using (var candidate = _api.CreateClient(user))
+        {
+            Assert.Equal(HttpStatusCode.Created, (await candidate.UploadAttachmentsAsync(application.Id,
+                new AttachmentUpload(AttachmentTestFiles.Pdf(), "cv.pdf"), new AttachmentUpload(AttachmentTestFiles.Png(), "photo.png"))).StatusCode);
+        }
+
+        var attachmentsDirectory = Path.Combine(_api.Factory.StoragePath, "attachments");
+        Assert.NotEmpty(Directory.GetFiles(attachmentsDirectory, "*", SearchOption.AllDirectories));
+
+        using var admin = await _api.AdminClientAsync();
+        Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync("/api/admin/refresh-seed", null)).StatusCode);
+
+        Assert.False(Directory.Exists(attachmentsDirectory) && Directory.EnumerateFiles(attachmentsDirectory, "*", SearchOption.AllDirectories).Any());
+    }
 }
 
 // Seed:DemoAccounts=false: ani start, ani reset danych nie tworzą kont demo (admin zawsze jest tworzony)

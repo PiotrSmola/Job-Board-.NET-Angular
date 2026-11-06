@@ -153,13 +153,36 @@ public class JobRepository : IJobRepository
         return jobOffer;
     }
 
-    public async Task<bool> DeleteJobAsync(int id)
+    public async Task<(bool Deleted, IReadOnlyList<string> FileKeys)> DeleteJobAsync(int id)
     {
-        var job = await _context.JobOffers.FindAsync(id);
-        if (job == null) return false;
+        // Blokady przed odczytem kluczy plików (jak przy usuwaniu aplikacji): równoległy upload załączników czeka do
+        // końca transakcji i trafia już na usuniętą aplikację, więc żaden plik nie zostanie osierocony. Najpierw wiersz
+        // oferty (jak sam DELETE oferty) - równoległe aplikowanie czeka na nim przy kontroli klucza obcego, zanim
+        // zablokuje cokolwiek w aplikacjach, więc kolejność blokad nie prowadzi do deadlocka.
+        await using var transaction = await _context.Database.BeginTransactionAsync();
 
-        _context.JobOffers.Remove(job);
-        return await SaveAllAsync();
+        var matched = await _context.JobOffers
+            .Where(j => j.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(j => j.Title, j => j.Title));
+        if (matched == 0)
+        {
+            return (false, []);
+        }
+
+        await _context.JobApplications
+            .Where(a => a.JobOfferId == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, a => a.Status));
+
+        var fileKeys = await _context.ApplicationAttachments
+            .Where(a => a.JobApplication.JobOfferId == id)
+            .Select(a => a.FileKey)
+            .ToListAsync();
+
+        // aplikacje, ich historia i załączniki usuwane kaskadowo przez bazę
+        await _context.JobOffers.Where(j => j.Id == id).ExecuteDeleteAsync();
+
+        await transaction.CommitAsync();
+        return (true, fileKeys);
     }
 
     public async Task<bool> DeleteJobWithoutApplicationsAsync(int id)
@@ -172,10 +195,5 @@ public class JobRepository : IJobRepository
     public async Task<bool> JobExistsAsync(int id)
     {
         return await _context.JobOffers.AnyAsync(j => j.Id == id);
-    }
-
-    private async Task<bool> SaveAllAsync()
-    {
-        return await _context.SaveChangesAsync() > 0;
     }
 }

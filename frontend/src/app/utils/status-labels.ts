@@ -93,6 +93,18 @@ export function canWithdraw(status: ApplicationStatus): boolean {
   return WITHDRAWABLE_STATUSES.includes(status);
 }
 
+/** Statusy, w których kandydat może dodawać załączniki (zgodnie z API); usuwać może zawsze. */
+export const ATTACHMENTS_EDITABLE_STATUSES: readonly ApplicationStatus[] = [
+  ApplicationStatus.Submitted,
+  ApplicationStatus.InReview,
+  ApplicationStatus.Interview,
+  ApplicationStatus.Offered
+];
+
+export function canAddAttachments(status: ApplicationStatus): boolean {
+  return ATTACHMENTS_EDITABLE_STATUSES.includes(status);
+}
+
 export function getApplicationStatusPresentation(status: ApplicationStatus): StatusPresentation {
   return APPLICATION_STATUS_PRESENTATION[status] ?? { label: 'Nieznany', tone: 'neutral' };
 }

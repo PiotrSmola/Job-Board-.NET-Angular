@@ -127,6 +127,13 @@
             </td>
           </ng-container>
 
+          <ng-container matColumnDef="attachments">
+            <th mat-header-cell *matHeaderCellDef>Załączniki</th>
+            <td mat-cell *matCellDef="let app" class="attachments-cell">
+              <app-attachment-list [applicationId]="app.id" [attachments]="app.attachments" />
+            </td>
+          </ng-container>
+
           <!-- Actions Column -->
           <ng-container matColumnDef="actions">
             <th mat-header-cell *matHeaderCellDef>Akcje</th>

@@ -1,4 +1,6 @@
 using Backend.Data;
+using Backend.Helpers;
+using Backend.Interfaces;
 using Backend.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -17,6 +19,7 @@ public class AdminController : ControllerBase
     private readonly IWebHostEnvironment _environment;
     private readonly IConfiguration _configuration;
     private readonly ILogger<AdminController> _logger;
+    private readonly IFileStorage _fileStorage;
 
     public AdminController(
         ApplicationDbContext context,
@@ -24,7 +27,8 @@ public class AdminController : ControllerBase
         RoleManager<IdentityRole> roleManager,
         IWebHostEnvironment environment,
         IConfiguration configuration,
-        ILogger<AdminController> logger)
+        ILogger<AdminController> logger,
+        IFileStorage fileStorage)
     {
         _context = context;
         _userManager = userManager;
@@ -32,6 +36,7 @@ public class AdminController : ControllerBase
         _environment = environment;
         _configuration = configuration;
         _logger = logger;
+        _fileStorage = fileStorage;
     }
 
     // Reset danych jest dostępny tylko w Development albo po jawnym włączeniu Admin:AllowSeedRefresh
@@ -68,6 +73,8 @@ public class AdminController : ControllerBase
 
             _logger.LogInformation("Database seed refresh completed successfully");
 
+            await DeleteAllAttachmentFilesAsync();
+
             return Ok(new
             {
                 message = "Database has been refreshed with seed data",
@@ -81,6 +88,22 @@ public class AdminController : ControllerBase
             {
                 message = "An error occurred while refreshing seed data"
             });
+        }
+    }
+
+    // Po zatwierdzonym resecie żadna aplikacja nie ma załączników - usuwane są wszystkie ich pliki (także osierocone);
+    // błąd jest tylko logowany. Bez tokenu żądania (przerwane żądanie nie przerywa sprzątania po zatwierdzonym resecie),
+    // ale z limitem czasu, żeby zawieszony magazyn nie blokował odpowiedzi w nieskończoność
+    private async Task DeleteAllAttachmentFilesAsync()
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await _fileStorage.DeleteByPrefixAsync(AttachmentFiles.StorageKeyPrefix, timeout.Token);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete attachment files from storage after the seed refresh");
         }
     }
 }

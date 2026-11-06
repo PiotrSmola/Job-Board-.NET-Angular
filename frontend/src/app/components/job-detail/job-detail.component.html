@@ -91,7 +91,13 @@
             </div>
           }
 
-          @if (hasApplied) {
+          @if (hasApplied && attachmentsUploadProgress !== null) {
+            <!-- aplikacja złożona, trwa dołączanie załączników (procenty tylko wizualnie – etap ogłasza region status) -->
+            <button mat-raised-button color="accent" disabled class="attachments-upload-progress">
+              <mat-spinner diameter="20" aria-hidden="true"></mat-spinner>
+              {{ attachmentsUploadProgress >= 100 ? 'Przetwarzanie załączników…' : 'Wysyłanie załączników… ' + attachmentsUploadProgress + '%' }}
+            </button>
+          } @else if (hasApplied) {
             <button mat-raised-button color="accent" disabled>
               <mat-icon>check_circle</mat-icon>
               Już aplikowałeś
@@ -124,6 +130,7 @@
           <mat-icon>cancel</mat-icon>
           Anuluj
         </button>
+        <p class="sr-only" role="status">{{ uploadAnnouncement }}</p>
       </mat-card-actions>
     </mat-card>
   }

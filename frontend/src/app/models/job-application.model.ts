@@ -36,7 +36,41 @@ export interface JobApplication {
   jobOffer?: JobOffer;
   /** Tylko w szczegółach aplikacji (GET /{id}) i odpowiedziach na zmianę statusu. */
   history?: ApplicationStatusHistoryEntry[] | null;
+  /** Załączniki aplikacji (API sortuje je po rodzaju i dacie dodania); pusta lista, gdy brak. */
+  attachments: ApplicationAttachment[];
+  /** Łączny rozmiar załączników w bajtach (limit 25 MB na aplikację). */
+  attachmentsTotalSize: number;
 }
+
+/** Rodzaj załącznika – wartości zgodne z enumem API. */
+export enum AttachmentKind {
+  Cv = 0,
+  CoverLetter = 1,
+  Portfolio = 2,
+  Other = 3
+}
+
+/** Metadane załącznika (klucz pliku w magazynie nigdy nie trafia do klienta). */
+export interface ApplicationAttachment {
+  id: number;
+  kind: AttachmentKind;
+  /** Oryginalna nazwa pliku (po sanityzacji przez API). */
+  fileName: string;
+  /** Rozmiar w bajtach. */
+  size: number;
+  uploadedAt: string;
+}
+
+/** Plik wybrany do wysłania razem z jego rodzajem. */
+export interface AttachmentUploadItem {
+  file: File;
+  kind: AttachmentKind;
+}
+
+/** Zdarzenie przesyłania załączników: postęp w procentach albo zakończenie z zaktualizowaną aplikacją. */
+export type AttachmentUploadEvent =
+  | { type: 'progress'; percent: number }
+  | { type: 'done'; application: JobApplication };
 
 export interface CreateJobApplication {
   jobOfferId: number;

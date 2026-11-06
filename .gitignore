@@ -41,6 +41,9 @@ Desktop.ini
 .env
 .env.local
 
+# Pliki CV z magazynu Local (Storage:LocalPath, domyślnie Backend/storage)
+/Backend/storage/
+
 # Additional .NET files
 *.suo
 *.user

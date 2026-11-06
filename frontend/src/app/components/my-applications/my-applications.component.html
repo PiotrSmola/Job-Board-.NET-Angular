@@ -13,7 +13,7 @@
   @if (!loading && applications.length > 0) {
     <mat-card class="table-card">
       <div class="table-container">
-        <table mat-table [dataSource]="applications" multiTemplateDataRows class="applications-table">
+        <table mat-table [dataSource]="applications" [trackBy]="trackById" multiTemplateDataRows class="applications-table">
           <ng-container matColumnDef="jobTitle">
             <th mat-header-cell *matHeaderCellDef>Stanowisko</th>
             <td mat-cell *matCellDef="let application">
@@ -64,6 +64,31 @@
               } @else {
                 <span class="no-note">Brak</span>
               }
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="attachments">
+            <th mat-header-cell *matHeaderCellDef>Załączniki</th>
+            <td mat-cell *matCellDef="let application">
+              <div class="attachments-cell">
+                <app-attachment-list
+                  [applicationId]="application.id"
+                  [attachments]="application.attachments"
+                  [allowDelete]="true"
+                  [showDate]="true"
+                  (deleted)="onAttachmentDeleted(application.id, $event)" />
+                @if (canAddAttachments(application)) {
+                  <button
+                    mat-stroked-button
+                    type="button"
+                    class="add-attachments"
+                    (click)="openAttachmentsDialog(application)"
+                    [attr.aria-label]="'Dodaj załączniki do aplikacji: ' + application.jobTitle">
+                    <mat-icon aria-hidden="true">attach_file</mat-icon>
+                    Dodaj
+                  </button>
+                }
+              </div>
             </td>
           </ng-container>
 

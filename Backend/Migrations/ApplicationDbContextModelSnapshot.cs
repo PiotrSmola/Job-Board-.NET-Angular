@@ -22,6 +22,51 @@ namespace Backend.Migrations
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
+            modelBuilder.Entity("Backend.Models.ApplicationAttachment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("FileKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<int>("JobApplicationId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FileKey")
+                        .IsUnique();
+
+                    b.HasIndex("JobApplicationId");
+
+                    b.ToTable("ApplicationAttachments");
+                });
+
             modelBuilder.Entity("Backend.Models.ApplicationStatusHistory", b =>
                 {
                     b.Property<int>("Id")
@@ -412,6 +457,17 @@ namespace Backend.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("Backend.Models.ApplicationAttachment", b =>
+                {
+                    b.HasOne("Backend.Models.JobApplication", "JobApplication")
+                        .WithMany("Attachments")
+                        .HasForeignKey("JobApplicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("JobApplication");
+                });
+
             modelBuilder.Entity("Backend.Models.ApplicationStatusHistory", b =>
                 {
                     b.HasOne("Backend.Models.ApplicationUser", "ChangedByUser")
@@ -545,6 +601,8 @@ namespace Backend.Migrations
 
             modelBuilder.Entity("Backend.Models.JobApplication", b =>
                 {
+                    b.Navigation("Attachments");
+
                     b.Navigation("StatusHistory");
                 });
 
