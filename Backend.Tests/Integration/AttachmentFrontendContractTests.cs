@@ -176,7 +176,7 @@ public class AttachmentFrontendContractTests
                      (candidate, $"/api/jobapplications/{setup.Application.Id}"),
                      (candidate, "/api/jobapplications/my-applications"),
                      (admin, "/api/jobapplications/all?pageSize=50"),
-                     (admin, $"/api/jobapplications/job/{setup.Job.Id}")
+                     (admin, $"/api/jobapplications/all?jobOfferId={setup.Job.Id}")
                  })
         {
             var response = await client.GetAsync(url);

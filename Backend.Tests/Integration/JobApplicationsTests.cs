@@ -542,27 +542,27 @@ public class JobApplicationsTests
         Assert.Equal(50, huge.ReadPagination().ItemsPerPage);
     }
 
-    // --- aplikacje do oferty (admin) ---
+    // --- aplikacje do oferty: /all?jobOfferId= (osobny endpoint /job/{jobId} usunięto - frontend go nie używał) ---
 
     [Fact]
-    public async Task ByJob_WithoutToken_ReturnsUnauthorized()
+    public async Task AllByJob_WithoutToken_ReturnsUnauthorized()
     {
         using var client = _api.CreateClient();
 
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync($"{Url}/job/1")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync($"{Url}/all?jobOfferId=1")).StatusCode);
     }
 
     [Fact]
-    public async Task ByJob_AsRegularUser_ReturnsForbidden()
+    public async Task AllByJob_AsRegularUser_ReturnsForbidden()
     {
         var job = await _api.CreateJobAsync();
         using var client = await _api.UserClientAsync();
 
-        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"{Url}/job/{job.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"{Url}/all?pageSize=50&jobOfferId={job.Id}")).StatusCode);
     }
 
     [Fact]
-    public async Task ByJob_AsAdmin_ReturnsApplicationsWithJobOffer()
+    public async Task AllByJob_AsAdmin_ReturnsApplicationsWithJobOffer()
     {
         var job = await _api.CreateJobAsync(j => j.Title = "ByJob title");
         var u1 = await _api.RegisterUserAsync("byjob1");
@@ -571,7 +571,7 @@ public class JobApplicationsTests
         var second = await _api.ApplyAsync(u2, job.Id);
         using var admin = await _api.AdminClientAsync();
 
-        var response = await admin.GetAsync($"{Url}/job/{job.Id}");
+        var response = await admin.GetAsync($"{Url}/all?pageSize=50&jobOfferId={job.Id}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var items = await response.ReadJsonAsync<JobApplicationDto[]>();
@@ -585,22 +585,34 @@ public class JobApplicationsTests
     }
 
     [Fact]
-    public async Task ByJob_ForJobWithoutApplications_ReturnsEmptyList()
+    public async Task AllByJob_ForJobWithoutApplications_ReturnsEmptyList()
     {
         var job = await _api.CreateJobAsync();
         using var admin = await _api.AdminClientAsync();
 
-        var response = await admin.GetAsync($"{Url}/job/{job.Id}");
+        var response = await admin.GetAsync($"{Url}/all?pageSize=50&jobOfferId={job.Id}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Empty(await response.ReadJsonAsync<JobApplicationDto[]>());
     }
 
     [Fact]
-    public async Task ByJob_ForUnknownJob_ReturnsNotFound()
+    public async Task AllByJob_ForUnknownJob_ReturnsEmptyList()
     {
         using var admin = await _api.AdminClientAsync();
 
-        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync($"{Url}/job/999999999")).StatusCode);
+        var response = await admin.GetAsync($"{Url}/all?jobOfferId=999999999");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(await response.ReadJsonAsync<JobApplicationDto[]>());
+    }
+
+    [Fact]
+    public async Task RemovedByJobEndpoint_ReturnsNotFound()
+    {
+        var job = await _api.CreateJobAsync();
+        using var admin = await _api.AdminClientAsync();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync($"{Url}/job/{job.Id}")).StatusCode);
     }
 }
