@@ -19,6 +19,7 @@ import { JobService } from '../../services/job.service';
 import { getApiErrorMessage } from '../../utils/http-errors';
 import { safeWebsiteUrl } from '../../utils/company-form';
 import { getCompanyStatusPresentation } from '../../utils/status-labels';
+import { formatJobSalary } from '../../utils/job-labels';
 import { StatusChipComponent } from '../shared/status-chip.component';
 
 const WORK_TYPE_LABELS: Record<WorkType, string> = {
@@ -140,11 +141,7 @@ export class CompanyDetailComponent {
   }
 
   formatSalary(job: JobOffer): string {
-    const { salaryMin, salaryMax } = job;
-    if (salaryMin && salaryMax) return `${salaryMin} - ${salaryMax} PLN`;
-    if (salaryMin) return `Od ${salaryMin} PLN`;
-    if (salaryMax) return `Do ${salaryMax} PLN`;
-    return 'Nieokreślona';
+    return formatJobSalary(job);
   }
 
   private fetchJobs(): Observable<PaginatedResult<JobOffer> | null> {

@@ -208,17 +208,17 @@ describe('CompanyDetailComponent', () => {
       expect(rows.length).toBe(2);
       expect(rows[0].getAttribute('href')).toBe('/jobs/11');
       expect(rows[0].textContent).toContain('Dev Angular');
-      expect(rows[0].textContent).toContain('Kraków · Hybrydowa · 8000 - 12000 PLN');
+      expect(rows[0].textContent?.replace(/[  ]/g, ' ')).toContain('Kraków · Hybrydowa · 8 000–12 000 PLN / mies.');
       expect(rows[1].textContent).toContain('Stacjonarna · Nieokreślona');
     });
 
     it.each([
-      [5000, null, 'Od 5000 PLN'],
-      [null, 9000, 'Do 9000 PLN']
+      [5000, null, 'od 5 000 PLN / mies.'],
+      [null, 9000, 'do 9 000 PLN / mies.']
     ])('formats a one-sided salary (%s, %s) as "%s"', async (salaryMin, salaryMax, expected) => {
       await open(5);
 
-      expect(component.formatSalary(makeJob(1, { salaryMin, salaryMax }))).toBe(expected);
+      expect(component.formatSalary(makeJob(1, { salaryMin, salaryMax })).replace(/[  ]/g, ' ')).toBe(expected);
     });
 
     it('shows an empty state when the company has no active offers', async () => {

@@ -21,6 +21,8 @@ import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model
 import { ApplicationStatus, AttachmentUploadItem, JobApplication } from '../../models/job-application.model';
 import { getApplicationStatusPresentation, getJobState, StatusPresentation } from '../../utils/status-labels';
 import { StatusChipComponent } from '../shared/status-chip.component';
+import { JobTaxonomyComponent } from '../shared/job-taxonomy.component';
+import { formatJobSalary, getContractTypeLabels, getSeniorityLabel, getWorkTypeLabel } from '../../utils/job-labels';
 import { AttachmentsPickerComponent } from '../shared/attachments-picker.component';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
 
@@ -97,7 +99,8 @@ export class ApplyDialogComponent {
     MatDividerModule,
     MatDialogModule,
     RouterModule,
-    StatusChipComponent
+    StatusChipComponent,
+    JobTaxonomyComponent
   ],
   templateUrl: './job-detail.component.html',
   styleUrl: './job-detail.component.scss'
@@ -321,23 +324,19 @@ export class JobDetailComponent implements OnInit {
   }
 
   getWorkTypeLabel(): string {
-    if (!this.job) return '';
-    switch (this.job.workType) {
-      case WorkType.Remote: return 'Zdalna';
-      case WorkType.Hybrid: return 'Hybrydowa';
-      case WorkType.Onsite: return 'Stacjonarna';
-      default: return 'Nieznany';
-    }
+    return this.job ? getWorkTypeLabel(this.job.workType) : '';
   }
 
   formatSalary(): string {
-    if (!this.job) return '';
-    const { salaryMin, salaryMax } = this.job;
-    if (!salaryMin && !salaryMax) return 'Nieokreślona';
-    if (salaryMin && salaryMax) return `${salaryMin} - ${salaryMax} PLN`;
-    if (salaryMin) return `Od ${salaryMin} PLN`;
-    if (salaryMax) return `Do ${salaryMax} PLN`;
-    return 'Nieokreślona';
+    return this.job ? formatJobSalary(this.job) : '';
+  }
+
+  get seniorityLabel(): string | null {
+    return this.job ? getSeniorityLabel(this.job.seniority) : null;
+  }
+
+  get contractLabels(): string[] {
+    return this.job ? getContractTypeLabels(this.job.contractTypes) : [];
   }
 
   goBack(): void {
