@@ -229,19 +229,83 @@ public class AuthTests
         using var client = _api.CreateClient();
         var wrong = new LoginDto { Email = user.Email, Password = "WrongPassw0rd" };
 
-        // pierwsze cztery próby to zwykłe 401
-        for (var attempt = 1; attempt <= 4; attempt++)
+        // pięć nieudanych prób to zwykłe 401 - piąta blokuje konto, ale nadal jest złym hasłem
+        for (var attempt = 1; attempt <= 5; attempt++)
         {
             var failed = await client.PostJsonAsync("/api/auth/login", wrong);
             Assert.Equal(HttpStatusCode.Unauthorized, failed.StatusCode);
         }
 
-        // piąta nieudana próba blokuje konto
-        var fifth = await client.PostJsonAsync("/api/auth/login", wrong);
+        // blokadę zgłasza dopiero poprawne hasło
+        var correct = await client.PostJsonAsync("/api/auth/login", new LoginDto { Email = user.Email, Password = user.Password });
 
-        Assert.Equal(HttpStatusCode.Locked, fifth.StatusCode);
-        using var body = JsonDocument.Parse(await fifth.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Locked, correct.StatusCode);
+        using var body = JsonDocument.Parse(await correct.Content.ReadAsStringAsync());
         Assert.Contains("locked", body.RootElement.GetProperty("message").GetString());
+        var account = await _api.QueryDbAsync(db => db.Users.AsNoTracking().SingleAsync(u => u.Id == user.Id));
+        Assert.True(account.LockoutEnd > DateTimeOffset.UtcNow.AddMinutes(4), $"Account should be locked, LockoutEnd = {account.LockoutEnd}");
+    }
+
+    // Zablokowane konto przy złym haśle odpowiada jak nieistniejące - 401 z tym samym komunikatem (bez enumeracji kont);
+    // próby w czasie blokady nie przedłużają jej
+    [Fact]
+    public async Task Login_WithWrongPasswordWhileLocked_ReturnsUnauthorizedLikeUnknownAccount()
+    {
+        var user = await _api.RegisterUserAsync("lockedwrong");
+        using var client = _api.CreateClient();
+        var wrong = new LoginDto { Email = user.Email, Password = "WrongPassw0rd" };
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            await client.PostJsonAsync("/api/auth/login", wrong);
+        }
+
+        var lockoutEnd = (await _api.QueryDbAsync(db => db.Users.AsNoTracking().SingleAsync(u => u.Id == user.Id))).LockoutEnd;
+
+        for (var attempt = 0; attempt < 6; attempt++)
+        {
+            var response = await client.PostJsonAsync("/api/auth/login", wrong);
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.Equal("Invalid email or password", await response.ReadMessageAsync());
+        }
+
+        var account = await _api.QueryDbAsync(db => db.Users.AsNoTracking().SingleAsync(u => u.Id == user.Id));
+        Assert.Equal(lockoutEnd, account.LockoutEnd);
+        Assert.Equal(0, account.AccessFailedCount);
+    }
+
+    // Czas odpowiedzi nie zdradza, czy konto istnieje: dla nieistniejącego konta hasło też jest weryfikowane (na
+    // haszu-atrapie), więc odpowiedź trwa porównywalnie długo jak dla złego hasła (wcześniej - ułamek tego czasu).
+    // Tolerancyjnie: mediany z kilku prób, różnica do 3x w każdą stronę (testy biegną równolegle).
+    [Fact]
+    public async Task Login_UnknownEmailTakesComparableTimeToWrongPassword()
+    {
+        var user = await _api.RegisterUserAsync("timing");
+        using var client = _api.CreateClient();
+
+        async Task<double> MeasureAsync(string email)
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var response = await client.PostJsonAsync("/api/auth/login", new LoginDto { Email = email, Password = "WrongPassw0rd" });
+            stopwatch.Stop();
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+            return stopwatch.Elapsed.TotalMilliseconds;
+        }
+
+        // rozgrzewka (pierwsze zapytania, hasz-atrapa liczony przy pierwszym użyciu)
+        await MeasureAsync($"warmup_{Guid.NewGuid():N}@test.local");
+
+        var existing = new List<double>();
+        var unknown = new List<double>();
+        // 4 złe hasła - konto nie zostaje zablokowane (blokada po 5)
+        for (var i = 0; i < 4; i++)
+        {
+            existing.Add(await MeasureAsync(user.Email));
+            unknown.Add(await MeasureAsync($"nobody_{Guid.NewGuid():N}@test.local"));
+        }
+
+        static double Median(List<double> values) => values.Order().ElementAt(values.Count / 2);
+        var ratio = Median(unknown) / Median(existing);
+        Assert.InRange(ratio, 0.33, 3.0);
     }
 
     [Fact]
@@ -315,10 +379,13 @@ public class AuthTests
             return (await client.PostJsonAsync("/api/auth/login", wrong)).StatusCode;
         }));
 
-        Assert.Equal(4, responses.Count(s => s == HttpStatusCode.Unauthorized));
-        Assert.Equal(16, responses.Count(s => s == HttpStatusCode.Locked));
+        // złe hasło to zawsze 401 (także w czasie blokady); blokadę widać w bazie i po poprawnym haśle
+        Assert.All(responses, s => Assert.Equal(HttpStatusCode.Unauthorized, s));
         var account = await _api.QueryDbAsync(db => db.Users.AsNoTracking().SingleAsync(u => u.Id == user.Id));
         Assert.True(account.LockoutEnd > DateTimeOffset.UtcNow.AddMinutes(4), $"Account should be locked, LockoutEnd = {account.LockoutEnd}");
         Assert.Equal(0, account.AccessFailedCount);
+        using var client = _api.CreateClient();
+        Assert.Equal(HttpStatusCode.Locked,
+            (await client.PostJsonAsync("/api/auth/login", new LoginDto { Email = user.Email, Password = user.Password })).StatusCode);
     }
 }

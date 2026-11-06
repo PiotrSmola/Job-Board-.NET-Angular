@@ -40,7 +40,8 @@ Tworzone automatycznie przy pierwszym starcie (i po resecie danych demo). Hasła
 | Pracodawca (firma zatwierdzona: TechCorp Solutions) | `rekruter@techcorp.pl` | `Employer123!` |
 | Pracodawca (firma oczekująca: Nowa Firma Sp. z o.o.) | `rekruter@nowafirma.pl` | `Employer123!` |
 
-Po 5 nieudanych próbach logowania konto jest blokowane na 5 minut (API zwraca `423 Locked`). To świadomy kompromis na rzecz czytelnego komunikatu dla użytkownika: odpowiedź `423` ujawnia, że konto o danym adresie istnieje (i jest zablokowane), podczas gdy błędne dane logowania zwracają zawsze `401`.
+Po 5 nieudanych próbach logowania konto jest blokowane na 5 minut. Odpowiedź nie zdradza, czy konto o danym adresie istnieje: błędne hasło, nieistniejące konto i błędne hasło do zablokowanego konta dają zawsze `401` `Invalid email or password` w porównywalnym czasie (dla nieistniejącego konta hasło jest weryfikowane na stałym haszu-atrapie). `423 Locked` dostaje tylko ktoś, kto podał **poprawne** hasło do zablokowanego konta. Próby w czasie blokady nie zmieniają licznika ani nie przedłużają blokady. Równoległe próby logowania na to samo konto są wykonywane po kolei (blokada per e-mail w pamięci procesu), więc licznik nieudanych prób nie gubi inkrementacji.
+
 
 Tokeny JWT zawierają security stamp użytkownika i są sprawdzane przy każdym żądaniu: token konta, które zostało usunięte (np. przez reset danych demo, który odtwarza też konta z seeda) albo którego security stamp się zmienił (np. po zmianie hasła), jest odrzucany z `401` - trzeba zalogować się ponownie.
 
