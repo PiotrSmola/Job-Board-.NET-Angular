@@ -174,12 +174,18 @@ describe('Attachments API contract (backend response shapes)', () => {
       expect(getApiErrorMessage(error, FALLBACK)).toBe('Brak połączenia z serwerem');
     });
 
-    // Bug: backend zwraca 400 {"message":"Invalid attachment kind"} (AttachmentFiles.InvalidKindMessage), a getApiErrorMessage nie ma
-    // tłumaczenia, więc użytkownik zobaczyłby angielski tekst. Klient wysyła tylko 0-3, więc w praktyce to defekt wewnętrzny/wersji.
-    it.skip('Bug: translates 400 {"message":"Invalid attachment kind"} to Polish', () => {
+    // backend: AttachmentFiles.InvalidKindMessage – klient wysyła tylko 0-3, więc to w praktyce niezgodność wersji
+    it('translates 400 {"message":"Invalid attachment kind"} to Polish', () => {
       const error = uploadError(400, 'Bad Request', { message: 'Invalid attachment kind' });
 
-      expect(getApiErrorMessage(error, FALLBACK)).not.toBe('Invalid attachment kind');
+      expect(getApiErrorMessage(error, FALLBACK)).toBe('Nieprawidłowy rodzaj załącznika');
+    });
+
+    // backend: GlobalExceptionHandler.RequestTooLargeMessage (BadHttpRequestException 413 z limitu treści żądania)
+    it('translates the 413 JSON from the backend by its message, not as the nginx file limit', () => {
+      const error = uploadError(413, 'Payload Too Large', { message: 'Request body too large' }, { 'Content-Type': 'application/json' });
+
+      expect(getApiErrorMessage(error, FALLBACK)).toBe('Przesyłane dane są za duże');
     });
   });
 
