@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
@@ -9,9 +10,11 @@ using Backend.Repositories;
 using Backend.Services;
 using Backend.Settings;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -100,6 +103,13 @@ builder.Services.AddScoped<IJobApplicationRepository, JobApplicationRepository>(
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 
+// Statystyki: agregaty w SQL, zliczanie wyświetleń ofert (deduplikacja HMAC bez surowego IP) i sprzątanie starych
+// wpisów deduplikacji w tle; TimeProvider pozwala testom ustawić "dzisiaj"
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IStatsService, StatsService>();
+builder.Services.AddScoped<IJobViewTracker, JobViewTracker>();
+builder.Services.AddHostedService<JobViewCleanupService>();
+
 // Magazyn plików załączników wg Storage:Provider (Local - katalog na dysku, S3 - magazyn zgodny z S3, np. SeaweedFS);
 // konfiguracja walidowana w jednym miejscu (StorageSettings.Validate)
 builder.Services.AddOptions<StorageSettings>()
@@ -167,6 +177,18 @@ builder.Services.AddRateLimiter(options =>
     };
 });
 
+// Adres klienta z X-Forwarded-For (jedno ogniwo) tylko od zaufanego proxy w sieci prywatnej (nginx w Dockerze);
+// bez tego wszyscy anonimowi odwiedzający mieliby adres kontenera nginx (deduplikacja wyświetleń ofert po IP)
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+    options.ForwardLimit = 1;
+    foreach (var (prefix, length) in new[] { ("10.0.0.0", 8), ("172.16.0.0", 12), ("192.168.0.0", 16), ("fc00::", 7) })
+    {
+        options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse(prefix), length));
+    }
+});
+
 // Nieobsłużone wyjątki -> 500 {message} bez szczegółów (GlobalExceptionHandler), także w Development;
 // BadHttpRequestException -> jego kod statusu (np. 413 {message:"Request body too large"})
 builder.Services.AddProblemDetails();
@@ -227,6 +249,9 @@ using (var scope = app.Services.CreateScope())
 {
     await DatabaseSeeder.SeedAsync(scope.ServiceProvider);
 }
+
+// adres klienta od zaufanego proxy - przed wszystkim, co z niego korzysta
+app.UseForwardedHeaders();
 
 // konfiguracja potoku HTTP - obsługa wyjątków jako pierwsza (obejmuje cały potok); zaraz za nią błędy klienta
 // przy odczycie żądania (BadHttpRequestException) - ich kod statusu i log Warning zamiast 500 i Error
