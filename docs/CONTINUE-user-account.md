@@ -63,7 +63,12 @@ Zrobione (na kontrakcie, bez backendu): modele `models/account.model.ts` (+ `Res
 - Baner ładowany leniwie przez `import()` + `ViewContainerRef.createComponent` w powłoce (`app.ts`) – `@defer` dokładał swój runtime do paczki startowej. Miejsce na baner (`.email-banner-slot`, 56 px / 72 px na wąskich ekranach, to samo tło) jest w układzie od pierwszego renderu (sesja odtwarzana synchronicznie), więc doładowanie nie powoduje CLS. `app.component.ts` (bootstrap) re-eksportuje `App` – jedna powłoka zamiast dwóch kopii.
 - Przełączenie serduszka należy do `SavedJobsService` (żądanie nie jest przerywane zniszczeniem komponentu – PUT/DELETE są idempotentne, a stan musi być spójny między listą i szczegółami); komponent tylko przestaje nasłuchiwać. Odpowiedzi z poprzedniej sesji są ignorowane. Wynik ogłasza `LiveAnnouncer` (jeden region dla całej listy), błąd – snackbar.
 - `AttachmentListComponent` dostał opcjonalne `actions` (pobieranie/usuwanie dokumentów profilu) i `itemNoun`; `AttachmentsPickerComponent` – `limitContext="profile"` (komunikaty limitów profilu). Wspólne `utils/http-transfer.ts` (pobieranie pliku z `Content-Disposition`, mapowanie postępu uploadu) używane przez `JobApplicationService` i `AccountService`.
+- Żądania odczytu (profil, dokumenty, powiadomienia, zapisane oferty, potwierdzenie e-maila, reset hasła) są przerywane przy opuszczeniu strony. Zmiany hasła i usunięcia konta celowo nie – serwer mógł już je wykonać, a nowy token trzeba zapisać / sesję zakończyć.
 - Nowe komponenty OnPush, wszystkie trasy lazy; `index.html` ma `lang="pl"`.
+
+### Testy i build
+- Pełne `ng test`: 59 plików, 1483 testy – zielone. `ng build`: initial 627,37 kB (przed etapem ~623 kB; +4,4 kB: rozszerzony AuthService, trasy, pozycje menu, slot banera), bez nowych ostrzeżeń budżetu (istniejące: initial > 500 kB, job-list.scss 5,13 kB).
+- Uwaga środowiskowa: w kontenerze `jobboard-dev-node` testy z worktree (node_modules na montowaniu 9p z Windows) przy obciążeniu kończą się `[vitest-pool-runner]: Timeout waiting for worker to respond` (sztywny limit 60 s startu workera w Vitest). Uruchamiałem je z kopii w `/tmp/ua-fe` (node_modules skopiowane z worktree, `src` synchronizowane skryptem `/tmp/ua-sync.sh`).
 
 ### Do zrobienia po backendzie
 - Smoke test na prawdziwym API (szczególnie kodowanie tokenów w linkach, `DELETE` z body, kształt ValidationProblem dla haseł).
