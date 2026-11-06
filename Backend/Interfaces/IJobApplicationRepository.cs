@@ -28,6 +28,8 @@ public interface IJobApplicationRepository
     // załączników mieszczą się w limitach. Inny wynik niż Added - nic nie zapisano.
     Task<AttachmentsAddResult> AddAttachmentsAsync(int applicationId, string userId, IReadOnlyList<ApplicationAttachment> attachments,
         CancellationToken cancellationToken = default);
+    // które z podanych kluczy plików mają rekord załącznika (sprzątanie po błędzie zapisu - usuwane są tylko pliki bez rekordu)
+    Task<IReadOnlyList<string>> GetExistingFileKeysAsync(IReadOnlyCollection<string> fileKeys, CancellationToken cancellationToken = default);
     // usuwa załącznik aplikacji kandydata userId (w każdym statusie); FileKey - klucz pliku do usunięcia z magazynu
     Task<(AttachmentDeleteResult Result, string? FileKey)> DeleteAttachmentAsync(int applicationId, int attachmentId, string userId,
         CancellationToken cancellationToken = default);

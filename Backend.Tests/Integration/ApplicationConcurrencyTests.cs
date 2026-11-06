@@ -116,6 +116,8 @@ public class ApplicationConcurrencyTests
         public Task<(AttachmentDeleteResult Result, string? FileKey)> DeleteAttachmentAsync(int applicationId, int attachmentId, string userId,
             CancellationToken cancellationToken = default) => _inner.DeleteAttachmentAsync(applicationId, attachmentId, userId, cancellationToken);
         public Task<(bool Deleted, IReadOnlyList<string> FileKeys)> DeleteApplicationAsync(int id) => _inner.DeleteApplicationAsync(id);
+        public Task<IReadOnlyList<string>> GetExistingFileKeysAsync(IReadOnlyCollection<string> fileKeys, CancellationToken cancellationToken = default) =>
+            _inner.GetExistingFileKeysAsync(fileKeys, cancellationToken);
     }
 
     // Aplikacja na tej samej bazie, ale z repozytorium czekającym na wszystkich uczestników wyścigu

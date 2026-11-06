@@ -71,12 +71,25 @@ public class AttachmentStorageFailureTests : IClassFixture<ProductionRefreshEnab
             FailDeleteByPrefix ? throw new IOException(Secret) : _inner.DeleteByPrefixAsync(prefix, cancellationToken);
     }
 
-    // Repozytorium, którego zapis rekordów załączników się nie udaje (awaria bazy po zapisaniu plików)
-    private sealed class FailingAttachmentsRepository(IJobApplicationRepository inner) : IJobApplicationRepository
+    // Repozytorium, którego zapis rekordów załączników kończy się wyjątkiem (awaria bazy po zapisaniu plików):
+    // przed zapisem (nic w bazie) albo już po zatwierdzeniu transakcji (rekordy są, np. zerwane połączenie przy
+    // potwierdzeniu COMMIT); FailExistenceCheck - nie da się też sprawdzić, które rekordy istnieją
+    private sealed class FailingAttachmentsRepository(IJobApplicationRepository inner, bool afterCommit = false,
+        bool failExistenceCheck = false) : IJobApplicationRepository
     {
-        public Task<AttachmentsAddResult> AddAttachmentsAsync(int applicationId, string userId,
-            IReadOnlyList<ApplicationAttachment> attachments, CancellationToken cancellationToken = default) =>
+        public async Task<AttachmentsAddResult> AddAttachmentsAsync(int applicationId, string userId,
+            IReadOnlyList<ApplicationAttachment> attachments, CancellationToken cancellationToken = default)
+        {
+            if (afterCommit)
+            {
+                Assert.Equal(AttachmentsAddResult.Added, await inner.AddAttachmentsAsync(applicationId, userId, attachments, cancellationToken));
+            }
+
             throw new InvalidOperationException(Secret);
+        }
+
+        public Task<IReadOnlyList<string>> GetExistingFileKeysAsync(IReadOnlyCollection<string> fileKeys, CancellationToken cancellationToken = default) =>
+            failExistenceCheck ? throw new InvalidOperationException(Secret) : inner.GetExistingFileKeysAsync(fileKeys, cancellationToken);
 
         public Task<ApplicationOwnership?> GetOwnershipAsync(int id, CancellationToken cancellationToken = default) => inner.GetOwnershipAsync(id, cancellationToken);
         public Task<JobApplication?> GetApplicationByIdAsync(int id, bool includeHistory = false, CancellationToken cancellationToken = default) => inner.GetApplicationByIdAsync(id, includeHistory, cancellationToken);
@@ -194,6 +207,51 @@ public class AttachmentStorageFailureTests : IClassFixture<ProductionRefreshEnab
 
         // pliki zapisane tuż przed błędem bazy zostały posprzątane, stary załącznik bez zmian
         Assert.Equal(before, await _attachments.RecordsAsync(setup.Application.Id));
+        await _attachments.AssertStorageMatchesRecordsAsync(setup.Application.Id);
+    }
+
+    private WebApplicationFactory<Program> FactoryWithFailingAttachmentsRepository(bool afterCommit, bool failExistenceCheck) =>
+        _api.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IJobApplicationRepository>();
+            services.AddScoped<JobApplicationRepository>();
+            services.AddScoped<IJobApplicationRepository>(sp => new FailingAttachmentsRepository(
+                sp.GetRequiredService<JobApplicationRepository>(), afterCommit, failExistenceCheck));
+        }));
+
+    // Błąd po zatwierdzeniu transakcji: rekordy są w bazie, więc ich pliki zostają (inaczej rekordy wskazywałyby
+    // na nieistniejące pliki) - klient dostaje 500, ale załączniki są kompletne i dają się pobrać
+    [Fact]
+    public async Task DatabaseFailsAfterTheCommit_FilesOfTheCommittedRecordsAreKept()
+    {
+        var setup = await _attachments.NewSetupAsync();
+        using var factory = FactoryWithFailingAttachmentsRepository(afterCommit: true, failExistenceCheck: false);
+        using var client = ClientFor(factory, setup.Candidate.Token);
+
+        await AssertServerErrorWithoutDetailsAsync(await client.UploadAttachmentsAsync(setup.Application.Id, ThreeFiles()));
+
+        var records = await _attachments.RecordsAsync(setup.Application.Id);
+        Assert.Equal(3, records.Count);
+        await _attachments.AssertStorageMatchesRecordsAsync(setup.Application.Id);
+        foreach (var (record, expected) in records.OrderBy(r => r.Kind).Zip(ThreeFiles()))
+        {
+            var download = await client.DownloadAttachmentAsync(setup.Application.Id, record.Id);
+            Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+            Assert.Equal(expected.Content, await download.Content.ReadAsByteArrayAsync());
+        }
+    }
+
+    // Nie da się sprawdzić, które rekordy powstały - pliki zostają (osierocony plik zamiast rekordu bez pliku)
+    [Fact]
+    public async Task DatabaseFailsAndTheRecordCheckFailsToo_FilesAreKept()
+    {
+        var setup = await _attachments.NewSetupAsync();
+        using var factory = FactoryWithFailingAttachmentsRepository(afterCommit: true, failExistenceCheck: true);
+        using var client = ClientFor(factory, setup.Candidate.Token);
+
+        await AssertServerErrorWithoutDetailsAsync(await client.UploadAttachmentsAsync(setup.Application.Id, ThreeFiles()));
+
+        Assert.Equal(3, (await _attachments.RecordsAsync(setup.Application.Id)).Count);
         await _attachments.AssertStorageMatchesRecordsAsync(setup.Application.Id);
     }
 

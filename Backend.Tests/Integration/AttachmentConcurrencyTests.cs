@@ -101,6 +101,8 @@ public class AttachmentConcurrencyTests
         public Task<(AttachmentDeleteResult Result, string? FileKey)> DeleteAttachmentAsync(int applicationId, int attachmentId, string userId,
             CancellationToken cancellationToken = default) => inner.DeleteAttachmentAsync(applicationId, attachmentId, userId, cancellationToken);
         public Task<(bool Deleted, IReadOnlyList<string> FileKeys)> DeleteApplicationAsync(int id) => inner.DeleteApplicationAsync(id);
+        public Task<IReadOnlyList<string>> GetExistingFileKeysAsync(IReadOnlyCollection<string> fileKeys, CancellationToken cancellationToken = default) =>
+            inner.GetExistingFileKeysAsync(fileKeys, cancellationToken);
     }
 
     private WebApplicationFactory<Program> GatedFactory(Gate? ownershipGate = null, Gate? addGate = null) =>

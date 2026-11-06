@@ -221,6 +221,21 @@ public class JobApplicationRepository : IJobApplicationRepository
         return AttachmentsAddResult.Added;
     }
 
+    public async Task<IReadOnlyList<string>> GetExistingFileKeysAsync(IReadOnlyCollection<string> fileKeys,
+        CancellationToken cancellationToken = default)
+    {
+        if (fileKeys.Count == 0)
+        {
+            return [];
+        }
+
+        return await _context.ApplicationAttachments
+            .AsNoTracking()
+            .Where(a => fileKeys.Contains(a.FileKey))
+            .Select(a => a.FileKey)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<(AttachmentDeleteResult Result, string? FileKey)> DeleteAttachmentAsync(int applicationId, int attachmentId,
         string userId, CancellationToken cancellationToken = default)
     {

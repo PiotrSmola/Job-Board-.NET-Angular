@@ -404,6 +404,7 @@ public class JobApplicationsController : ControllerBase
         }
 
         var savedKeys = new List<string>(uploads.Count);
+        var recordsMayExist = false;
         AttachmentsAddResult result;
         try
         {
@@ -418,12 +419,21 @@ public class JobApplicationsController : ControllerBase
 
             // bez tokenu żądania: po zapisaniu plików operacja jest doprowadzana do końca, żeby przerwanie nie
             // zostawiło niepewnego stanu (rekordy zapisane, a pliki usunięte poniżej)
+            recordsMayExist = true;
             result = await _applicationRepository.AddAttachmentsAsync(id, userId,
                 uploads.Select(u => u.Attachment).ToList(), CancellationToken.None);
         }
         catch
         {
-            await _fileStorage.DeleteQuietlyAsync(savedKeys, _logger);
+            if (recordsMayExist)
+            {
+                await DeleteFilesWithoutRecordsAsync(savedKeys);
+            }
+            else
+            {
+                await _fileStorage.DeleteQuietlyAsync(savedKeys, _logger);
+            }
+
             throw;
         }
 
@@ -578,6 +588,27 @@ public class JobApplicationsController : ControllerBase
         Response.AddPaginationHeader(applications);
 
         return Ok(applications.Select(a => a.ToDto()));
+    }
+
+    // Sprzątanie po błędzie zapisu rekordów załączników: wyjątek mógł wystąpić już po zatwierdzeniu transakcji (np.
+    // zerwane połączenie przy potwierdzeniu COMMIT), więc usuwane są tylko pliki, których klucze nie trafiły do bazy.
+    // Gdy nie da się tego sprawdzić, pliki zostają - osierocony plik jest mniejszym złem niż rekord bez pliku.
+    private async Task DeleteFilesWithoutRecordsAsync(IReadOnlyList<string> savedKeys)
+    {
+        IReadOnlyList<string> recorded;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            recorded = await _applicationRepository.GetExistingFileKeysAsync(savedKeys, timeout.Token);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not check which of {Count} saved attachment files have records - the files are kept",
+                savedKeys.Count);
+            return;
+        }
+
+        await _fileStorage.DeleteQuietlyAsync(savedKeys.Except(recorded, StringComparer.Ordinal), _logger);
     }
 
     // Rozmiar i typ pliku (po zawartości): wykryty typ albo komunikat błędu
