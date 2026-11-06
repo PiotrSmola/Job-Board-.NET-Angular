@@ -309,6 +309,21 @@ describe('CompanyDetailComponent', () => {
   });
 
   describe('route changes', () => {
+    // Bug: company-detail.component.ts loadCompany() subscribes without switchMap/unsubscribe, so a late response for the
+    // previous :id overwrites the profile of the current one (and triggers loading its offers) after a quick route change.
+    it.skip('ignores a late response for the previous company when the id changes quickly', async () => {
+      const first = new Subject<Company>();
+      getCompany.mockReturnValueOnce(first);
+      await open(5);
+      getCompany.mockReturnValue(of(makeCompany(6, { name: 'Beta' })));
+      await open(6);
+      expect(component.company()?.name).toBe('Beta');
+
+      first.next(makeCompany(5, { name: 'Acme' })); // spóźniona odpowiedź dla poprzedniego id
+
+      expect(component.company()?.name).toBe('Beta');
+    });
+
     it('reloads the profile and the offers (from page 1) when the id changes', async () => {
       getJobs.mockReturnValue(withJobs([makeJob(1)], 25));
       await open(5);
