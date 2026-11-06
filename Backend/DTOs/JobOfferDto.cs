@@ -9,7 +9,10 @@ public class JobOfferDto
 
     public string Title { get; set; } = string.Empty;
 
+    // nazwa firmy (zgodność wsteczna z polem tekstowym sprzed wprowadzenia firm)
     public string Company { get; set; } = string.Empty;
+
+    public int CompanyId { get; set; }
 
     public string Description { get; set; } = string.Empty;
 

@@ -26,10 +26,11 @@ public class ApiFixture : IAsyncLifetime
 
     // cacheTokens: false - każde AdminClientAsync/UserClientAsync loguje się od nowa (potrzebne, gdy testy
     // resetują dane: konta z seeda dostają nowe id i security stamp, więc wcześniejsze tokeny tracą ważność)
-    protected ApiFixture(string environment, string? jwtSecret, bool allowSeedRefresh, bool cacheTokens = true)
+    // demoAccounts: jawna wartość Seed:DemoAccounts (null - domyślnie: konta demo tylko w Development)
+    protected ApiFixture(string environment, string? jwtSecret, bool allowSeedRefresh, bool cacheTokens = true, bool? demoAccounts = null)
     {
         _cacheTokens = cacheTokens;
-        Factory = new JobBoardFactory(environment, jwtSecret, allowSeedRefresh);
+        Factory = new JobBoardFactory(environment, jwtSecret, allowSeedRefresh, demoAccounts);
         _adminToken = new Lazy<Task<string>>(() => LoginAsync(TestUsers.AdminEmail, TestUsers.AdminPassword));
         _userToken = new Lazy<Task<string>>(() => LoginAsync(TestUsers.UserEmail, TestUsers.UserPassword));
     }
@@ -85,12 +86,136 @@ public class ApiFixture : IAsyncLifetime
         return new TestUser(email, password, dto.FirstName, dto.LastName, user.Token, JwtTestHelper.GetUserId(user.Token));
     }
 
-    public static CreateJobOfferDto NewJobDto(Action<CreateJobOfferDto>? customize = null)
+    // Odczyt bezpośrednio z bazy (pola, których API nie zwraca, np. ReviewedByUserId)
+    public async Task<T> QueryDbAsync<T>(Func<ApplicationDbContext, Task<T>> query)
+    {
+        using var scope = Factory.Services.CreateScope();
+        return await query(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+    }
+
+    // Unikalna nazwa (np. firmy) - testy współdzielą bazę, więc nazwy nie mogą się powtarzać
+    public static string UniqueName(string prefix) => $"{prefix} {Guid.NewGuid().ToString("N")[..10]}";
+
+    // Pracodawca zarejestrowany przez POST /api/auth/register-employer (jego firma czeka na weryfikację).
+    // customize pozwala zmienić dane rejestracji; zwrócone CompanyId pochodzi z GET /api/employer/company.
+    public async Task<TestEmployer> RegisterEmployerAsync(string? companyName = null, Action<RegisterEmployerDto>? customize = null)
+    {
+        var unique = Guid.NewGuid().ToString("N");
+        var dto = new RegisterEmployerDto
+        {
+            Email = $"employer_{unique}@test.local",
+            Password = "Passw0rd1",
+            FirstName = "Emp",
+            LastName = "Loyer",
+            CompanyName = companyName ?? UniqueName("Firma")
+        };
+        customize?.Invoke(dto);
+
+        using var anonymous = CreateClient();
+        var response = await anonymous.PostJsonAsync("/api/auth/register-employer", dto);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var user = await response.ReadJsonAsync<UserDto>();
+
+        using var client = CreateClient(user.Token);
+        var companyResponse = await client.GetAsync("/api/employer/company");
+        Assert.Equal(HttpStatusCode.OK, companyResponse.StatusCode);
+        var company = await companyResponse.ReadJsonAsync<CompanyDto>();
+
+        return new TestEmployer(
+            new TestUser(dto.Email, dto.Password, dto.FirstName, dto.LastName, user.Token, JwtTestHelper.GetUserId(user.Token)),
+            company.Id,
+            company.Name);
+    }
+
+    // Pracodawca, którego firmę admin od razu zatwierdził
+    public async Task<TestEmployer> RegisterApprovedEmployerAsync(string? companyName = null)
+    {
+        var employer = await RegisterEmployerAsync(companyName);
+        await ApproveCompanyAsync(employer.CompanyId);
+        return employer;
+    }
+
+    public HttpClient CreateClient(TestEmployer employer) => CreateClient(employer.Token);
+
+    public async Task<CompanyDto> ApproveCompanyAsync(int companyId)
+    {
+        using var admin = await AdminClientAsync();
+        var response = await admin.PostAsync($"/api/admin/companies/{companyId}/approve", null);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await response.ReadJsonAsync<CompanyDto>();
+    }
+
+    public async Task<CompanyDto> RejectCompanyAsync(int companyId, string reason = "Not enough information")
+    {
+        using var admin = await AdminClientAsync();
+        var response = await admin.PostJsonAsync($"/api/admin/companies/{companyId}/reject", new RejectCompanyDto { Reason = reason });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await response.ReadJsonAsync<CompanyDto>();
+    }
+
+    // Firma utworzona przez admina (od razu zatwierdzona)
+    public async Task<CompanyDto> CreateCompanyAsync(string? name = null, Action<CompanyFormDto>? customize = null)
+    {
+        var dto = new CompanyFormDto { Name = name ?? UniqueName("Firma") };
+        customize?.Invoke(dto);
+
+        using var admin = await AdminClientAsync();
+        var response = await admin.PostJsonAsync("/api/admin/companies", dto);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return await response.ReadJsonAsync<CompanyDto>();
+    }
+
+    // Dane oferty pracodawcy - bez companyId (dla pracodawcy firma wynika z konta)
+    public CreateJobOfferDto NewEmployerJobDto(Action<CreateJobOfferDto>? customize = null) =>
+        NewJobDto(j =>
+        {
+            j.CompanyId = null;
+            customize?.Invoke(j);
+        });
+
+    // Tworzy ofertę jako pracodawca (oczekiwany sukces 201)
+    public async Task<JobOfferDto> CreateEmployerJobAsync(TestEmployer employer, Action<CreateJobOfferDto>? customize = null)
+    {
+        using var client = CreateClient(employer);
+        var response = await client.PostJsonAsync("/api/jobs", NewEmployerJobDto(customize));
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return await response.ReadJsonAsync<JobOfferDto>();
+    }
+
+    // Zmiana statusu aplikacji przez wskazanego klienta (pracodawcę albo admina)
+    public static Task<HttpResponseMessage> ChangeApplicationStatusAsync(HttpClient client, int applicationId, ApplicationStatus status, string? comment = null) =>
+        client.PutJsonAsync($"/api/jobapplications/{applicationId}/status",
+            new UpdateApplicationStatusDto { Status = status, Comment = comment });
+
+    public const string DefaultCompanyName = "Test Company";
+
+    // Zatwierdzona firma testowa (tworzona przy pierwszym użyciu - także po resecie danych demo)
+    public int DefaultCompanyId => CompanyId(DefaultCompanyName);
+
+    // Id firmy o danej nazwie; brakująca firma jest tworzona bezpośrednio w bazie z zadanym statusem
+    public int CompanyId(string name, CompanyStatus status = CompanyStatus.Approved)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var lowered = name.ToLower();
+        var company = context.Companies.FirstOrDefault(c => c.Name.ToLower() == lowered);
+        if (company == null)
+        {
+            company = new Company { Name = name, Status = status, CreatedAt = DateTime.UtcNow };
+            context.Companies.Add(company);
+            context.SaveChanges();
+        }
+
+        return company.Id;
+    }
+
+    // Dane nowej oferty w firmie testowej (admin musi podać companyId)
+    public CreateJobOfferDto NewJobDto(Action<CreateJobOfferDto>? customize = null)
     {
         var dto = new CreateJobOfferDto
         {
             Title = "Test position " + Guid.NewGuid().ToString("N")[..8],
-            Company = "Test Company",
+            CompanyId = DefaultCompanyId,
             Description = "Test description",
             SalaryMin = 5000,
             SalaryMax = 8000,
@@ -183,6 +308,14 @@ public class ApiFixture : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return await response.ReadJsonAsync<JobApplicationDto>();
     }
+}
+
+// Pracodawca zarejestrowany przez API wraz z firmą
+public sealed record TestEmployer(TestUser User, int CompanyId, string CompanyName)
+{
+    public string Email => User.Email;
+    public string Token => User.Token;
+    public string Id => User.Id;
 }
 
 // Wspólna kolekcja: jedna aplikacja i jedna baza dla wszystkich klas integracyjnych na danych seeda

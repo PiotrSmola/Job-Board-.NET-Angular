@@ -9,7 +9,8 @@
 
   <!-- Filters Section -->
   <mat-card class="filters-card">
-    <div class="filters-grid three-columns">
+    <!-- admin ma dodatkowy filtr firmy (czwarta kolumna) -->
+    <div class="filters-grid three-columns" [style.grid-template-columns]="isAdmin() ? '2fr 1fr 1fr 1.5fr' : null">
       <!-- Search -->
       <mat-form-field appearance="outline" class="search-field">
         <mat-label>Szukaj</mat-label>
@@ -43,6 +44,15 @@
         </mat-select>
         <mat-icon matPrefix>flag</mat-icon>
       </mat-form-field>
+
+      <!-- Company Filter (admin) -->
+      @if (isAdmin()) {
+        <app-company-autocomplete
+          source="all"
+          label="Firma"
+          placeholder="Wszystkie firmy"
+          (companyChange)="onCompanyFilterChange($event)" />
+      }
     </div>
 
     <div class="filter-actions">
@@ -194,8 +204,8 @@
             </td>
           </ng-container>
 
-          <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-          <tr mat-row *matRowDef="let row; columns: displayedColumns;" class="table-row"></tr>
+          <tr mat-header-row *matHeaderRowDef="displayedColumns()"></tr>
+          <tr mat-row *matRowDef="let row; columns: displayedColumns();" class="table-row"></tr>
         </table>
       </div>
 

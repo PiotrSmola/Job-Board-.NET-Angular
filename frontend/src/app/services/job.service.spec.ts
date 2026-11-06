@@ -10,6 +10,7 @@ const JOB: JobOffer = {
   id: 1,
   title: 'Programista .NET',
   company: 'Acme',
+  companyId: 1,
   description: 'Opis',
   salaryMin: 8000,
   salaryMax: 12000,
@@ -137,7 +138,7 @@ describe('JobService', () => {
 
   describe('CRUD', () => {
     const create: CreateJobOffer = {
-      title: 'T', company: 'C', description: 'D', salaryMin: null, salaryMax: null, location: 'L', workType: WorkType.Onsite,
+      title: 'T', companyId: 4, description: 'D', salaryMin: null, salaryMax: null, location: 'L', workType: WorkType.Onsite,
       status: JobOfferStatus.Draft, expiresAt: '2026-12-31T22:59:59.999Z'
     };
 

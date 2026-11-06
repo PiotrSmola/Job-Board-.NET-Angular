@@ -21,7 +21,7 @@ public class JobsCrudTests
     {
         using var client = _api.CreateClient();
 
-        var response = await client.PostJsonAsync("/api/jobs", ApiFixture.NewJobDto());
+        var response = await client.PostJsonAsync("/api/jobs", _api.NewJobDto());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -31,7 +31,7 @@ public class JobsCrudTests
     {
         using var client = await _api.UserClientAsync();
 
-        var response = await client.PostJsonAsync("/api/jobs", ApiFixture.NewJobDto());
+        var response = await client.PostJsonAsync("/api/jobs", _api.NewJobDto());
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -40,7 +40,7 @@ public class JobsCrudTests
     public async Task CreateJob_AsAdmin_ReturnsCreatedWithLocationAndBody()
     {
         using var client = await _api.AdminClientAsync();
-        var dto = ApiFixture.NewJobDto(j =>
+        var dto = _api.NewJobDto(j =>
         {
             j.Title = "Created by admin";
             j.WorkType = WorkType.Hybrid;
@@ -67,7 +67,7 @@ public class JobsCrudTests
     public async Task CreateJob_WithoutSalary_Succeeds()
     {
         using var client = await _api.AdminClientAsync();
-        var dto = ApiFixture.NewJobDto(j => { j.SalaryMin = null; j.SalaryMax = null; });
+        var dto = _api.NewJobDto(j => { j.SalaryMin = null; j.SalaryMax = null; });
 
         var response = await client.PostJsonAsync("/api/jobs", dto);
 
@@ -81,7 +81,7 @@ public class JobsCrudTests
     public async Task CreateJob_IgnoresClientProvidedCreatedAt()
     {
         using var client = await _api.AdminClientAsync();
-        var payload = new { title = "T", company = "C", description = "D", location = "L", workType = 0, createdAt = "2001-01-01T00:00:00Z" };
+        var payload = new { title = "T", companyId = _api.DefaultCompanyId, description = "D", location = "L", workType = 0, createdAt = "2001-01-01T00:00:00Z" };
 
         var response = await client.PostJsonAsync("/api/jobs", payload);
 
@@ -93,15 +93,15 @@ public class JobsCrudTests
     [Theory]
     [InlineData("title", "")]
     [InlineData("title", "   ")]
-    [InlineData("company", "")]
+    [InlineData("companyId", null)]
     [InlineData("description", "")]
     [InlineData("location", "")]
-    public async Task CreateJob_WithMissingRequiredField_ReturnsBadRequest(string field, string value)
+    public async Task CreateJob_WithMissingRequiredField_ReturnsBadRequest(string field, string? value)
     {
         using var client = await _api.AdminClientAsync();
         var payload = new Dictionary<string, object?>
         {
-            ["title"] = "Title", ["company"] = "Company", ["description"] = "Description", ["location"] = "Location", ["workType"] = 0
+            ["title"] = "Title", ["companyId"] = _api.DefaultCompanyId, ["description"] = "Description", ["location"] = "Location", ["workType"] = 0
         };
         payload[field] = value;
 
@@ -115,7 +115,7 @@ public class JobsCrudTests
     {
         using var client = await _api.AdminClientAsync();
 
-        var response = await client.PostJsonAsync("/api/jobs", ApiFixture.NewJobDto(j => j.Title = new string('x', 201)));
+        var response = await client.PostJsonAsync("/api/jobs", _api.NewJobDto(j => j.Title = new string('x', 201)));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -127,7 +127,7 @@ public class JobsCrudTests
     public async Task CreateJob_WithUndefinedWorkType_ReturnsBadRequest(int workType)
     {
         using var client = await _api.AdminClientAsync();
-        var payload = new { title = "T", company = "C", description = "D", location = "L", workType };
+        var payload = new { title = "T", companyId = _api.DefaultCompanyId, description = "D", location = "L", workType };
 
         var response = await client.PostJsonAsync("/api/jobs", payload);
 
@@ -143,7 +143,7 @@ public class JobsCrudTests
     public async Task CreateJob_WithEachDefinedWorkType_Succeeds(int workType)
     {
         using var client = await _api.AdminClientAsync();
-        var payload = new { title = "T", company = "C", description = "D", location = "L", workType };
+        var payload = new { title = "T", companyId = _api.DefaultCompanyId, description = "D", location = "L", workType };
 
         var response = await client.PostJsonAsync("/api/jobs", payload);
 
@@ -156,7 +156,7 @@ public class JobsCrudTests
     {
         var job = await _api.CreateJobAsync(j => j.WorkType = WorkType.Onsite);
         using var client = await _api.AdminClientAsync();
-        var payload = new { title = "T", company = "C", description = "D", location = "L", workType = 99 };
+        var payload = new { title = "T", companyId = _api.DefaultCompanyId, description = "D", location = "L", workType = 99 };
 
         var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", payload);
 
@@ -173,7 +173,7 @@ public class JobsCrudTests
     {
         using var client = await _api.AdminClientAsync();
 
-        var response = await client.PostJsonAsync("/api/jobs", ApiFixture.NewJobDto(j => { j.SalaryMin = 20000; j.SalaryMax = 1000; }));
+        var response = await client.PostJsonAsync("/api/jobs", _api.NewJobDto(j => { j.SalaryMin = 20000; j.SalaryMax = 1000; }));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -191,7 +191,7 @@ public class JobsCrudTests
         using var client = await _api.AdminClientAsync();
 
         var response = await client.PostJsonAsync("/api/jobs",
-            ApiFixture.NewJobDto(j => { j.SalaryMin = Salary(min); j.SalaryMax = Salary(max); }));
+            _api.NewJobDto(j => { j.SalaryMin = Salary(min); j.SalaryMax = Salary(max); }));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -207,7 +207,7 @@ public class JobsCrudTests
         using var client = await _api.AdminClientAsync();
 
         var response = await client.PostJsonAsync("/api/jobs",
-            ApiFixture.NewJobDto(j => { j.SalaryMin = Salary(min); j.SalaryMax = Salary(max); }));
+            _api.NewJobDto(j => { j.SalaryMin = Salary(min); j.SalaryMax = Salary(max); }));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var job = await response.ReadJsonAsync<JobOfferDto>();
@@ -221,7 +221,7 @@ public class JobsCrudTests
         var job = await _api.CreateJobAsync(j => { j.SalaryMin = 5000; j.SalaryMax = 8000; });
         using var client = await _api.AdminClientAsync();
 
-        var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", ApiFixture.NewJobDto(j => { j.SalaryMin = 9000; j.SalaryMax = 8000; }));
+        var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", _api.NewJobDto(j => { j.SalaryMin = 9000; j.SalaryMax = 8000; }));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var fetched = await (await client.GetAsync($"/api/jobs/{job.Id}")).ReadJsonAsync<JobOfferDto>();
@@ -236,7 +236,7 @@ public class JobsCrudTests
         var job = await _api.CreateJobAsync();
         using var client = _api.CreateClient();
 
-        var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", ApiFixture.NewJobDto());
+        var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", _api.NewJobDto());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -247,7 +247,7 @@ public class JobsCrudTests
         var job = await _api.CreateJobAsync(j => j.Title = "Original title");
         using var client = await _api.UserClientAsync();
 
-        var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", ApiFixture.NewJobDto(j => j.Title = "Hijacked"));
+        var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", _api.NewJobDto(j => j.Title = "Hijacked"));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         var fetched = await (await client.GetAsync($"/api/jobs/{job.Id}")).ReadJsonAsync<JobOfferDto>();
@@ -261,10 +261,10 @@ public class JobsCrudTests
         using var client = await _api.AdminClientAsync();
         // CreatedAt z odpowiedzi POST ma wyższą precyzję niż zapisana w bazie - porównujemy z odczytem z bazy
         var before = await (await client.GetAsync($"/api/jobs/{job.Id}")).ReadJsonAsync<JobOfferDto>();
-        var update = ApiFixture.NewJobDto(j =>
+        var update = _api.NewJobDto(j =>
         {
             j.Title = "After";
-            j.Company = "New company";
+            j.CompanyId = _api.CompanyId("New company");
             j.Description = "New description";
             j.Location = "New city";
             j.SalaryMin = 11111;
@@ -297,7 +297,7 @@ public class JobsCrudTests
         var job = await _api.CreateJobAsync(j => { j.SalaryMin = 1000; j.SalaryMax = 2000; });
         using var client = await _api.AdminClientAsync();
 
-        var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", ApiFixture.NewJobDto(j => { j.SalaryMin = null; j.SalaryMax = null; }));
+        var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", _api.NewJobDto(j => { j.SalaryMin = null; j.SalaryMax = null; }));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var fetched = await (await client.GetAsync($"/api/jobs/{job.Id}")).ReadJsonAsync<JobOfferDto>();
@@ -310,7 +310,7 @@ public class JobsCrudTests
     {
         using var client = await _api.AdminClientAsync();
 
-        var response = await client.PutJsonAsync("/api/jobs/999999999", ApiFixture.NewJobDto());
+        var response = await client.PutJsonAsync("/api/jobs/999999999", _api.NewJobDto());
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -321,7 +321,7 @@ public class JobsCrudTests
         var job = await _api.CreateJobAsync();
         using var client = await _api.AdminClientAsync();
 
-        var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", ApiFixture.NewJobDto(j => j.Title = string.Empty));
+        var response = await client.PutJsonAsync($"/api/jobs/{job.Id}", _api.NewJobDto(j => j.Title = string.Empty));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

@@ -12,6 +12,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     {
     }
 
+    public DbSet<Company> Companies { get; set; }
     public DbSet<JobOffer> JobOffers { get; set; }
     public DbSet<JobApplication> JobApplications { get; set; }
     public DbSet<ApplicationStatusHistory> ApplicationStatusHistories { get; set; }
@@ -32,7 +33,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Title).IsRequired().HasMaxLength(200);
-            entity.Property(e => e.Company).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Description).IsRequired().HasMaxLength(5000);
             entity.Property(e => e.Location).IsRequired().HasMaxLength(200);
             entity.Property(e => e.SalaryMin).HasPrecision(18, 2);
@@ -48,6 +48,33 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .WithOne(e => e.JobOffer)
                 .HasForeignKey(e => e.JobOfferId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // firmy z ofertami nie można usunąć (najpierw trzeba usunąć oferty)
+            entity.HasOne(e => e.Company)
+                .WithMany(e => e.JobOffers)
+                .HasForeignKey(e => e.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Company>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Description).HasMaxLength(5000);
+            entity.Property(e => e.Website).HasMaxLength(300);
+            entity.Property(e => e.Location).HasMaxLength(200);
+            entity.Property(e => e.Status).HasConversion<int>();
+            entity.Property(e => e.RejectionReason).HasMaxLength(1000);
+
+            // unikalność bez rozróżniania wielkości liter zapewnia kolacja kolumny (utf8mb4_0900_ai_ci)
+            entity.HasIndex(e => e.Name).IsUnique();
+            entity.HasIndex(e => e.Status);
+
+            // usunięcie konta admina nie usuwa firmy ani informacji o decyzji
+            entity.HasOne(e => e.ReviewedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.ReviewedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<JobApplication>(entity =>
@@ -90,6 +117,12 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(e => e.FirstName).HasMaxLength(100);
             entity.Property(e => e.LastName).HasMaxLength(100);
             entity.Property(e => e.CreatedAt);
+
+            // firmy z członkami (pracodawcami) nie można usunąć - konto pracodawcy bez firmy nie ma sensu
+            entity.HasOne(e => e.Company)
+                .WithMany(e => e.Members)
+                .HasForeignKey(e => e.CompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 

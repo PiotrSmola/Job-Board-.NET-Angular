@@ -5,7 +5,7 @@ namespace Backend.Helpers;
 
 public class ApplicationParams : PaginationParams
 {
-    // Filtrowanie: email, imię/nazwisko kandydata, tytuł oferty, firma
+    // Filtrowanie: email, imię/nazwisko kandydata, tytuł oferty, nazwa firmy
     public string? SearchTerm { get; set; }
     public int? JobOfferId { get; set; }
 

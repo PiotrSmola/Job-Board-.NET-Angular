@@ -1,0 +1,69 @@
+<div class="company-tab">
+  @if (banner(); as info) {
+    <div [class]="'status-banner tone-' + info.tone" role="status">
+      <mat-icon>{{ info.icon }}</mat-icon>
+      <div class="banner-content">
+        <strong>{{ info.title }}</strong>
+        <span>{{ info.text }}</span>
+        @if (isRejected() && company().rejectionReason) {
+          <span class="reason">Powód: {{ company().rejectionReason }}</span>
+        }
+        @if (company().reviewedAt) {
+          <span class="reviewed">Weryfikacja: {{ company().reviewedAt | date: 'dd.MM.yyyy HH:mm' }}</span>
+        }
+      </div>
+      @if (isApproved()) {
+        <a mat-button color="primary" [routerLink]="['/companies', company().id]">Profil publiczny</a>
+      }
+    </div>
+  }
+
+  <mat-card class="form-card">
+    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="company-form">
+      <mat-form-field appearance="outline">
+        <mat-label>Nazwa firmy</mat-label>
+        <input matInput formControlName="name" maxlength="200">
+        <mat-icon matPrefix>business</mat-icon>
+        @if (form.get('name')?.invalid && form.get('name')?.touched) {
+          <mat-error>Nazwa firmy jest wymagana (maks. 200 znaków)</mat-error>
+        }
+      </mat-form-field>
+
+      <div class="row">
+        <mat-form-field appearance="outline">
+          <mat-label>Lokalizacja</mat-label>
+          <input matInput formControlName="location" maxlength="200" placeholder="np. Rzeszów">
+          <mat-icon matPrefix>location_on</mat-icon>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Strona www</mat-label>
+          <input matInput formControlName="website" maxlength="300" placeholder="https://...">
+          <mat-icon matPrefix>language</mat-icon>
+          @if (form.get('website')?.invalid) {
+            <mat-error>Podaj adres zaczynający się od http:// lub https://</mat-error>
+          }
+        </mat-form-field>
+      </div>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Opis firmy</mat-label>
+        <textarea matInput formControlName="description" rows="8" [maxlength]="descriptionMax"></textarea>
+        <mat-hint align="end">{{ form.get('description')?.value?.length ?? 0 }} / {{ descriptionMax }}</mat-hint>
+      </mat-form-field>
+
+      <div class="actions">
+        <button mat-raised-button color="primary" type="submit" [disabled]="!canSubmit()">
+          @if (saving()) {
+            <mat-spinner diameter="20"></mat-spinner>
+          } @else {
+            <ng-container>
+              <mat-icon>{{ isRejected() ? 'send' : 'save' }}</mat-icon>
+              {{ isRejected() ? 'Wyślij ponownie' : 'Zapisz zmiany' }}
+            </ng-container>
+          }
+        </button>
+      </div>
+    </form>
+  </mat-card>
+</div>

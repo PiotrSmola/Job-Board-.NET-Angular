@@ -14,6 +14,7 @@ const APPLICATION = {
   userFullName: 'Jan Kowalski',
   jobTitle: 'Programista',
   company: 'Acme',
+  companyId: 1,
   note: null,
   appliedAt: '2026-01-01T10:00:00Z'
 };

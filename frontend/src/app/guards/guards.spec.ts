@@ -3,12 +3,15 @@ import { provideHttpClient } from '@angular/common/http';
 import { ActivatedRouteSnapshot, Router, RouterStateSnapshot, UrlTree, provideRouter } from '@angular/router';
 import { adminGuard } from './admin.guard';
 import { authGuard } from './auth.guard';
+import { employerGuard } from './employer.guard';
+import { candidateGuard } from './candidate.guard';
 import { AuthService } from '../services/auth.service';
 import { makeJwtExpiringIn } from '../../testing/jwt-helper';
 
 describe('route guards', () => {
   let authenticated: boolean;
   let admin: boolean;
+  let employer: boolean;
   let router: Router;
 
   function run(guard: typeof authGuard, url: string): boolean | UrlTree {
@@ -24,13 +27,14 @@ describe('route guards', () => {
   beforeEach(() => {
     authenticated = false;
     admin = false;
+    employer = false;
 
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
         {
           provide: AuthService,
-          useValue: { isAuthenticated: () => authenticated, isAdmin: () => admin }
+          useValue: { isAuthenticated: () => authenticated, isAdmin: () => admin, isEmployer: () => employer }
         }
       ]
     });
@@ -67,6 +71,47 @@ describe('route guards', () => {
       authenticated = true;
       admin = false;
       expect(serialize(run(adminGuard, '/admin'))).toBe('/');
+    });
+  });
+
+  describe('employerGuard', () => {
+    it('allows an authenticated employer', () => {
+      authenticated = true;
+      employer = true;
+      expect(run(employerGuard, '/employer')).toBe(true);
+    });
+
+    it('redirects an anonymous user to /login with returnUrl', () => {
+      expect(serialize(run(employerGuard, '/employer'))).toBe('/login?returnUrl=%2Femployer');
+    });
+
+    it('redirects an authenticated non-employer (e.g. admin) to the home page', () => {
+      authenticated = true;
+      admin = true;
+      expect(serialize(run(employerGuard, '/employer'))).toBe('/');
+    });
+  });
+
+  describe('candidateGuard', () => {
+    it('allows an authenticated candidate', () => {
+      authenticated = true;
+      expect(run(candidateGuard, '/my-applications')).toBe(true);
+    });
+
+    it('redirects an anonymous user to /login with returnUrl', () => {
+      expect(serialize(run(candidateGuard, '/my-applications'))).toBe('/login?returnUrl=%2Fmy-applications');
+    });
+
+    it('redirects an employer to the employer panel', () => {
+      authenticated = true;
+      employer = true;
+      expect(serialize(run(candidateGuard, '/my-applications'))).toBe('/employer');
+    });
+
+    it('redirects an admin to the admin panel', () => {
+      authenticated = true;
+      admin = true;
+      expect(serialize(run(candidateGuard, '/my-applications'))).toBe('/admin');
     });
   });
 

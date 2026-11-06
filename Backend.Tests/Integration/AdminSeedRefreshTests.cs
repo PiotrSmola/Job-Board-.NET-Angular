@@ -1,11 +1,13 @@
 using System.Net;
 using System.Text.Json;
+using Backend.Data;
 using Backend.DTOs;
 using Backend.Tests.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Tests.Integration;
 
-// Środowisko Production z wyłączonym resetem danych (Admin:AllowSeedRefresh=false)
+// Środowisko Production z wyłączonym resetem danych (Admin:AllowSeedRefresh=false), bez kont demo (Seed:DemoAccounts nieustawione)
 public class ProductionRefreshDisabledFixture : ApiFixture
 {
     public ProductionRefreshDisabledFixture() : base("Production", JobBoardFactory.TestJwtSecret, allowSeedRefresh: false)
@@ -13,10 +15,21 @@ public class ProductionRefreshDisabledFixture : ApiFixture
     }
 }
 
-// Środowisko Production z jawnie włączonym resetem danych (Admin:AllowSeedRefresh=true)
+// Środowisko Production z jawnie włączonym resetem danych i kontami demo - jak lokalny stack docker-compose
+// (Admin:AllowSeedRefresh=true, Seed:DemoAccounts=true)
 public class ProductionRefreshEnabledFixture : ApiFixture
 {
-    public ProductionRefreshEnabledFixture() : base("Production", JobBoardFactory.TestJwtSecret, allowSeedRefresh: true, cacheTokens: false)
+    public ProductionRefreshEnabledFixture()
+        : base("Production", JobBoardFactory.TestJwtSecret, allowSeedRefresh: true, cacheTokens: false, demoAccounts: true)
+    {
+    }
+}
+
+// Środowisko Production z włączonym resetem danych, ale z jawnie wyłączonymi kontami demo (Seed:DemoAccounts=false)
+public class ProductionWithoutDemoAccountsFixture : ApiFixture
+{
+    public ProductionWithoutDemoAccountsFixture()
+        : base("Production", JobBoardFactory.TestJwtSecret, allowSeedRefresh: true, cacheTokens: false, demoAccounts: false)
     {
     }
 }
@@ -64,7 +77,8 @@ public class AdminSeedRefreshDisabledTests : IClassFixture<ProductionRefreshDisa
     [Fact]
     public async Task RefreshSeed_InProductionWithFlagOff_AsRegularUser_ReturnsForbidden()
     {
-        using var client = await _api.UserClientAsync();
+        // poza Development bez Seed:DemoAccounts nie ma kont demo kandydatów - rejestrujemy własnego użytkownika
+        using var client = _api.CreateClient(await _api.RegisterUserAsync());
 
         var response = await client.PostAsync("/api/admin/refresh-seed", null);
 
@@ -82,6 +96,28 @@ public class AdminSeedRefreshDisabledTests : IClassFixture<ProductionRefreshDisa
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.True(response.ReadPagination().TotalItems >= 20);
         Assert.False(string.IsNullOrEmpty(await _api.LoginAsync(TestUsers.AdminEmail, TestUsers.AdminPassword)));
+    }
+
+    [Theory]
+    [InlineData(TestUsers.UserEmail, TestUsers.UserPassword)]
+    [InlineData(DatabaseSeeder.ApprovedEmployerEmail, DatabaseSeeder.EmployerPassword)]
+    [InlineData(DatabaseSeeder.PendingEmployerEmail, DatabaseSeeder.EmployerPassword)]
+    public async Task Application_InProductionWithoutDemoFlag_DoesNotCreateDemoAccounts(string email, string password)
+    {
+        using var client = _api.CreateClient();
+
+        var response = await client.PostJsonAsync("/api/auth/login", new LoginDto { Email = email, Password = password });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Application_InProductionWithoutDemoFlag_HasNoDemoPendingCompany()
+    {
+        var pendingCompanies = await _api.QueryDbAsync(db =>
+            db.Companies.CountAsync(c => c.Name == DatabaseSeeder.PendingEmployerCompany));
+
+        Assert.Equal(0, pendingCompanies);
     }
 }
 
@@ -124,6 +160,7 @@ public class AdminSeedRefreshEnabledTests : IClassFixture<ProductionRefreshEnabl
         Assert.Equal(HttpStatusCode.Unauthorized, loginGone.StatusCode);
         Assert.False(string.IsNullOrEmpty(await _api.LoginAsync(TestUsers.AdminEmail, TestUsers.AdminPassword)));
         Assert.False(string.IsNullOrEmpty(await _api.LoginAsync(TestUsers.UserEmail, TestUsers.UserPassword)));
+        Assert.False(string.IsNullOrEmpty(await _api.LoginAsync(DatabaseSeeder.ApprovedEmployerEmail, DatabaseSeeder.EmployerPassword)));
 
         // oferty to dokładnie dane demo, bez naszej oferty, bez aplikacji
         var jobs = await anonymous.GetAsync("/api/jobs?pageSize=50");
@@ -177,6 +214,45 @@ public class AdminSeedRefreshEnabledTests : IClassFixture<ProductionRefreshEnabl
         using var adminAfterRefresh = await _api.AdminClientAsync();
         Assert.Equal(HttpStatusCode.OK, (await adminAfterRefresh.PostAsync("/api/admin/refresh-seed", null)).StatusCode);
 
+        using var anonymous = _api.CreateClient();
+        Assert.Equal(20, (await anonymous.GetAsync("/api/jobs")).ReadPagination().TotalItems);
+    }
+}
+
+// Seed:DemoAccounts=false: ani start, ani reset danych nie tworzą kont demo (admin zawsze jest tworzony)
+public class DemoAccountsDisabledTests : IClassFixture<ProductionWithoutDemoAccountsFixture>
+{
+    private readonly ProductionWithoutDemoAccountsFixture _api;
+
+    public DemoAccountsDisabledTests(ProductionWithoutDemoAccountsFixture api) => _api = api;
+
+    private async Task AssertNoDemoAccountsAsync()
+    {
+        using var client = _api.CreateClient();
+        foreach (var (email, password) in new[]
+                 {
+                     (TestUsers.UserEmail, TestUsers.UserPassword),
+                     (DatabaseSeeder.ApprovedEmployerEmail, DatabaseSeeder.EmployerPassword),
+                     (DatabaseSeeder.PendingEmployerEmail, DatabaseSeeder.EmployerPassword)
+                 })
+        {
+            var response = await client.PostJsonAsync("/api/auth/login", new LoginDto { Email = email, Password = password });
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        Assert.Equal(0, await _api.QueryDbAsync(db => db.Users.CountAsync(u => u.CompanyId != null)));
+        Assert.False(string.IsNullOrEmpty(await _api.LoginAsync(TestUsers.AdminEmail, TestUsers.AdminPassword)));
+    }
+
+    [Fact]
+    public async Task StartupAndRefresh_DoNotCreateDemoAccounts()
+    {
+        await AssertNoDemoAccountsAsync();
+
+        using var admin = await _api.AdminClientAsync();
+        Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync("/api/admin/refresh-seed", null)).StatusCode);
+
+        await AssertNoDemoAccountsAsync();
         using var anonymous = _api.CreateClient();
         Assert.Equal(20, (await anonymous.GetAsync("/api/jobs")).ReadPagination().TotalItems);
     }

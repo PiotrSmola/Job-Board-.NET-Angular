@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Linq.Expressions;
 
 namespace Backend.Models;
 
@@ -10,9 +11,7 @@ public class JobOffer
     [MaxLength(200)]
     public string Title { get; set; } = string.Empty;
 
-    [Required]
-    [MaxLength(200)]
-    public string Company { get; set; } = string.Empty;
+    public int CompanyId { get; set; }
 
     [Required]
     [MaxLength(5000)]
@@ -35,14 +34,29 @@ public class JobOffer
     // UTC; null = oferta bezterminowa
     public DateTime? ExpiresAt { get; set; }
 
-    // Navigation property
+    // Navigation properties
+    public Company Company { get; set; } = null!;
     public ICollection<JobApplication> Applications { get; set; } = new List<JobApplication>();
 
     // Aktywna, ale z datą ważności w przeszłości (stan wyliczany, nie zapisywany)
     public bool IsExpired(DateTime now) =>
         Status == JobOfferStatus.Active && ExpiresAt.HasValue && ExpiresAt.Value <= now;
 
-    // Widoczna na publicznej liście i przyjmuje aplikacje
+    // Opublikowana: aktywna i niewygasła (sam stan oferty, bez statusu firmy)
     public bool IsPubliclyVisible(DateTime now) =>
         Status == JobOfferStatus.Active && (!ExpiresAt.HasValue || ExpiresAt.Value > now);
+
+    // Widoczna publicznie (lista, szczegóły dla obcych, aplikowanie): opublikowana i firma zatwierdzona.
+    // Wymaga załadowanej nawigacji Company.
+    public bool IsListedPublicly(DateTime now) =>
+        IsPubliclyVisible(now) && Company?.Status == CompanyStatus.Approved;
+
+    // Ten sam warunek co IsPubliclyVisible - do zapytań SQL
+    public static Expression<Func<JobOffer, bool>> PublishedAt(DateTime now) =>
+        j => j.Status == JobOfferStatus.Active && (j.ExpiresAt == null || j.ExpiresAt > now);
+
+    // Ten sam warunek co IsListedPublicly - do zapytań SQL
+    public static Expression<Func<JobOffer, bool>> ListedPubliclyAt(DateTime now) =>
+        j => j.Status == JobOfferStatus.Active && (j.ExpiresAt == null || j.ExpiresAt > now) &&
+             j.Company.Status == CompanyStatus.Approved;
 }

@@ -1,0 +1,72 @@
+.company-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: 24px;
+}
+
+.status-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 20px;
+  border: 1px solid currentColor;
+  border-radius: 12px;
+  background-color: color-mix(in srgb, currentColor 8%, transparent);
+
+  &.tone-pending { color: #ffb74d; }
+  &.tone-approved { color: var(--success-color); }
+  &.tone-rejected { color: var(--error-color); }
+
+  .banner-content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+
+    span {
+      color: var(--text-primary);
+    }
+
+    .reason {
+      white-space: pre-line;
+      font-weight: 500;
+    }
+
+    .reviewed {
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+    }
+  }
+}
+
+.form-card {
+  padding: 24px;
+}
+
+.company-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  mat-form-field {
+    width: 100%;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 768px) {
+  .company-form .row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -17,18 +17,24 @@ public class JobRepository : IJobRepository
 
     public Task<PagedList<JobOffer>> GetPublicJobsAsync(JobParams jobParams)
     {
-        var now = DateTime.UtcNow;
         var query = _context.JobOffers
             .AsNoTracking()
-            .Where(j => j.Status == JobOfferStatus.Active && (j.ExpiresAt == null || j.ExpiresAt > now));
+            .Include(j => j.Company)
+            .Where(JobOffer.ListedPubliclyAt(DateTime.UtcNow));
 
         return QueryJobsAsync(query, jobParams);
     }
 
-    public Task<PagedList<JobOffer>> GetManagedJobsAsync(ManageJobParams jobParams)
+    public Task<PagedList<JobOffer>> GetManagedJobsAsync(ManageJobParams jobParams, ManagementScope scope)
     {
         var now = DateTime.UtcNow;
-        var query = _context.JobOffers.AsNoTracking();
+        var query = _context.JobOffers.AsNoTracking().Include(j => j.Company).AsQueryable();
+
+        // pracodawca widzi wyłącznie oferty swojej firmy (filtr companyId z żądania nie poszerza zakresu)
+        if (scope.CompanyId.HasValue)
+        {
+            query = query.Where(j => j.CompanyId == scope.CompanyId.Value);
+        }
 
         query = jobParams.State?.ToLowerInvariant() switch
         {
@@ -49,9 +55,14 @@ public class JobRepository : IJobRepository
         {
             query = query.Where(j =>
                 j.Title.ToLower().Contains(jobParams.SearchTerm.ToLower()) ||
-                j.Company.ToLower().Contains(jobParams.SearchTerm.ToLower()) ||
+                j.Company.Name.ToLower().Contains(jobParams.SearchTerm.ToLower()) ||
                 j.Description.ToLower().Contains(jobParams.SearchTerm.ToLower())
             );
+        }
+
+        if (jobParams.CompanyId.HasValue)
+        {
+            query = query.Where(j => j.CompanyId == jobParams.CompanyId.Value);
         }
 
         if (jobParams.WorkType.HasValue)
@@ -102,8 +113,8 @@ public class JobRepository : IJobRepository
                 .ThenBy(j => j.Id),
             "titleAsc" => query.OrderBy(j => j.Title).ThenBy(j => j.Id),
             "titleDesc" => query.OrderByDescending(j => j.Title).ThenByDescending(j => j.Id),
-            "companyAsc" => query.OrderBy(j => j.Company).ThenBy(j => j.Id),
-            "companyDesc" => query.OrderByDescending(j => j.Company).ThenByDescending(j => j.Id),
+            "companyAsc" => query.OrderBy(j => j.Company.Name).ThenBy(j => j.Id),
+            "companyDesc" => query.OrderByDescending(j => j.Company.Name).ThenByDescending(j => j.Id),
             "locationAsc" => query.OrderBy(j => j.Location).ThenBy(j => j.Id),
             "locationDesc" => query.OrderByDescending(j => j.Location).ThenByDescending(j => j.Id),
             _ => query.OrderByDescending(j => j.CreatedAt).ThenByDescending(j => j.Id)
@@ -117,20 +128,28 @@ public class JobRepository : IJobRepository
         // bez śledzenia - przy aktualizacji UpdateJobAsync dołącza encję do kontekstu
         return await _context.JobOffers
             .AsNoTracking()
+            .Include(j => j.Company)
             .FirstOrDefaultAsync(j => j.Id == id);
     }
 
+    // Zwraca ofertę z załadowaną firmą (do DTO)
     public async Task<JobOffer> AddJobAsync(JobOffer jobOffer)
     {
         _context.JobOffers.Add(jobOffer);
         await _context.SaveChangesAsync();
+        await _context.Entry(jobOffer).Reference(j => j.Company).LoadAsync();
         return jobOffer;
     }
 
+    // Zwraca ofertę z załadowaną firmą (do DTO)
     public async Task<JobOffer> UpdateJobAsync(JobOffer jobOffer)
     {
+        // o firmie decyduje CompanyId - nawigacja wczytana bez śledzenia nie jest dołączana do kontekstu
+        // (inaczej EF próbowałby śledzić firmę i mógłby nadpisać CompanyId wartością z nieaktualnej nawigacji)
+        jobOffer.Company = null!;
         _context.Entry(jobOffer).State = EntityState.Modified;
         await _context.SaveChangesAsync();
+        await _context.Entry(jobOffer).Reference(j => j.Company).LoadAsync();
         return jobOffer;
     }
 
@@ -141,6 +160,13 @@ public class JobRepository : IJobRepository
 
         _context.JobOffers.Remove(job);
         return await SaveAllAsync();
+    }
+
+    public async Task<bool> DeleteJobWithoutApplicationsAsync(int id)
+    {
+        return await _context.JobOffers
+            .Where(j => j.Id == id && !j.Applications.Any())
+            .ExecuteDeleteAsync() > 0;
     }
 
     public async Task<bool> JobExistsAsync(int id)

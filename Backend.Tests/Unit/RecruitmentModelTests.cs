@@ -19,7 +19,7 @@ public class RecruitmentModelTests
 
     private static CreateJobOfferDto ValidJob(Action<CreateJobOfferDto>? customize = null)
     {
-        var dto = new CreateJobOfferDto { Title = "T", Company = "C", Description = "D", Location = "L" };
+        var dto = new CreateJobOfferDto { Title = "T", Description = "D", Location = "L" };
         customize?.Invoke(dto);
         return dto;
     }
@@ -232,10 +232,10 @@ public class RecruitmentModelTests
     // --- UpdateJobOfferDto ---
 
     private static JobOffer StoredJob(JobOfferStatus status, DateTime? expiresAt) =>
-        new() { Id = 1, Title = "T", Company = "C", Description = "D", Location = "L", Status = status, ExpiresAt = expiresAt };
+        new() { Id = 1, Title = "T", Description = "D", Location = "L", Status = status, ExpiresAt = expiresAt };
 
     private static UpdateJobOfferDto UpdateJob(JobOfferStatus? status, DateTime? expiresAt) =>
-        new() { Title = "T", Company = "C", Description = "D", Location = "L", Status = status, ExpiresAt = expiresAt };
+        new() { Title = "T", Description = "D", Location = "L", Status = status, ExpiresAt = expiresAt };
 
     [Fact]
     public void UpdateJobOfferDto_WithoutStatus_IsValidAndHasNoStatus()

@@ -10,6 +10,7 @@ public class JobParams : PaginationParams
     public decimal? MinSalary { get; set; }
     public decimal? MaxSalary { get; set; }
     public string? Location { get; set; }
+    public int? CompanyId { get; set; }
 
     // Sortowanie: newest (domyślnie), oldest, salaryHigh, salaryLow,
     // titleAsc, titleDesc, companyAsc, companyDesc, locationAsc, locationDesc

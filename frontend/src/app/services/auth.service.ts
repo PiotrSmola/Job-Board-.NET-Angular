@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, tap } from 'rxjs';
 import { ActivatedRouteSnapshot, Router } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { UserDto, LoginDto, RegisterDto } from '../models/user.model';
+import { UserDto, LoginDto, RegisterDto, RegisterEmployerDto } from '../models/user.model';
 import { getJwtExpiration, getJwtRoles, isJwtExpired } from '../utils/jwt';
 
 // setTimeout przyjmuje maksymalnie ~24,8 dnia
@@ -44,6 +44,13 @@ export class AuthService {
     );
   }
 
+  /** Rejestracja pracodawcy razem z firmą (token z rolą Employer). */
+  registerEmployer(registerDto: RegisterEmployerDto): Observable<UserDto> {
+    return this.http.post<UserDto>(`${this.API_URL}/auth/register-employer`, registerDto).pipe(
+      tap(user => this.setCurrentUser(user))
+    );
+  }
+
   logout(): void {
     this.clearSession();
     this.router.navigate(['/login']);
@@ -55,6 +62,10 @@ export class AuthService {
 
   isAdmin(): boolean {
     return getJwtRoles(this.getToken()).includes('Admin');
+  }
+
+  isEmployer(): boolean {
+    return getJwtRoles(this.getToken()).includes('Employer');
   }
 
   /** Zwraca token tylko jeśli jest ważny. Czyta sygnał sesji, więc szablony reagują na zmiany. */

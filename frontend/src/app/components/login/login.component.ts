@@ -62,7 +62,8 @@ export class LoginComponent {
         if (returnUrl) {
           this.router.navigateByUrl(returnUrl);
         } else {
-          this.router.navigate(['/jobs']);
+          // bez returnUrl: pracodawca – do swojego panelu, pozostali – na listę ofert
+          this.router.navigate([this.authService.isEmployer() ? '/employer' : '/jobs']);
         }
       },
       error: (error: HttpErrorResponse) => {

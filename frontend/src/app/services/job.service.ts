@@ -22,7 +22,7 @@ export class JobService {
     );
   }
 
-  /** Lista dla panelu admina – wszystkie oferty z opcjonalnym filtrem stanu. */
+  /** Lista do zarządzania – admin: wszystkie oferty, pracodawca: oferty jego firmy; opcjonalny filtr stanu. */
   getManagedJobs(jobParams: ManageJobParams): Observable<PaginatedResult<JobOffer>> {
     let params = this.buildParams(jobParams);
 
@@ -80,6 +80,10 @@ export class JobService {
 
     if (jobParams.location) {
       params = params.append('location', jobParams.location);
+    }
+
+    if (jobParams.companyId !== null) {
+      params = params.append('companyId', jobParams.companyId.toString());
     }
 
     return params.append('orderBy', jobParams.orderBy);

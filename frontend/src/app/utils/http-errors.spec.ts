@@ -33,7 +33,12 @@ describe('http-errors', () => {
       ['Only the candidate can withdraw an application', 'Tylko kandydat może wycofać aplikację'],
       ['Application already has this status - add a comment to record a note', 'Aplikacja ma już ten status – dodaj komentarz, aby zapisać notatkę'],
       ['Application cannot be withdrawn in its current status', 'Tej aplikacji nie można już wycofać'],
-      ['Application status was changed by another request', 'Status aplikacji został w międzyczasie zmieniony – odśwież dane']
+      ['Application status was changed by another request', 'Status aplikacji został w międzyczasie zmieniony – odśwież dane'],
+      ['Email is already taken', 'Ten adres email jest już zajęty'],
+      ['Company name is already taken', 'Ta nazwa firmy jest już zajęta'],
+      ['Company must be approved before publishing offers', 'Firma musi zostać zatwierdzona, zanim opublikujesz ofertę'],
+      ['Company has job offers or members', 'Nie można usunąć firmy, która ma oferty lub członków zespołu'],
+      ['Job offer has applications - close it instead', 'Oferta ma aplikacje – zamiast usuwać, zamknij ją.']
     ])('translates the known API message "%s"', (message, expected) => {
       expect(getApiErrorMessage(httpError(400, { message }), FALLBACK)).toBe(expected);
     });

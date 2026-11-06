@@ -20,6 +20,8 @@ export class JobParams {
   minSalary: number | null = null;
   maxSalary: number | null = null;
   location = '';
+  /** Oferty jednej firmy (null = wszystkie). */
+  companyId: number | null = null;
   orderBy: JobOrderBy = 'newest';
 }
 

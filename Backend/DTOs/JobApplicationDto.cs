@@ -15,7 +15,9 @@ public class JobApplicationDto
     public string UserEmail { get; set; } = string.Empty;
     public string UserFullName { get; set; } = string.Empty;
     public string JobTitle { get; set; } = string.Empty;
+    // nazwa firmy oferty
     public string Company { get; set; } = string.Empty;
+    public int CompanyId { get; set; }
     public JobOfferDto? JobOffer { get; set; }
 
     // historia chronologicznie - tylko w GET /api/jobapplications/{id} i odpowiedziach na zmianę statusu (w listach null)

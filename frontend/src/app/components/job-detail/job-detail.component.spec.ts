@@ -11,7 +11,7 @@ import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model
 import { ApplicationStatus } from '../../models/job-application.model';
 
 const JOB: JobOffer = {
-  id: 5, title: 'Angular Developer', company: 'Acme', description: 'Opis', salaryMin: 1000, salaryMax: 2000,
+  id: 5, title: 'Angular Developer', company: 'Acme', companyId: 1, description: 'Opis', salaryMin: 1000, salaryMax: 2000,
   location: 'Rzeszów', workType: WorkType.Remote, createdAt: new Date('2026-01-01'),
   status: JobOfferStatus.Active, expiresAt: null, isExpired: false
 };
@@ -29,6 +29,7 @@ describe('JobDetailComponent', () => {
   let alertSpy: ReturnType<typeof vi.spyOn>;
   let authenticated: boolean;
   let admin: boolean;
+  let employer: boolean;
 
   function create(job: Observable<JobOffer> = of(JOB)): void {
     getJob.mockReturnValue(job);
@@ -45,6 +46,7 @@ describe('JobDetailComponent', () => {
     getJob = vi.fn();
     authenticated = true;
     admin = false;
+    employer = false;
     checkIfApplied = vi.fn().mockReturnValue(of({ hasApplied: false }));
     applyToJob = vi.fn();
     snackBarOpen = vi.fn();
@@ -58,7 +60,7 @@ describe('JobDetailComponent', () => {
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: '5' })) } },
         { provide: JobService, useValue: { getJob } },
         { provide: JobApplicationService, useValue: { checkIfApplied, applyToJob } },
-        { provide: AuthService, useValue: { isAuthenticated: () => authenticated, isAdmin: () => admin } },
+        { provide: AuthService, useValue: { isAuthenticated: () => authenticated, isAdmin: () => admin, isEmployer: () => employer } },
         { provide: MatSnackBar, useValue: { open: snackBarOpen } }
       ]
     }).compileComponents();
@@ -220,6 +222,23 @@ describe('JobDetailComponent', () => {
 
       expect(text()).not.toContain('Aplikuj na to stanowisko');
       expect(text()).not.toContain('Aplikowanie zamknięte');
+    });
+
+    it('shows an employer no apply button and does not check the application status', () => {
+      employer = true;
+      create();
+
+      expect(text()).not.toContain('Aplikuj na to stanowisko');
+      expect(text()).not.toContain('Zaloguj się, aby aplikować');
+      expect(checkIfApplied).not.toHaveBeenCalled();
+    });
+
+    it('links the company name to the company profile', () => {
+      create();
+
+      const link = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('a.company-link');
+      expect(link?.textContent?.trim()).toBe('Acme');
+      expect(link?.getAttribute('href')).toBe('/companies/1');
     });
 
     it('reloads the offer when the API reports that it no longer accepts applications', () => {

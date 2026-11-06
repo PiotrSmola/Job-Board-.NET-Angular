@@ -102,7 +102,8 @@
             <mat-card-title>{{ job.title }}</mat-card-title>
             <mat-card-subtitle>
               <mat-icon>business</mat-icon>
-              {{ job.company }}
+              <!-- link do profilu firmy nie może otwierać szczegółów oferty (klik na karcie) -->
+              <a class="company-link" [routerLink]="['/companies', job.companyId]" (click)="$event.stopPropagation()">{{ job.company }}</a>
             </mat-card-subtitle>
           </mat-card-header>
 

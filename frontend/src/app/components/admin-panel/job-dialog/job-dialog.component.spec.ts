@@ -3,14 +3,26 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { of, throwError } from 'rxjs';
-import { JobDialogComponent, endOfLocalDay, toSalary } from './job-dialog.component';
+import { JobDialogComponent, JobDialogData, endOfLocalDay, toSalary } from './job-dialog.component';
 import { JobService } from '../../../services/job.service';
+import { CompanyService } from '../../../services/company.service';
+import { AdminService } from '../../../services/admin.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
+import { Company, CompanyStatus } from '../../../models/company.model';
+
+const EMPTY_PAGE = { result: [], pagination: { CurrentPage: 1, ItemsPerPage: 10, TotalItems: 0, TotalPages: 1 } };
+
+function makeCompany(status: CompanyStatus): Company {
+  return {
+    id: 7, name: 'Moja Firma', description: null, website: null, location: null,
+    status, rejectionReason: null, createdAt: '2026-01-01T00:00:00Z', reviewedAt: null, activeJobsCount: 0
+  };
+}
 
 const DESCRIPTION = 'Opis stanowiska, który ma co najmniej pięćdziesiąt znaków długości.';
 
 const EXISTING_JOB: JobOffer = {
-  id: 9, title: 'Backend Developer', company: 'Acme', description: DESCRIPTION, salaryMin: 8000, salaryMax: 12000,
+  id: 9, title: 'Backend Developer', company: 'Acme', companyId: 1, description: DESCRIPTION, salaryMin: 8000, salaryMax: 12000,
   location: 'Rzeszów', workType: WorkType.Hybrid, createdAt: new Date('2026-01-01'),
   status: JobOfferStatus.Active, expiresAt: null, isExpired: false
 };
@@ -27,11 +39,14 @@ describe('JobDialogComponent', () => {
   let snackBarOpen: ReturnType<typeof vi.fn>;
   let alertSpy: ReturnType<typeof vi.spyOn>;
 
-  async function create(data: JobOffer | null = null): Promise<void> {
+  async function create(job: JobOffer | null = null, options: Partial<JobDialogData> = {}): Promise<void> {
+    const data: JobDialogData = { job, mode: 'admin', ...options };
     await TestBed.configureTestingModule({
       imports: [JobDialogComponent],
       providers: [
         { provide: JobService, useValue: { createJob, updateJob } },
+        { provide: CompanyService, useValue: { getCompanies: vi.fn().mockReturnValue(of(EMPTY_PAGE)) } },
+        { provide: AdminService, useValue: { getCompanies: vi.fn().mockReturnValue(of(EMPTY_PAGE)) } },
         { provide: MatDialogRef, useValue: { close } },
         { provide: MAT_DIALOG_DATA, useValue: data },
         { provide: MatSnackBar, useValue: { open: snackBarOpen } }
@@ -46,7 +61,7 @@ describe('JobDialogComponent', () => {
   function fillValidForm(overrides: Record<string, unknown> = {}): void {
     component.jobForm.setValue({
       title: 'Angular Developer',
-      company: 'Acme',
+      companyId: 3,
       location: 'Rzeszów',
       workType: WorkType.Remote,
       salaryMin: 8000,
@@ -412,6 +427,52 @@ describe('JobDialogComponent', () => {
       component.onSubmit();
 
       expect(createJob).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('company', () => {
+    it('requires the admin to pick a company and sends its id', async () => {
+      await create();
+      fillValidForm({ companyId: null });
+      expect(component.jobForm.valid).toBe(false);
+
+      component.onCompanyChange({ id: 12, name: 'Acme' });
+      component.onSubmit();
+
+      expect(createJob).toHaveBeenCalledWith(expect.objectContaining({ companyId: 12 }));
+      expect(createJob.mock.calls[0][0]).not.toHaveProperty('company');
+    });
+
+    it('prefills the company of an edited offer', async () => {
+      await create(EXISTING_JOB);
+
+      expect(component.jobForm.value.companyId).toBe(1);
+      expect(component.initialCompany).toEqual({ id: 1, name: 'Acme' });
+    });
+
+    it('hides the company field from an employer and sends the employer company', async () => {
+      await create(null, { mode: 'employer', company: makeCompany(CompanyStatus.Approved) });
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('app-company-autocomplete')).toBeNull();
+      expect(component.jobForm.get('companyId')).toBeNull();
+      expect(component.statusOptions.map(o => o.label)).toEqual(['Szkic', 'Aktywna', 'Zamknięta']);
+      component.jobForm.setValue({
+        title: 'Angular Developer', location: 'Rzeszów', workType: WorkType.Remote, salaryMin: null, salaryMax: null,
+        description: DESCRIPTION, status: JobOfferStatus.Active, expiresAt: null
+      });
+      component.onSubmit();
+
+      expect(createJob).toHaveBeenCalledWith(expect.objectContaining({ companyId: 7, status: JobOfferStatus.Active }));
+    });
+
+    it('limits an employer of a not approved company to drafts and explains why', async () => {
+      await create(null, { mode: 'employer', company: makeCompany(CompanyStatus.Pending) });
+
+      expect(component.canPublish).toBe(false);
+      expect(component.statusOptions.map(o => o.label)).toEqual(['Szkic']);
+      expect(component.jobForm.value.status).toBe(JobOfferStatus.Draft);
+      expect((fixture.nativeElement as HTMLElement).querySelector('.publish-info')?.textContent)
+        .toContain('Firma nie została jeszcze zatwierdzona');
     });
   });
 });

@@ -22,10 +22,10 @@ public class JobsQueryTests
         var token = Guid.NewGuid().ToString("N");
         var jobs = new[]
         {
-            await _api.CreateJobAsync(j => { j.Title = "B-title"; j.Company = "Zeta"; j.Location = "Lublin"; j.SalaryMin = 3000; j.SalaryMax = 9000; j.WorkType = WorkType.Remote; j.Description = $"desc {token}"; }),
-            await _api.CreateJobAsync(j => { j.Title = "C-title"; j.Company = "Alpha"; j.Location = "Kielce"; j.SalaryMin = 1000; j.SalaryMax = 12000; j.WorkType = WorkType.Hybrid; j.Description = $"desc {token}"; }),
-            await _api.CreateJobAsync(j => { j.Title = "A-title"; j.Company = "Mid"; j.Location = "Opole"; j.SalaryMin = 2000; j.SalaryMax = 7000; j.WorkType = WorkType.Hybrid; j.Description = $"desc {token}"; }),
-            await _api.CreateJobAsync(j => { j.Title = "D-title"; j.Company = "Omega"; j.Location = "Gdynia"; j.SalaryMin = null; j.SalaryMax = null; j.WorkType = WorkType.Onsite; j.Description = $"desc {token}"; })
+            await _api.CreateJobAsync(j => { j.Title = "B-title"; j.CompanyId = _api.CompanyId("Zeta"); j.Location = "Lublin"; j.SalaryMin = 3000; j.SalaryMax = 9000; j.WorkType = WorkType.Remote; j.Description = $"desc {token}"; }),
+            await _api.CreateJobAsync(j => { j.Title = "C-title"; j.CompanyId = _api.CompanyId("Alpha"); j.Location = "Kielce"; j.SalaryMin = 1000; j.SalaryMax = 12000; j.WorkType = WorkType.Hybrid; j.Description = $"desc {token}"; }),
+            await _api.CreateJobAsync(j => { j.Title = "A-title"; j.CompanyId = _api.CompanyId("Mid"); j.Location = "Opole"; j.SalaryMin = 2000; j.SalaryMax = 7000; j.WorkType = WorkType.Hybrid; j.Description = $"desc {token}"; }),
+            await _api.CreateJobAsync(j => { j.Title = "D-title"; j.CompanyId = _api.CompanyId("Omega"); j.Location = "Gdynia"; j.SalaryMin = null; j.SalaryMax = null; j.WorkType = WorkType.Onsite; j.Description = $"desc {token}"; })
         };
         return (token, jobs);
     }
@@ -202,7 +202,7 @@ public class JobsQueryTests
     {
         var token = Guid.NewGuid().ToString("N");
         var byTitle = await _api.CreateJobAsync(j => j.Title = $"Title-{token}");
-        var byCompany = await _api.CreateJobAsync(j => j.Company = $"Company-{token}");
+        var byCompany = await _api.CreateJobAsync(j => j.CompanyId = _api.CompanyId($"Company-{token}"));
         var byDescription = await _api.CreateJobAsync(j => j.Description = $"Description {token}");
         await _api.CreateJobAsync(j => j.Title = "Unrelated offer");
 
@@ -306,7 +306,7 @@ public class JobsQueryTests
         var created = await _api.CreateJobAsync(j =>
         {
             j.Title = "Detail title";
-            j.Company = "Detail company";
+            j.CompanyId = _api.CompanyId("Detail company");
             j.Location = "Detail city";
             j.SalaryMin = 4000;
             j.SalaryMax = 6000;

@@ -8,9 +8,11 @@ import { AdminService } from '../../services/admin.service';
 import { AuthService } from '../../services/auth.service';
 import { AdminJobsTabComponent } from './admin-jobs-tab/admin-jobs-tab.component';
 import { AdminApplicationsTabComponent } from './admin-applications-tab/admin-applications-tab.component';
+import { AdminCompaniesTabComponent } from './admin-companies-tab/admin-companies-tab.component';
 
 const JOBS_TAB = 0;
 const APPLICATIONS_TAB = 1;
+const COMPANIES_TAB = 2;
 
 @Component({
   selector: 'app-admin-panel',
@@ -20,7 +22,8 @@ const APPLICATIONS_TAB = 1;
     MatIconModule,
     MatTabsModule,
     AdminJobsTabComponent,
-    AdminApplicationsTabComponent
+    AdminApplicationsTabComponent,
+    AdminCompaniesTabComponent
   ],
   templateUrl: './admin-panel.component.html',
   styleUrl: './admin-panel.component.scss'
@@ -31,6 +34,7 @@ export class AdminPanelComponent {
 
   private readonly jobsTab = viewChild(AdminJobsTabComponent);
   private readonly applicationsTab = viewChild(AdminApplicationsTabComponent);
+  private readonly companiesTab = viewChild(AdminCompaniesTabComponent);
 
   // Zakładki tworzone są leniwie przy pierwszym wejściu; przy kolejnych – odświeżamy dane
   private readonly visitedTabs = new Set<number>([JOBS_TAB]);
@@ -61,6 +65,8 @@ export class AdminPanelComponent {
       this.jobsTab()?.reload();
     } else if (index === APPLICATIONS_TAB) {
       this.applicationsTab()?.reload();
+    } else if (index === COMPANIES_TAB) {
+      this.companiesTab()?.reload();
     }
   }
 

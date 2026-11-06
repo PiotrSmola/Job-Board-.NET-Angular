@@ -21,7 +21,8 @@ public class JobBoardFactory : WebApplicationFactory<Program>
     public JobBoardFactory(
         string environment = "Development",
         string? jwtSecret = TestJwtSecret,
-        bool allowSeedRefresh = false)
+        bool allowSeedRefresh = false,
+        bool? demoAccounts = null)
     {
         _environment = environment;
         ConnectionString = TestDatabase.NewConnectionString(out var databaseName);
@@ -33,6 +34,12 @@ public class JobBoardFactory : WebApplicationFactory<Program>
             ["JwtSettings:Secret"] = jwtSecret ?? string.Empty,
             ["Admin:AllowSeedRefresh"] = allowSeedRefresh ? "true" : "false"
         };
+
+        // brak wartości = domyślne zachowanie seedera (konta demo tylko w Development)
+        if (demoAccounts.HasValue)
+        {
+            _settings["Seed:DemoAccounts"] = demoAccounts.Value ? "true" : "false";
+        }
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

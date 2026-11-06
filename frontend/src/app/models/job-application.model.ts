@@ -15,7 +15,7 @@ export interface ApplicationStatusHistoryEntry {
   changedAt: string;
   /** Komentarz rekrutera – widoczny także dla kandydata. */
   comment: string | null;
-  /** Autor zmiany – API wypełnia tylko dla admina. */
+  /** Autor zmiany – API wypełnia tylko dla admina i pracodawcy firmy oferty. */
   changedBy: string | null;
 }
 
@@ -26,7 +26,9 @@ export interface JobApplication {
   userEmail: string;
   userFullName: string;
   jobTitle: string;
+  /** Nazwa firmy oferty. */
   company: string;
+  companyId: number;
   note: string | null;
   appliedAt: Date;
   status: ApplicationStatus;

@@ -31,6 +31,8 @@ services:
       JwtSettings__Secret: "${JWT_SECRET:?JWT_SECRET is not set - run docker-up.ps1 or set it in .env}"
       # lokalny stack demo: przycisk w panelu admina resetuje dane demo (usuwa wszystkich użytkowników, oferty i aplikacje)
       Admin__AllowSeedRefresh: ${ALLOW_SEED_REFRESH:-true}
+      # lokalny stack demo: konta demo kandydatów i pracodawców ze znanymi hasłami (README); false - tylko konta adminów
+      Seed__DemoAccounts: ${SEED_DEMO_ACCOUNTS:-true}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-5285}:8080"
 

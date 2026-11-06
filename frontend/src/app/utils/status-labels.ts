@@ -1,6 +1,7 @@
 import { JobOffer, JobOfferStatus } from '../models/job-offer.model';
 import { ApplicationStatus } from '../models/job-application.model';
 import { JobState } from '../models/job-params.model';
+import { CompanyStatus } from '../models/company.model';
 
 /** Kolor chipa statusu – klasy zdefiniowane w StatusChipComponent. */
 export type StatusTone = 'neutral' | 'info' | 'accent' | 'warning' | 'success' | 'danger' | 'muted';
@@ -94,6 +95,25 @@ export function canWithdraw(status: ApplicationStatus): boolean {
 
 export function getApplicationStatusPresentation(status: ApplicationStatus): StatusPresentation {
   return APPLICATION_STATUS_PRESENTATION[status] ?? { label: 'Nieznany', tone: 'neutral' };
+}
+
+// --- firmy ---
+
+export const COMPANY_STATUS_PRESENTATION: Record<CompanyStatus, StatusPresentation> = {
+  [CompanyStatus.Pending]: { label: 'Oczekuje', tone: 'warning' },
+  [CompanyStatus.Approved]: { label: 'Zatwierdzona', tone: 'success' },
+  [CompanyStatus.Rejected]: { label: 'Odrzucona', tone: 'danger' }
+};
+
+/** Opcje filtra listy firm w panelu admina (null = wszystkie). */
+export const COMPANY_STATUS_FILTER_OPTIONS: { value: CompanyStatus | null; label: string }[] = [
+  { value: null, label: 'Wszystkie' },
+  ...[CompanyStatus.Pending, CompanyStatus.Approved, CompanyStatus.Rejected]
+    .map(value => ({ value, label: COMPANY_STATUS_PRESENTATION[value].label }))
+];
+
+export function getCompanyStatusPresentation(status: CompanyStatus): StatusPresentation {
+  return COMPANY_STATUS_PRESENTATION[status] ?? { label: 'Nieznany', tone: 'neutral' };
 }
 
 // --- daty ważności ---

@@ -16,7 +16,9 @@
     <mat-card class="job-detail-card">
       <mat-card-header>
         <mat-card-title>{{ job.title }}</mat-card-title>
-        <mat-card-subtitle>{{ job.company }}</mat-card-subtitle>
+        <mat-card-subtitle>
+          <a class="company-link" [routerLink]="['/companies', job.companyId]">{{ job.company }}</a>
+        </mat-card-subtitle>
       </mat-card-header>
 
       <mat-card-content>
@@ -80,7 +82,7 @@
       </mat-card-content>
 
       <mat-card-actions>
-        @if (authService.isAuthenticated() && !authService.isAdmin()) {
+        @if (canApplyAsCandidate) {
           @if (applicationStatusPresentation; as status) {
             <div class="application-status">
               <span>Twoja aplikacja:</span>

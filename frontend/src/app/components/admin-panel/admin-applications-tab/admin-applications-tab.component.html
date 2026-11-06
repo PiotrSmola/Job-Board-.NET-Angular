@@ -143,24 +143,26 @@
                 <button mat-icon-button (click)="openHistoryDialog(app)" matTooltip="Historia">
                   <mat-icon>history</mat-icon>
                 </button>
-                <button
-                  mat-icon-button
-                  color="warn"
-                  (click)="deleteApplication(app.id)"
-                  [disabled]="deletingId() === app.id"
-                  matTooltip="Usuń">
-                  @if (deletingId() === app.id) {
-                    <mat-spinner diameter="24"></mat-spinner>
-                  } @else {
-                    <mat-icon>delete</mat-icon>
-                  }
-                </button>
+                @if (isAdmin()) {
+                  <button
+                    mat-icon-button
+                    color="warn"
+                    (click)="deleteApplication(app.id)"
+                    [disabled]="deletingId() === app.id"
+                    matTooltip="Usuń">
+                    @if (deletingId() === app.id) {
+                      <mat-spinner diameter="24"></mat-spinner>
+                    } @else {
+                      <mat-icon>delete</mat-icon>
+                    }
+                  </button>
+                }
               </div>
             </td>
           </ng-container>
 
-          <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-          <tr mat-row *matRowDef="let row; columns: displayedColumns;" class="table-row"></tr>
+          <tr mat-header-row *matHeaderRowDef="displayedColumns()"></tr>
+          <tr mat-row *matRowDef="let row; columns: displayedColumns();" class="table-row"></tr>
         </table>
       </div>
 
@@ -192,7 +194,7 @@
     <div class="empty-state">
       <mat-icon>inbox</mat-icon>
       <h3>Brak aplikacji</h3>
-      <p>Nie ma jeszcze żadnych aplikacji na oferty pracy</p>
+      <p>{{ isAdmin() ? 'Nie ma jeszcze żadnych aplikacji na oferty pracy' : 'Nie ma jeszcze aplikacji na oferty Twojej firmy' }}</p>
     </div>
   }
 </div>

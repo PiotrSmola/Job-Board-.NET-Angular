@@ -1,4 +1,5 @@
 using Backend.DTOs;
+using Backend.Helpers;
 using Backend.Models;
 
 namespace Backend.Mappings;
@@ -8,11 +9,13 @@ public static class MappingExtensions
 {
     public static JobOfferDto ToDto(this JobOffer job) => job.ToDto(DateTime.UtcNow);
 
+    // Wymaga załadowanej nawigacji Company (Include) - inaczej nazwa firmy będzie pusta
     public static JobOfferDto ToDto(this JobOffer job, DateTime now) => new()
     {
         Id = job.Id,
         Title = job.Title,
-        Company = job.Company,
+        Company = job.Company?.Name ?? string.Empty,
+        CompanyId = job.CompanyId,
         Description = job.Description,
         SalaryMin = job.SalaryMin,
         SalaryMax = job.SalaryMax,
@@ -24,16 +27,17 @@ public static class MappingExtensions
         IsExpired = job.IsExpired(now)
     };
 
-    public static JobOffer ToEntity(this CreateJobOfferDto dto)
+    public static JobOffer ToEntity(this CreateJobOfferDto dto, int companyId)
     {
-        var job = new JobOffer { CreatedAt = DateTime.UtcNow, Status = dto.Status };
+        var job = new JobOffer { CreatedAt = DateTime.UtcNow, Status = dto.Status, CompanyId = companyId };
         dto.ApplyFormTo(job);
         return job;
     }
 
     // Edycja oferty (bez Id i CreatedAt); brak statusu w żądaniu = status bez zmian,
-    // niezmieniona data ważności zostaje zapisana z pełną precyzją z bazy
-    public static void ApplyTo(this UpdateJobOfferDto dto, JobOffer job)
+    // niezmieniona data ważności zostaje zapisana z pełną precyzją z bazy.
+    // companyId ustala kontroler (admin - z żądania, pracodawca - zawsze firma oferty)
+    public static void ApplyTo(this UpdateJobOfferDto dto, JobOffer job, int companyId)
     {
         var storedExpiresAt = job.ExpiresAt;
         var keepsExpiresAt = dto.KeepsExpiresAtOf(job);
@@ -41,17 +45,23 @@ public static class MappingExtensions
         dto.ApplyFormTo(job);
         job.Status = dto.Status ?? job.Status;
 
+        if (job.CompanyId != companyId)
+        {
+            job.CompanyId = companyId;
+            // nawigacja wskazywałaby poprzednią firmę
+            job.Company = null!;
+        }
+
         if (keepsExpiresAt)
         {
             job.ExpiresAt = storedExpiresAt;
         }
     }
 
-    // Przepisuje pola wspólne dla tworzenia i edycji
+    // Przepisuje pola wspólne dla tworzenia i edycji (bez firmy)
     private static void ApplyFormTo(this JobOfferFormDto dto, JobOffer job)
     {
         job.Title = dto.Title;
-        job.Company = dto.Company;
         job.Description = dto.Description;
         job.SalaryMin = dto.SalaryMin;
         job.SalaryMax = dto.SalaryMax;
@@ -60,8 +70,9 @@ public static class MappingExtensions
         job.ExpiresAt = dto.GetExpiresAtUtc();
     }
 
-    // Wymaga załadowanych nawigacji JobOffer i User (Include) - inaczej pola pochodne będą puste.
-    // includeHistory: dołącza historię (wymaga Include StatusHistory); includeChangedBy: autor zmian (tylko dla admina)
+    // Wymaga załadowanych nawigacji JobOffer (z Company) i User (Include) - inaczej pola pochodne będą puste.
+    // includeHistory: dołącza historię (wymaga Include StatusHistory); includeChangedBy: autor zmian
+    // (tylko dla admina i pracodawcy firmy oferty)
     public static JobApplicationDto ToDto(this JobApplication application, bool includeHistory = false, bool includeChangedBy = false) => new()
     {
         Id = application.Id,
@@ -74,7 +85,8 @@ public static class MappingExtensions
         UserEmail = application.User?.Email ?? string.Empty,
         UserFullName = FullName(application.User),
         JobTitle = application.JobOffer?.Title ?? string.Empty,
-        Company = application.JobOffer?.Company ?? string.Empty,
+        Company = application.JobOffer?.Company?.Name ?? string.Empty,
+        CompanyId = application.JobOffer?.CompanyId ?? 0,
         JobOffer = application.JobOffer?.ToDto(),
         History = includeHistory
             ? (application.StatusHistory ?? [])
@@ -92,6 +104,35 @@ public static class MappingExtensions
         Comment = entry.Comment,
         ChangedBy = includeChangedBy ? DescribeUser(entry.ChangedByUser) : null
     };
+
+    // includeReview: status, powód odrzucenia i data decyzji (admin i członkowie firmy);
+    // membersCount tylko w odpowiedziach panelu admina
+    public static CompanyDto ToDto(this Company company, int activeJobsCount, bool includeReview, int? membersCount = null) => new()
+    {
+        Id = company.Id,
+        Name = company.Name,
+        Description = company.Description,
+        Website = company.Website,
+        Location = company.Location,
+        Status = includeReview ? company.Status : null,
+        RejectionReason = includeReview ? company.RejectionReason : null,
+        ReviewedAt = includeReview ? company.ReviewedAt : null,
+        CreatedAt = company.CreatedAt,
+        ActiveJobsCount = activeJobsCount,
+        MembersCount = membersCount
+    };
+
+    public static CompanyDto ToDto(this CompanySummary summary, bool includeReview, bool includeMembers = false) =>
+        summary.Company.ToDto(summary.ActiveJobsCount, includeReview, includeMembers ? summary.MembersCount : null);
+
+    // Przepisuje dane z formularza (z normalizacją nazwy i pustych pól); status weryfikacji zmienia wywołujący
+    public static void ApplyTo(this CompanyFormDto dto, Company company)
+    {
+        company.Name = CompanyNames.Normalize(dto.Name);
+        company.Description = CompanyNames.NormalizeOptional(dto.Description);
+        company.Website = CompanyNames.NormalizeOptional(dto.Website);
+        company.Location = CompanyNames.NormalizeOptional(dto.Location);
+    }
 
     private static string FullName(ApplicationUser? user) =>
         $"{user?.FirstName} {user?.LastName}".Trim();

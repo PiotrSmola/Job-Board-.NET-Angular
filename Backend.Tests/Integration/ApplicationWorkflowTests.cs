@@ -13,6 +13,7 @@ public class ApplicationWorkflowTests
 {
     private const string Url = "/api/jobapplications";
     private const string NotAcceptingMessage = "This job offer is not accepting applications";
+    private const string OnlyCandidatesMessage = "Only candidates can apply to job offers";
 
     private readonly ApiFixture _api;
 
@@ -75,15 +76,16 @@ public class ApplicationWorkflowTests
     }
 
     [Fact]
-    public async Task Apply_AsAdminToDraftOffer_ReturnsBadRequestNotAccepting()
+    public async Task Apply_AsAdminToDraftOffer_ReturnsForbidden()
     {
+        // admin nie aplikuje na oferty (tylko kandydaci) - niezależnie od stanu oferty
         var draft = await _api.CreateJobWithStatusAsync(JobOfferStatus.Draft);
         using var admin = await _api.AdminClientAsync();
 
         var response = await admin.PostJsonAsync(Url, new CreateJobApplicationDto { JobOfferId = draft.Id });
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(NotAcceptingMessage, await MessageAsync(response));
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(OnlyCandidatesMessage, await MessageAsync(response));
     }
 
     [Fact]
@@ -185,16 +187,17 @@ public class ApplicationWorkflowTests
     }
 
     [Fact]
-    public async Task Apply_AsAdmin_ReturnsChangedByInHistory()
+    public async Task Apply_AsAdminToActiveOffer_ReturnsForbiddenAndCreatesNoApplication()
     {
         var job = await _api.CreateJobAsync();
         using var admin = await _api.AdminClientAsync();
 
         var response = await admin.PostJsonAsync(Url, new CreateJobApplicationDto { JobOfferId = job.Id });
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var application = await response.ReadJsonAsync<JobApplicationDto>();
-        Assert.Contains(TestUsers.AdminEmail, Assert.Single(application.History!).ChangedBy);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(OnlyCandidatesMessage, await MessageAsync(response));
+        var forJob = await (await admin.GetAsync($"{Url}/job/{job.Id}")).ReadJsonAsync<JobApplicationDto[]>();
+        Assert.Empty(forJob);
     }
 
     // --- PUT /api/jobapplications/{id}/status ---
@@ -575,17 +578,19 @@ public class ApplicationWorkflowTests
     }
 
     [Fact]
-    public async Task Withdraw_OwnApplicationAsAdmin_ReturnsHistoryWithAuthors()
+    public async Task Withdraw_ByCandidate_AdminSeesCandidateAsAuthorOfEachEntry()
     {
-        var job = await _api.CreateJobAsync();
-        using var admin = await _api.AdminClientAsync();
-        var application = await (await admin.PostJsonAsync(Url, new CreateJobApplicationDto { JobOfferId = job.Id })).ReadJsonAsync<JobApplicationDto>();
+        var (_, user, application) = await NewApplicationAsync();
 
-        var response = await admin.PostAsync($"{Url}/{application.Id}/withdraw", null);
+        var response = await _api.WithdrawAsync(user, application.Id);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var withdrawn = await response.ReadJsonAsync<JobApplicationDto>();
-        Assert.All(withdrawn.History!, h => Assert.Contains(TestUsers.AdminEmail, h.ChangedBy));
+        Assert.All(withdrawn.History!, h => Assert.Null(h.ChangedBy));
+
+        var detail = await GetAsAdminAsync(application.Id);
+        Assert.Equal(2, detail.History!.Count);
+        Assert.All(detail.History, h => Assert.Contains(user.Email, h.ChangedBy));
     }
 
     [Fact]

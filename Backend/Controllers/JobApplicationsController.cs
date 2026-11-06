@@ -20,18 +20,23 @@ public class JobApplicationsController : ControllerBase
     private const string ApplicationNotFoundMessage = "Application not found";
     private const string ConcurrentChangeMessage = "Application status was changed by another request";
 
+    private const string JobNotFoundMessage = "Job offer not found";
+
     private readonly IJobApplicationRepository _applicationRepository;
     private readonly IJobRepository _jobRepository;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly ICurrentUserAccess _access;
 
     public JobApplicationsController(
         IJobApplicationRepository applicationRepository,
         IJobRepository jobRepository,
-        UserManager<ApplicationUser> userManager)
+        UserManager<ApplicationUser> userManager,
+        ICurrentUserAccess access)
     {
         _applicationRepository = applicationRepository;
         _jobRepository = jobRepository;
         _userManager = userManager;
+        _access = access;
     }
 
     [HttpGet("my-applications")]
@@ -50,7 +55,8 @@ public class JobApplicationsController : ControllerBase
         return Ok(applications.Select(a => a.ToDto()));
     }
 
-    // Szczegóły z historią statusów; autor zmian (changedBy) widoczny tylko dla admina
+    // Szczegóły z historią statusów: kandydat (własna aplikacja), admin, pracodawca firmy oferty;
+    // autor zmian (changedBy) widoczny tylko dla admina i pracodawcy firmy
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -64,28 +70,35 @@ public class JobApplicationsController : ControllerBase
         }
 
         var application = await _applicationRepository.GetApplicationByIdAsync(id, includeHistory: true);
-        var isAdmin = User.IsInRole("Admin");
-
-        // cudza aplikacja (poza adminem) - 404 zamiast 403, żeby nie ujawniać jej istnienia
-        if (application == null || (application.UserId != userId && !isAdmin))
+        if (application == null)
         {
             return NotFound(new { message = ApplicationNotFoundMessage });
         }
 
-        return Ok(application.ToDto(includeHistory: true, includeChangedBy: isAdmin));
+        var canManage = await _access.CanManageApplicationAsync(application);
+
+        // cudza aplikacja (poza adminem i pracodawcą firmy) - 404 zamiast 403, żeby nie ujawniać jej istnienia
+        if (application.UserId != userId && !canManage)
+        {
+            return NotFound(new { message = ApplicationNotFoundMessage });
+        }
+
+        return Ok(application.ToDto(includeHistory: true, includeChangedBy: canManage));
     }
 
+    // Aplikacje do oferty - admin albo pracodawca firmy oferty (oferta innej firmy - 404)
     [HttpGet("job/{jobId}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = Roles.AdminOrEmployer)]
     [ProducesResponseType(typeof(IEnumerable<JobApplicationDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<IEnumerable<JobApplicationDto>>> GetApplicationsByJobId(int jobId)
     {
-        if (!await _jobRepository.JobExistsAsync(jobId))
+        var job = await _jobRepository.GetJobByIdAsync(jobId);
+        if (job == null || !await _access.CanManageJobAsync(job))
         {
-            return NotFound(new { message = "Job offer not found" });
+            return NotFound(new { message = JobNotFoundMessage });
         }
 
         var applications = await _applicationRepository.GetApplicationsByJobIdAsync(jobId);
@@ -93,12 +106,14 @@ public class JobApplicationsController : ControllerBase
         return Ok(applications.Select(a => a.ToDto()));
     }
 
-    // Złożenie aplikacji; na ofertę, z której kandydat wcześniej się wycofał, reaktywuje tę samą aplikację
+    // Złożenie aplikacji (tylko kandydaci - nie admin ani pracodawca); na ofertę, z której kandydat wcześniej
+    // się wycofał, reaktywuje tę samą aplikację
     [HttpPost]
     [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<JobApplicationDto>> ApplyToJob(CreateJobApplicationDto createApplicationDto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -113,12 +128,18 @@ public class JobApplicationsController : ControllerBase
             return Unauthorized();
         }
 
+        if (_access.IsAdmin || _access.IsEmployer)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Only candidates can apply to job offers" });
+        }
+
         var job = await _jobRepository.GetJobByIdAsync(createApplicationDto.JobOfferId);
 
-        // szkic jest dla nie-admina niewidoczny (jak w GET /api/jobs/{id}) - 404, żeby nie ujawniać jego istnienia
-        if (job == null || (job.Status == JobOfferStatus.Draft && !User.IsInRole("Admin")))
+        // szkic i oferta firmy niezatwierdzonej są dla kandydata niewidoczne (jak w GET /api/jobs/{id}) -
+        // 404, żeby nie ujawniać ich istnienia
+        if (job == null || !await _access.CanViewJobAsync(job))
         {
-            return NotFound(new { message = "Job offer not found" });
+            return NotFound(new { message = JobNotFoundMessage });
         }
 
         var now = DateTime.UtcNow;
@@ -177,14 +198,16 @@ public class JobApplicationsController : ControllerBase
             return NotFound(new { message = ApplicationNotFoundMessage });
         }
 
-        var applicationDto = fullApplication.ToDto(includeHistory: true, includeChangedBy: User.IsInRole("Admin"));
+        // kandydat nie widzi autorów zmian
+        var applicationDto = fullApplication.ToDto(includeHistory: true);
 
         return CreatedAtAction(nameof(GetApplication), new { id = applicationDto.Id }, applicationDto);
     }
 
-    // Zmiana statusu przez rekrutera; ten sam status z komentarzem dodaje notatkę do historii
+    // Zmiana statusu przez rekrutera (admin albo pracodawca firmy oferty); ten sam status z komentarzem
+    // dodaje notatkę do historii
     [HttpPut("{id:int}/status")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = Roles.AdminOrEmployer)]
     [ProducesResponseType(typeof(JobApplicationDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -208,7 +231,9 @@ public class JobApplicationsController : ControllerBase
         }
 
         var application = await _applicationRepository.GetApplicationForUpdateAsync(id);
-        if (application == null)
+
+        // aplikacja do oferty innej firmy wygląda jak nieistniejąca
+        if (application == null || !await _access.CanManageApplicationAsync(application))
         {
             return NotFound(new { message = ApplicationNotFoundMessage });
         }
@@ -274,12 +299,13 @@ public class JobApplicationsController : ControllerBase
             return Conflict(new { message = ConcurrentChangeMessage });
         }
 
-        return await ApplicationWithHistoryAsync(id, includeChangedBy: User.IsInRole("Admin"));
+        // wycofuje tylko kandydat - nie widzi autorów zmian
+        return await ApplicationWithHistoryAsync(id, includeChangedBy: false);
     }
 
     // Usuwanie tylko przez admina - kandydat wycofuje aplikację (POST withdraw)
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = Roles.Admin)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -317,15 +343,22 @@ public class JobApplicationsController : ControllerBase
         });
     }
 
+    // Panel zarządzania: admin - wszystkie aplikacje, pracodawca - tylko do ofert swojej firmy
     [HttpGet("all")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = Roles.AdminOrEmployer)]
     [ProducesResponseType(typeof(IEnumerable<JobApplicationDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<IEnumerable<JobApplicationDto>>> GetAllApplications([FromQuery] ApplicationParams applicationParams)
     {
-        var applications = await _applicationRepository.GetApplicationsAsync(applicationParams);
+        var scope = await _access.GetManagementScopeAsync();
+        if (scope == null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Employer account is not linked to a company" });
+        }
+
+        var applications = await _applicationRepository.GetApplicationsAsync(applicationParams, scope);
 
         Response.AddPaginationHeader(applications);
 

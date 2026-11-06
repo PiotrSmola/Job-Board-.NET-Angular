@@ -9,18 +9,26 @@
       Oferty
     </a>
 
-    @if (authService.currentUser()) {
-      @if (!authService.isAdmin()) {
-        <a mat-button routerLink="/my-applications" routerLinkActive="active">
-          <mat-icon>assignment</mat-icon>
-          Moje Aplikacje
-        </a>
-      }
+    <a mat-button routerLink="/companies" routerLinkActive="active">
+      <mat-icon>business</mat-icon>
+      Firmy
+    </a>
 
+    @if (authService.currentUser()) {
       @if (authService.isAdmin()) {
         <a mat-button routerLink="/admin" routerLinkActive="active">
           <mat-icon>admin_panel_settings</mat-icon>
           Panel Admina
+        </a>
+      } @else if (authService.isEmployer()) {
+        <a mat-button routerLink="/employer" routerLinkActive="active">
+          <mat-icon>badge</mat-icon>
+          Panel pracodawcy
+        </a>
+      } @else {
+        <a mat-button routerLink="/my-applications" routerLinkActive="active">
+          <mat-icon>assignment</mat-icon>
+          Moje Aplikacje
         </a>
       }
 

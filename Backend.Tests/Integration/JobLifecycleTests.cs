@@ -400,7 +400,7 @@ public class JobLifecycleTests
     public async Task CreateJob_WithoutStatus_DefaultsToActive()
     {
         using var admin = await _api.AdminClientAsync();
-        var payload = new { title = "T", company = "C", description = "D", location = "L", workType = 0 };
+        var payload = new { title = "T", companyId = _api.DefaultCompanyId, description = "D", location = "L", workType = 0 };
 
         var response = await admin.PostJsonAsync("/api/jobs", payload);
 
@@ -427,7 +427,7 @@ public class JobLifecycleTests
     public async Task CreateJob_ActiveWithPastExpiresAt_ReturnsBadRequestWithExpiresAtError()
     {
         using var admin = await _api.AdminClientAsync();
-        var dto = ApiFixture.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = DateTime.UtcNow.AddMinutes(-5); });
+        var dto = _api.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = DateTime.UtcNow.AddMinutes(-5); });
 
         var response = await admin.PostJsonAsync("/api/jobs", dto);
 
@@ -442,7 +442,7 @@ public class JobLifecycleTests
         // brak statusu = Active, więc data w przeszłości jest odrzucana
         using var admin = await _api.AdminClientAsync();
         var past = DateTime.UtcNow.AddDays(-1).ToString("O");
-        var json = $$"""{"title":"T","company":"C","description":"D","location":"L","workType":0,"expiresAt":"{{past}}"}""";
+        var json = $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"expiresAt":"{{past}}"}""";
 
         var response = await admin.PostRawJsonAsync("/api/jobs", json);
 
@@ -472,7 +472,7 @@ public class JobLifecycleTests
     public async Task CreateJob_WithUndefinedStatusNumber_ReturnsBadRequest(string status)
     {
         using var admin = await _api.AdminClientAsync();
-        var json = $$"""{"title":"T","company":"C","description":"D","location":"L","workType":0,"status":{{status}}}""";
+        var json = $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"status":{{status}}}""";
 
         var response = await admin.PostRawJsonAsync("/api/jobs", json);
 
@@ -488,7 +488,7 @@ public class JobLifecycleTests
     public async Task CreateJob_WithNonEnumStatus_ReturnsBadRequest(string status)
     {
         using var admin = await _api.AdminClientAsync();
-        var json = $$"""{"title":"T","company":"C","description":"D","location":"L","workType":0,"status":{{status}}}""";
+        var json = $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"status":{{status}}}""";
 
         var response = await admin.PostRawJsonAsync("/api/jobs", json);
 
@@ -499,7 +499,7 @@ public class JobLifecycleTests
     public async Task CreateJob_WithInvalidExpiresAtFormat_ReturnsBadRequest()
     {
         using var admin = await _api.AdminClientAsync();
-        var json = """{"title":"T","company":"C","description":"D","location":"L","workType":0,"expiresAt":"not-a-date"}""";
+        var json = $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"expiresAt":"not-a-date"}""";
 
         var response = await admin.PostRawJsonAsync("/api/jobs", json);
 
@@ -511,7 +511,7 @@ public class JobLifecycleTests
     {
         using var admin = await _api.AdminClientAsync();
         var wallClock = new DateTime(2099, 6, 15, 10, 30, 0, DateTimeKind.Unspecified);
-        var json = $$"""{"title":"T","company":"C","description":"D","location":"L","workType":0,"expiresAt":"{{wallClock:yyyy-MM-ddTHH:mm:ss}}"}""";
+        var json = $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"expiresAt":"{{wallClock:yyyy-MM-ddTHH:mm:ss}}"}""";
 
         var response = await admin.PostRawJsonAsync("/api/jobs", json);
 
@@ -530,7 +530,7 @@ public class JobLifecycleTests
     public async Task CreateJob_ExpiresAtWithOffset_IsConvertedToUtc()
     {
         using var admin = await _api.AdminClientAsync();
-        var json = """{"title":"T","company":"C","description":"D","location":"L","workType":0,"expiresAt":"2099-06-15T10:30:00+02:00"}""";
+        var json = $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"expiresAt":"2099-06-15T10:30:00+02:00"}""";
 
         var response = await admin.PostRawJsonAsync("/api/jobs", json);
 
@@ -548,9 +548,9 @@ public class JobLifecycleTests
         using var admin = await _api.AdminClientAsync();
 
         var withoutZone = await admin.PostRawJsonAsync("/api/jobs",
-            $$"""{"title":"T","company":"C","description":"D","location":"L","workType":0,"expiresAt":"{{text}}"}""");
+            $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"expiresAt":"{{text}}"}""");
         var withOffset = await admin.PostRawJsonAsync("/api/jobs",
-            $$"""{"title":"T","company":"C","description":"D","location":"L","workType":0,"expiresAt":"{{text}}+14:00"}""");
+            $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"expiresAt":"{{text}}+14:00"}""");
 
         Assert.Equal(HttpStatusCode.Created, withoutZone.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, withOffset.StatusCode);
@@ -560,7 +560,7 @@ public class JobLifecycleTests
     public async Task CreateJob_WithNullExpiresAt_CreatesOpenEndedOffer()
     {
         using var admin = await _api.AdminClientAsync();
-        var json = """{"title":"T","company":"C","description":"D","location":"L","workType":0,"expiresAt":null}""";
+        var json = $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"expiresAt":null}""";
 
         var response = await admin.PostRawJsonAsync("/api/jobs", json);
 
@@ -578,7 +578,7 @@ public class JobLifecycleTests
         using var admin = await _api.AdminClientAsync();
 
         var response = await admin.PutJsonAsync($"/api/jobs/{job.Id}",
-            ApiFixture.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = newExpiry; }));
+            _api.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = newExpiry; }));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var updated = await response.ReadJsonAsync<JobOfferDto>();
@@ -594,7 +594,7 @@ public class JobLifecycleTests
         var job = await _api.CreateJobWithStatusAsync(JobOfferStatus.Active, DateTime.UtcNow.AddDays(5));
         using var admin = await _api.AdminClientAsync();
 
-        var response = await admin.PutJsonAsync($"/api/jobs/{job.Id}", ApiFixture.NewJobDto(j => j.ExpiresAt = null));
+        var response = await admin.PutJsonAsync($"/api/jobs/{job.Id}", _api.NewJobDto(j => j.ExpiresAt = null));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Null((await response.ReadJsonAsync<JobOfferDto>()).ExpiresAt);
@@ -607,7 +607,7 @@ public class JobLifecycleTests
         using var admin = await _api.AdminClientAsync();
 
         var response = await admin.PutJsonAsync($"/api/jobs/{job.Id}",
-            ApiFixture.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = DateTime.UtcNow.AddHours(-1); j.Title = "Changed"; }));
+            _api.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = DateTime.UtcNow.AddHours(-1); j.Title = "Changed"; }));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.True((await ErrorsAsync(response)).TryGetProperty("ExpiresAt", out _));
@@ -624,7 +624,7 @@ public class JobLifecycleTests
         using var admin = await _api.AdminClientAsync();
 
         var response = await admin.PutJsonAsync($"/api/jobs/{expired.Id}",
-            ApiFixture.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = expired.ExpiresAt; j.Title = "Fixed typo"; }));
+            _api.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = expired.ExpiresAt; j.Title = "Fixed typo"; }));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var updated = await response.ReadJsonAsync<JobOfferDto>();
@@ -640,7 +640,7 @@ public class JobLifecycleTests
         using var admin = await _api.AdminClientAsync();
         // przeglądarka odsyła datę z dokładnością do milisekund (toISOString)
         var sent = expired.ExpiresAt!.Value.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-        var json = $$"""{"title":"T","company":"C","description":"D","location":"L","workType":0,"status":1,"expiresAt":"{{sent}}"}""";
+        var json = $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"status":1,"expiresAt":"{{sent}}"}""";
 
         var response = await admin.PutRawJsonAsync($"/api/jobs/{expired.Id}", json);
 
@@ -655,7 +655,7 @@ public class JobLifecycleTests
         using var admin = await _api.AdminClientAsync();
 
         var response = await admin.PutJsonAsync($"/api/jobs/{expired.Id}",
-            ApiFixture.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = expired.ExpiresAt!.Value.AddHours(1); }));
+            _api.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = expired.ExpiresAt!.Value.AddHours(1); }));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.True((await ErrorsAsync(response)).TryGetProperty("ExpiresAt", out _));
@@ -671,7 +671,7 @@ public class JobLifecycleTests
         using var admin = await _api.AdminClientAsync();
 
         var response = await admin.PutJsonAsync($"/api/jobs/{job.Id}",
-            ApiFixture.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = job.ExpiresAt; }));
+            _api.NewJobDto(j => { j.Status = JobOfferStatus.Active; j.ExpiresAt = job.ExpiresAt; }));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.True((await ErrorsAsync(response)).TryGetProperty("ExpiresAt", out _));
@@ -684,7 +684,7 @@ public class JobLifecycleTests
         using var admin = await _api.AdminClientAsync();
 
         var response = await admin.PutJsonAsync($"/api/jobs/{job.Id}",
-            ApiFixture.NewJobDto(j => { j.Status = JobOfferStatus.Draft; j.ExpiresAt = DateTime.UtcNow.AddDays(-1); }));
+            _api.NewJobDto(j => { j.Status = JobOfferStatus.Draft; j.ExpiresAt = DateTime.UtcNow.AddDays(-1); }));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var updated = await response.ReadJsonAsync<JobOfferDto>();
@@ -697,7 +697,7 @@ public class JobLifecycleTests
     {
         var job = await _api.CreateJobAsync();
         using var admin = await _api.AdminClientAsync();
-        var json = """{"title":"T","company":"C","description":"D","location":"L","workType":0,"status":42}""";
+        var json = $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"status":42}""";
 
         var response = await admin.PutRawJsonAsync($"/api/jobs/{job.Id}", json);
 
@@ -714,7 +714,7 @@ public class JobLifecycleTests
         using var admin = await _api.AdminClientAsync();
 
         var response = await admin.PutJsonAsync($"/api/jobs/{job.Id}",
-            ApiFixture.NewJobDto(j => { j.Description = $"lifecycle {token}"; j.Status = JobOfferStatus.Draft; }));
+            _api.NewJobDto(j => { j.Description = $"lifecycle {token}"; j.Status = JobOfferStatus.Draft; }));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Empty(await PublicJobsAsync(token));
@@ -729,7 +729,7 @@ public class JobLifecycleTests
     {
         var job = await _api.CreateJobWithStatusAsync(status);
         using var admin = await _api.AdminClientAsync();
-        var json = """{"title":"Edited","company":"C","description":"D","location":"L","workType":0}""";
+        var json = $$"""{"title":"Edited","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0}""";
 
         var response = await admin.PutRawJsonAsync($"/api/jobs/{job.Id}", json);
 
@@ -746,7 +746,7 @@ public class JobLifecycleTests
     {
         var closed = await _api.CreateJobWithStatusAsync(JobOfferStatus.Closed, DateTime.UtcNow.AddDays(-3));
         using var admin = await _api.AdminClientAsync();
-        var json = $$"""{"title":"T","company":"C","description":"D","location":"L","workType":0,"expiresAt":"{{DateTime.UtcNow.AddDays(-1):O}}"}""";
+        var json = $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"expiresAt":"{{DateTime.UtcNow.AddDays(-1):O}}"}""";
 
         var response = await admin.PutRawJsonAsync($"/api/jobs/{closed.Id}", json);
 
@@ -759,7 +759,7 @@ public class JobLifecycleTests
     {
         var job = await _api.CreateJobWithStatusAsync(JobOfferStatus.Active, DateTime.UtcNow.AddDays(5));
         using var admin = await _api.AdminClientAsync();
-        var json = $$"""{"title":"T","company":"C","description":"D","location":"L","workType":0,"expiresAt":"{{DateTime.UtcNow.AddDays(-1):O}}"}""";
+        var json = $$"""{"title":"T","companyId":{{_api.DefaultCompanyId}},"description":"D","location":"L","workType":0,"expiresAt":"{{DateTime.UtcNow.AddDays(-1):O}}"}""";
 
         var response = await admin.PutRawJsonAsync($"/api/jobs/{job.Id}", json);
 
@@ -894,7 +894,7 @@ public class JobLifecycleTests
         var job = await _api.CreateJobWithStatusAsync(JobOfferStatus.Closed, DateTime.UtcNow.AddDays(-2));
         using var admin = await _api.AdminClientAsync();
         var extend = await admin.PutJsonAsync($"/api/jobs/{job.Id}",
-            ApiFixture.NewJobDto(j => { j.Status = JobOfferStatus.Closed; j.ExpiresAt = DateTime.UtcNow.AddDays(14); }));
+            _api.NewJobDto(j => { j.Status = JobOfferStatus.Closed; j.ExpiresAt = DateTime.UtcNow.AddDays(14); }));
         Assert.Equal(HttpStatusCode.OK, extend.StatusCode);
 
         var response = await PatchStatusAsync(job.Id, JobOfferStatus.Active);

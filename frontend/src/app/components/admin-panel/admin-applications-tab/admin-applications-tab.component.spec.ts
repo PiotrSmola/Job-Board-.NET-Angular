@@ -9,6 +9,7 @@ import { JobApplicationService } from '../../../services/job-application.service
 import { ApplicationStatus, JobApplication } from '../../../models/job-application.model';
 import { ApplicationParams } from '../../../models/application-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
+import { PanelMode } from '../../../models/panel-mode.model';
 
 function makeApplication(id: number, status = ApplicationStatus.Submitted): JobApplication {
   return {
@@ -19,6 +20,7 @@ function makeApplication(id: number, status = ApplicationStatus.Submitted): JobA
     userFullName: 'Jan Kowalski',
     jobTitle: 'Programista',
     company: 'Acme',
+    companyId: 1,
     note: null,
     appliedAt: new Date('2026-01-01T10:00:00Z'),
     status,
@@ -490,6 +492,126 @@ describe('AdminApplicationsTabComponent', () => {
 
       expect(dialogOpen).toHaveBeenCalledWith(ApplicationHistoryDialogComponent, expect.objectContaining({ data: expect.objectContaining({ id: 1 }) }));
       expect(getAllApplications.mock.calls.length).toBe(callsBefore);
+    });
+  });
+
+  describe('panel mode', () => {
+    function createInMode(mode: PanelMode, applications = [makeApplication(1)]): void {
+      getAllApplications.mockReturnValue(of({ ...page(0, applications.length), result: applications }));
+      fixture = TestBed.createComponent(AdminApplicationsTabComponent);
+      fixture.componentRef.setInput('mode', mode);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+    }
+
+    function root(): HTMLElement {
+      fixture.detectChanges();
+      return fixture.nativeElement as HTMLElement;
+    }
+
+    function headers(): string[] {
+      return Array.from(root().querySelectorAll('th')).map(h => h.textContent?.trim() ?? '');
+    }
+
+    function rowButtonLabels(index: number): string[] {
+      return Array.from(root().querySelectorAll('tr.table-row')[index].querySelectorAll('.actions-cell mat-icon'))
+        .map(icon => icon.textContent?.trim() ?? '');
+    }
+
+    describe('admin', () => {
+      it('is the default mode: shows the company column and the delete button', () => {
+        create(of(page(2, 2)));
+
+        expect(component.isAdmin()).toBe(true);
+        expect(component.displayedColumns()).toContain('company');
+        expect(headers()).toContain('Firma');
+        expect(rowButtonLabels(0)).toEqual(['swap_horiz', 'history', 'delete']);
+      });
+
+      it('renders the company name (or N/A) in the company column', () => {
+        createInMode('admin', [{ ...makeApplication(1), company: 'Alfa' }, { ...makeApplication(2), company: '' }]);
+
+        const cells = Array.from(root().querySelectorAll('tr.table-row .company-name')).map(c => c.textContent);
+        expect(cells).toEqual(['Alfa', 'N/A']);
+      });
+
+      it('deletes an application after confirmation', () => {
+        createInMode('admin');
+
+        component.deleteApplication(1);
+
+        expect(deleteApplication).toHaveBeenCalledWith(1);
+      });
+
+      it('clicking the delete button removes the application', () => {
+        createInMode('admin');
+
+        root().querySelector<HTMLButtonElement>('tr.table-row button[color="warn"]')!.click();
+
+        expect(deleteApplication).toHaveBeenCalledWith(1);
+      });
+
+      it('shows the generic empty state text', () => {
+        createInMode('admin', []);
+
+        expect(root().textContent).toContain('Nie ma jeszcze żadnych aplikacji na oferty pracy');
+      });
+    });
+
+    describe('employer', () => {
+      it('hides the company column (all applications are for the employer own company)', () => {
+        createInMode('employer');
+
+        expect(component.isAdmin()).toBe(false);
+        expect(component.displayedColumns()).toEqual(['id', 'jobTitle', 'user', 'status', 'appliedAt', 'note', 'actions']);
+        expect(headers()).not.toContain('Firma');
+        expect(root().querySelector('.company-name')).toBeNull();
+      });
+
+      it('offers only "Zmień status" and "Historia" - no delete button', () => {
+        createInMode('employer', [makeApplication(1), makeApplication(2)]);
+
+        expect(rowButtonLabels(0)).toEqual(['swap_horiz', 'history']);
+        expect(rowButtonLabels(1)).toEqual(['swap_horiz', 'history']);
+        expect(root().querySelector('mat-icon.mat-warn, button[color="warn"]')).toBeNull();
+      });
+
+      it('deleteApplication is a no-op: no confirmation, no API call', () => {
+        createInMode('employer');
+        const confirmCalls = confirmSpy.mock.calls.length;
+
+        component.deleteApplication(1);
+
+        expect(confirmSpy.mock.calls.length).toBe(confirmCalls);
+        expect(deleteApplication).not.toHaveBeenCalled();
+        expect(component.deletingId()).toBeNull();
+      });
+
+      it('still loads, filters and sorts through the same endpoint', () => {
+        createInMode('employer');
+
+        component.onStatusChange(ApplicationStatus.Interview);
+
+        expect(lastParams().status).toBe(ApplicationStatus.Interview);
+        expect(lastParams().pageNumber).toBe(1);
+      });
+
+      it('still opens the status and history dialogs', () => {
+        createInMode('employer');
+
+        component.openStatusDialog(makeApplication(1));
+        component.openHistoryDialog(makeApplication(1));
+
+        expect(dialogOpen).toHaveBeenCalledWith(ApplicationStatusDialogComponent, expect.anything());
+        expect(dialogOpen).toHaveBeenCalledWith(ApplicationHistoryDialogComponent, expect.anything());
+      });
+
+      it('shows the employer-specific empty state text', () => {
+        createInMode('employer', []);
+
+        expect(root().textContent).toContain('Nie ma jeszcze aplikacji na oferty Twojej firmy');
+        expect(root().textContent).not.toContain('Nie ma jeszcze żadnych aplikacji na oferty pracy');
+      });
     });
   });
 

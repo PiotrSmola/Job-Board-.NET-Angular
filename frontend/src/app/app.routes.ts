@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
-import { authGuard } from './guards/auth.guard';
 import { adminGuard } from './guards/admin.guard';
+import { employerGuard } from './guards/employer.guard';
+import { candidateGuard } from './guards/candidate.guard';
 
 export const routes: Routes = [
   {
@@ -17,6 +18,14 @@ export const routes: Routes = [
     loadComponent: () => import('./components/job-detail/job-detail.component').then(m => m.JobDetailComponent)
   },
   {
+    path: 'companies',
+    loadComponent: () => import('./components/company-list/company-list.component').then(m => m.CompanyListComponent)
+  },
+  {
+    path: 'companies/:id',
+    loadComponent: () => import('./components/company-detail/company-detail.component').then(m => m.CompanyDetailComponent)
+  },
+  {
     path: 'login',
     loadComponent: () => import('./components/login/login.component').then(m => m.LoginComponent)
   },
@@ -27,7 +36,12 @@ export const routes: Routes = [
   {
     path: 'my-applications',
     loadComponent: () => import('./components/my-applications/my-applications.component').then(m => m.MyApplicationsComponent),
-    canActivate: [authGuard]
+    canActivate: [candidateGuard]
+  },
+  {
+    path: 'employer',
+    loadComponent: () => import('./components/employer-panel/employer-panel.component').then(m => m.EmployerPanelComponent),
+    canActivate: [employerGuard]
   },
   {
     path: 'admin',

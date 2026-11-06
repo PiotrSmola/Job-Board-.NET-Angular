@@ -8,6 +8,10 @@ public class ApplicationUser : IdentityUser
     public string? LastName { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    // Navigation property
+    // firma pracodawcy (rola Employer); null dla kandydatów i adminów
+    public int? CompanyId { get; set; }
+
+    // Navigation properties
+    public Company? Company { get; set; }
     public ICollection<JobApplication> JobApplications { get; set; } = new List<JobApplication>();
 }

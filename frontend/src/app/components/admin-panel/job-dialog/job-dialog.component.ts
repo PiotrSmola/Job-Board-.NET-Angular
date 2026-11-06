@@ -13,8 +13,19 @@ import { MAT_DATE_LOCALE, provideNativeDateAdapter } from '@angular/material/cor
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { JobService } from '../../../services/job.service';
 import { JobOffer, CreateJobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
+import { Company, CompanyStatus } from '../../../models/company.model';
+import { PanelMode } from '../../../models/panel-mode.model';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
 import { JOB_STATUS_OPTIONS } from '../../../utils/status-labels';
+import { CompanyAutocompleteComponent, CompanyOption } from '../../shared/company-autocomplete.component';
+
+export interface JobDialogData {
+  /** null = tryb dodawania, oferta = tryb edycji. */
+  job: JobOffer | null;
+  mode: PanelMode;
+  /** Firma pracodawcy (tryb employer) – decyduje, czy wolno publikować. */
+  company?: Company | null;
+}
 
 /** Koniec dnia (czas lokalny admina) – oferta jest ważna do końca wybranego dnia. */
 export function endOfLocalDay(date: Date): Date {
@@ -43,13 +54,14 @@ function isSameLocalDay(a: Date, b: Date): boolean {
     MatButtonModule,
     MatIconModule,
     MatProgressSpinnerModule,
-    MatDatepickerModule
+    MatDatepickerModule,
+    CompanyAutocompleteComponent
   ],
   providers: [provideNativeDateAdapter(), { provide: MAT_DATE_LOCALE, useValue: 'pl-PL' }],
   template: `
     <h2 mat-dialog-title>
-      <mat-icon>{{ data ? 'edit' : 'add' }}</mat-icon>
-      {{ data ? 'Edytuj ofertę' : 'Dodaj nową ofertę' }}
+      <mat-icon>{{ job ? 'edit' : 'add' }}</mat-icon>
+      {{ job ? 'Edytuj ofertę' : 'Dodaj nową ofertę' }}
     </h2>
     <mat-dialog-content>
       <form [formGroup]="jobForm" class="job-form">
@@ -62,14 +74,14 @@ function isSameLocalDay(a: Date, b: Date): boolean {
           }
         </mat-form-field>
 
-        <mat-form-field appearance="outline">
-          <mat-label>Firma</mat-label>
-          <input matInput formControlName="company" placeholder="np. TechCorp">
-          <mat-icon matPrefix>business</mat-icon>
-          @if (jobForm.get('company')?.hasError('required') && jobForm.get('company')?.touched) {
-            <mat-error>Firma jest wymagana</mat-error>
-          }
-        </mat-form-field>
+        @if (isAdmin) {
+          <app-company-autocomplete
+            source="approved"
+            [required]="true"
+            requiredMessage="Wybierz zatwierdzoną firmę z listy"
+            [initial]="initialCompany"
+            (companyChange)="onCompanyChange($event)" />
+        }
 
         <mat-form-field appearance="outline">
           <mat-label>Lokalizacja</mat-label>
@@ -131,6 +143,13 @@ function isSameLocalDay(a: Date, b: Date): boolean {
           }
         </mat-form-field>
 
+        @if (!canPublish) {
+          <div class="publish-info" role="note">
+            <mat-icon>info</mat-icon>
+            <span>Firma nie została jeszcze zatwierdzona przez administratora – ofertę możesz zapisać tylko jako szkic. Publikacja będzie możliwa po weryfikacji firmy.</span>
+          </div>
+        }
+
         <div class="salary-row">
           <mat-form-field appearance="outline">
             <mat-label>Status</mat-label>
@@ -173,8 +192,8 @@ function isSameLocalDay(a: Date, b: Date): boolean {
           <mat-spinner diameter="20"></mat-spinner>
         } @else {
           <ng-container>
-            <mat-icon>{{ data ? 'save' : 'add' }}</mat-icon>
-            {{ data ? 'Zapisz' : 'Dodaj' }}
+            <mat-icon>{{ job ? 'save' : 'add' }}</mat-icon>
+            {{ job ? 'Zapisz' : 'Dodaj' }}
           </ng-container>
         }
       </button>
@@ -222,6 +241,17 @@ function isSameLocalDay(a: Date, b: Date): boolean {
         }
       }
 
+      .publish-info {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid #ffb74d;
+        color: #ffb74d;
+        font-size: 0.9rem;
+      }
+
       .salary-field input[type=number] {
         -moz-appearance: textfield;
         appearance: textfield;
@@ -259,38 +289,50 @@ export class JobDialogComponent {
   private cdr = inject(ChangeDetectorRef);
   private snackBar = inject(MatSnackBar);
 
+  readonly data: JobDialogData = inject<JobDialogData | null>(MAT_DIALOG_DATA, { optional: true }) ?? { job: null, mode: 'admin' };
   // null = tryb dodawania, oferta = tryb edycji
-  data: JobOffer | null = inject<JobOffer | null>(MAT_DIALOG_DATA, { optional: true }) ?? null;
+  readonly job: JobOffer | null = this.data.job ?? null;
+  readonly isAdmin = this.data.mode !== 'employer';
+  /** Pracodawca firmy niezatwierdzonej może zapisywać tylko szkice (API zwraca 403 przy publikacji). */
+  readonly canPublish = this.isAdmin || this.data.company?.status === CompanyStatus.Approved;
+  readonly initialCompany: CompanyOption | null = this.job ? { id: this.job.companyId, name: this.job.company } : null;
   submitting = false;
   WorkType = WorkType;
-  readonly statusOptions = JOB_STATUS_OPTIONS;
+  readonly statusOptions = this.canPublish
+    ? JOB_STATUS_OPTIONS
+    // bez prawa publikacji: szkic + ewentualnie bieżący status edytowanej oferty (bez zmiany)
+    : JOB_STATUS_OPTIONS.filter(o => o.value === JobOfferStatus.Draft || o.value === this.job?.status);
 
   jobForm: FormGroup = this.fb.group({
     title: ['', [Validators.required]],
-    company: ['', [Validators.required]],
+    // id firmy wybranej w podpowiedziach (tylko admin – pracodawca publikuje zawsze w swojej firmie)
+    companyId: [this.initialCompany?.id ?? null as number | null, [Validators.required]],
     location: ['', [Validators.required]],
     workType: [WorkType.Remote, [Validators.required]],
     // Te same reguły co walidacja API (wynagrodzenia >= 0, "Od" <= "Do") – bez nich backend zwraca 400
     salaryMin: [null, [Validators.min(0)]],
     salaryMax: [null, [Validators.min(0)]],
     description: ['', [Validators.required, Validators.minLength(50)]],
-    // domyślnie Active – jak w API (oferta od razu opublikowana)
-    status: [JobOfferStatus.Active, [Validators.required]],
+    // domyślnie Active – jak w API (oferta od razu opublikowana); bez prawa publikacji – szkic
+    status: [this.canPublish ? JobOfferStatus.Active : JobOfferStatus.Draft, [Validators.required]],
     expiresAt: [null as Date | null]
   }, { validators: [this.salaryRangeValidator, group => this.expiresAtValidator(group as FormGroup)] });
 
   constructor() {
-    if (this.data) {
+    if (!this.isAdmin) {
+      this.jobForm.removeControl('companyId');
+    }
+
+    if (this.job) {
       this.jobForm.patchValue({
-        title: this.data.title,
-        company: this.data.company,
-        location: this.data.location,
-        workType: this.data.workType,
-        salaryMin: this.data.salaryMin,
-        salaryMax: this.data.salaryMax,
-        description: this.data.description,
-        status: this.data.status ?? JobOfferStatus.Active,
-        expiresAt: this.data.expiresAt ? new Date(this.data.expiresAt) : null
+        title: this.job.title,
+        location: this.job.location,
+        workType: this.job.workType,
+        salaryMin: this.job.salaryMin,
+        salaryMax: this.job.salaryMax,
+        description: this.job.description,
+        status: this.job.status ?? JobOfferStatus.Active,
+        expiresAt: this.job.expiresAt ? new Date(this.job.expiresAt) : null
       });
     }
   }
@@ -312,8 +354,14 @@ export class JobDialogComponent {
 
   /** Edycja oferty, która już jest aktywna, z niezmienionym dniem wygaśnięcia. */
   private keepsOriginalExpiresAt(value: Date): boolean {
-    const original = this.data?.expiresAt;
-    return this.data?.status === JobOfferStatus.Active && !!original && isSameLocalDay(new Date(original), value);
+    const original = this.job?.expiresAt;
+    return this.job?.status === JobOfferStatus.Active && !!original && isSameLocalDay(new Date(original), value);
+  }
+
+  onCompanyChange(company: CompanyOption | null): void {
+    const control = this.jobForm.get('companyId');
+    control?.setValue(company?.id ?? null);
+    control?.markAsTouched();
   }
 
   clearExpiresAt(): void {
@@ -344,20 +392,22 @@ export class JobDialogComponent {
 
     const jobData: CreateJobOffer = {
       ...formValue,
+      // API ignoruje companyId pracodawcy (zawsze jego firma) – wysyłamy jego firmę dla spójności
+      companyId: this.isAdmin ? formValue.companyId : this.data.company?.id ?? this.job?.companyId ?? null,
       salaryMin: toSalary(formValue.salaryMin),
       salaryMax: toSalary(formValue.salaryMax),
       expiresAt: this.toExpiresAtIso(formValue.expiresAt)
     };
 
-    const request = this.data
-      ? this.jobService.updateJob(this.data.id, jobData)
+    const request = this.job
+      ? this.jobService.updateJob(this.job.id, jobData)
       : this.jobService.createJob(jobData);
 
     request.subscribe({
       next: () => {
         this.submitting = false;
         this.cdr.detectChanges();
-        this.notify(this.data ? 'Oferta zaktualizowana!' : 'Oferta dodana!');
+        this.notify(this.job ? 'Oferta zaktualizowana!' : 'Oferta dodana!');
         this.dialogRef.close(true);
       },
       error: (error) => {
@@ -379,7 +429,7 @@ export class JobDialogComponent {
   private toExpiresAtIso(value: Date | null): string | null {
     if (!value) return null;
 
-    const original = this.data?.expiresAt ?? null;
+    const original = this.job?.expiresAt ?? null;
     if (original && isSameLocalDay(new Date(original), value)) {
       // wyjątek: aktywna oferta, której godzina wygaśnięcia minęła dziś – przesuwamy na koniec dnia (znów aktualna)
       const now = Date.now();

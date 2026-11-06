@@ -102,6 +102,11 @@ export class JobDetailComponent implements OnInit {
     return !!this.job && this.job.status === JobOfferStatus.Active && !this.job.isExpired;
   }
 
+  /** Zalogowany kandydat – admin i pracodawca nie aplikują na oferty (API zwraca 403). */
+  get canApplyAsCandidate(): boolean {
+    return this.authService.isAuthenticated() && !this.authService.isAdmin() && !this.authService.isEmployer();
+  }
+
   /** Użytkownik wycofał wcześniej aplikację – może aplikować ponownie. */
   get hasWithdrawn(): boolean {
     return !this.hasApplied && this.applicationStatus === ApplicationStatus.Withdrawn;
@@ -128,7 +133,8 @@ export class JobDetailComponent implements OnInit {
       const id = params.get('id');
       if (id) {
         this.loadJob(+id);
-        if (this.authService.isAuthenticated()) {
+        // Pracodawca nie aplikuje – nie sprawdzamy statusu aplikacji
+        if (this.authService.isAuthenticated() && !this.authService.isEmployer()) {
           this.checkIfApplied(+id);
         }
       }
