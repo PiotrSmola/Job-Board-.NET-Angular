@@ -20,7 +20,7 @@ import { ApplicationStatus, JobApplication } from '../../../models/job-applicati
 import { ApplicationOrderBy, ApplicationParams } from '../../../models/application-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
 import { PanelMode } from '../../../models/panel-mode.model';
-import { isHandledByInterceptor } from '../../../utils/http-errors';
+import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
 import { APPLICATION_STATUS_FILTER_OPTIONS, getApplicationStatusPresentation } from '../../../utils/status-labels';
 import { StatusChipComponent } from '../../shared/status-chip.component';
 import { ApplicationStatusDialogComponent } from '../application-status-dialog/application-status-dialog.component';
@@ -69,6 +69,7 @@ export class AdminApplicationsTabComponent {
   readonly totalItems = signal(0);
   readonly loading = signal(false);
   readonly deletingId = signal<number | null>(null);
+  readonly downloadingCvId = signal<number | null>(null);
 
   readonly pageIndex = signal(0);
   readonly pageSize = signal(10);
@@ -150,6 +151,20 @@ export class AdminApplicationsTabComponent {
 
   openHistoryDialog(application: JobApplication): void {
     this.dialog.open(ApplicationHistoryDialogComponent, { width: '560px', data: application });
+  }
+
+  downloadCv(application: JobApplication): void {
+    this.downloadingCvId.set(application.id);
+    this.applicationService.downloadCv(application.id, application.cvFileName).subscribe({
+      next: () => this.downloadingCvId.set(null),
+      error: (error) => {
+        console.error('Error downloading CV:', error);
+        this.downloadingCvId.set(null);
+        if (!isHandledByInterceptor(error)) {
+          alert(getApiErrorMessage(error, 'Nie udało się pobrać CV'));
+        }
+      }
+    });
   }
 
   onSortChange(sort: Sort): void {

@@ -143,6 +143,21 @@
                 <button mat-icon-button (click)="openHistoryDialog(app)" matTooltip="Historia">
                   <mat-icon>history</mat-icon>
                 </button>
+                @if (app.hasCv) {
+                  <button
+                    mat-icon-button
+                    class="download-cv"
+                    (click)="downloadCv(app)"
+                    [disabled]="downloadingCvId() === app.id"
+                    [matTooltip]="'Pobierz CV: ' + app.cvFileName"
+                    aria-label="Pobierz CV">
+                    @if (downloadingCvId() === app.id) {
+                      <mat-spinner diameter="24"></mat-spinner>
+                    } @else {
+                      <mat-icon>description</mat-icon>
+                    }
+                  </button>
+                }
                 @if (isAdmin()) {
                   <button
                     mat-icon-button
