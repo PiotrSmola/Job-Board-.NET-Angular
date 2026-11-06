@@ -78,7 +78,11 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
             ValidateIssuerSigningKey = true,
             ValidIssuer = jwtSettings.Issuer,
             ValidAudience = jwtSettings.Audience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret))
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret)),
+            // tylko algorytm, którym podpisuje TokenService (bez "none" i innych algorytmów); tolerancja zegara 30 s
+            // zamiast domyślnych 5 minut - backend i token pochodzą z tej samej maszyny
+            ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+            ClockSkew = TimeSpan.FromSeconds(30)
         };
 
         // token usuniętego użytkownika lub z nieaktualnym security stampem jest odrzucany (401)

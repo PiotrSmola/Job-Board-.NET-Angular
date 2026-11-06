@@ -37,7 +37,7 @@ public class TokenServiceTests
     }
 
     [Fact]
-    public void CreateToken_ContainsUserSecurityStamp()
+    public void CreateToken_ContainsAHashOfTheUserSecurityStamp()
     {
         var user = NewUser();
         user.SecurityStamp = "stamp-abc";
@@ -45,7 +45,23 @@ public class TokenServiceTests
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(CreateService().CreateToken(user, new List<string>()));
 
         Assert.Equal("AspNet.Identity.SecurityStamp", TokenService.SecurityStampClaimType);
-        Assert.Contains(jwt.Claims, c => c.Type == TokenService.SecurityStampClaimType && c.Value == "stamp-abc");
+        var claim = Assert.Single(jwt.Claims, c => c.Type == TokenService.SecurityStampClaimType);
+        Assert.Equal(TokenService.HashSecurityStamp("stamp-abc"), claim.Value);
+        Assert.DoesNotContain(jwt.Claims, c => c.Value.Contains("stamp-abc"));
+    }
+
+    [Fact]
+    public void HashSecurityStamp_IsBase64UrlOfTheFirst16BytesOfSha256()
+    {
+        var expected = Base64UrlEncoder.Encode(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes("stamp-abc"))[..16]);
+
+        var hash = TokenService.HashSecurityStamp("stamp-abc");
+
+        Assert.Equal(expected, hash);
+        Assert.Equal(22, hash.Length);
+        Assert.Matches("^[A-Za-z0-9_-]+$", hash);
+        Assert.Equal(hash, TokenService.HashSecurityStamp("stamp-abc"));
+        Assert.NotEqual(hash, TokenService.HashSecurityStamp("stamp-abd"));
     }
 
     [Fact]
