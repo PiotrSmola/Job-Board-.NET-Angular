@@ -37,7 +37,10 @@ public static class MappingExtensions
             .Select(s => s.Name)
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ThenBy(n => n, StringComparer.Ordinal)
-            .ToList()
+            .ToList(),
+        // tło z encji firmy wczytanej razem z ofertą (Include) - bez dodatkowych zapytań; publiczne tylko dla firmy
+        // zatwierdzonej (obraz firmy niezatwierdzonej nie jest dostępny anonimowo)
+        CompanyBackground = job.Company?.Status == CompanyStatus.Approved ? job.Company.ToOfferBackgroundDto() : null
     };
 
     public static JobOffer ToEntity(this CreateJobOfferDto dto, int companyId)
@@ -205,7 +208,8 @@ public static class MappingExtensions
 
     private static FacetValueDto ToFacetValueDto(FacetCount count) => new() { Value = count.Value, Count = count.Count };
 
-    public static CompanyDto ToDto(this Company company, int activeJobsCount, bool includeReview, int? membersCount = null) => new()
+    public static CompanyDto ToDto(this Company company, int activeJobsCount, bool includeReview, int? membersCount = null,
+        int photosCount = 0) => new()
     {
         Id = company.Id,
         Name = company.Name,
@@ -217,11 +221,35 @@ public static class MappingExtensions
         ReviewedAt = includeReview ? company.ReviewedAt : null,
         CreatedAt = company.CreatedAt,
         ActiveJobsCount = activeJobsCount,
-        MembersCount = membersCount
+        MembersCount = membersCount,
+        PhotosCount = photosCount,
+        OfferBackground = company.ToOfferBackgroundDto()
     };
 
     public static CompanyDto ToDto(this CompanySummary summary, bool includeReview, bool includeMembers = false) =>
-        summary.Company.ToDto(summary.ActiveJobsCount, includeReview, includeMembers ? summary.MembersCount : null);
+        summary.Company.ToDto(summary.ActiveJobsCount, includeReview, includeMembers ? summary.MembersCount : null,
+            summary.PhotosCount);
+
+    // Tło ofert firmy; null - firma bez obrazu tła (chyba że allowWithoutImage - odpowiedź zmiany ustawień)
+    public static OfferBackgroundDto? ToOfferBackgroundDto(this Company company, bool allowWithoutImage = false) =>
+        company.OfferBackgroundKey == null && !allowWithoutImage
+            ? null
+            : new OfferBackgroundDto
+            {
+                Url = company.OfferBackgroundKey == null ? null : CompanyMedia.BackgroundUrl(company.Id, company.OfferBackgroundKey),
+                Dim = company.OfferBackgroundDim,
+                Focus = company.OfferBackgroundFocus
+            };
+
+    // Zdjęcie galerii - bez klucza pliku, typu i rozmiaru
+    public static CompanyPhotoDto ToDto(this CompanyPhoto photo) => new()
+    {
+        Id = photo.Id,
+        Caption = photo.Caption,
+        Width = photo.Width,
+        Height = photo.Height,
+        Url = CompanyMedia.PhotoUrl(photo.CompanyId, photo.Id)
+    };
 
     // Przepisuje dane z formularza (z normalizacją nazwy i pustych pól); status weryfikacji zmienia wywołujący
     public static void ApplyTo(this CompanyFormDto dto, Company company)

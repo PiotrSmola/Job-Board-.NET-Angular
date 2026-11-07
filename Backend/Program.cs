@@ -128,6 +128,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddScoped<IJobRepository, JobRepository>();
 builder.Services.AddScoped<IJobApplicationRepository, JobApplicationRepository>();
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
+builder.Services.AddScoped<ICompanyMediaRepository, CompanyMediaRepository>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<ISkillRepository, SkillRepository>();
 builder.Services.AddScoped<IAccountRepository, AccountRepository>();
@@ -176,7 +177,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserAccess, CurrentUserAccess>();
 
 // Ograniczanie liczby żądań (RateLimitingSettings, okno stałe od pierwszego żądania partycji - WindowRateLimiter):
-// - "uploads" (upload załączników i dokumentów profilu) - osobny limit dla każdego zalogowanego użytkownika i wspólny
+// - "uploads" (upload załączników, dokumentów profilu i obrazów firm) - osobny limit dla każdego zalogowanego użytkownika i wspólny
 //   limit równoległych uploadów,
 // - "auth" (logowanie, rejestracja, potwierdzenie e-maila, reset hasła - cały AuthController) - osobny limit dla
 //   każdego adresu IP i wspólny limit równoległych żądań (haszowanie haseł obciąża CPU),

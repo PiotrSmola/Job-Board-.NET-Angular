@@ -32,4 +32,30 @@ public static class FileDownloads
             throw;
         }
     }
+
+    // Obraz z magazynu (zdjęcie firmy, tło ofert) do wyświetlenia na stronie: Content-Disposition inline, bez zgadywania
+    // typu przez przeglądarkę; Cache-Control ustawiony tutaj ma pierwszeństwo przed no-store z SecurityHeadersMiddleware
+    // (publiczny cache tylko dla obrazów firm zatwierdzonych - CompanyMedia.CacheControl)
+    public static async Task<IActionResult> InlineImageAsync(this ControllerBase controller, StoredFile file, string fileName,
+        string contentType, bool isPublic)
+    {
+        try
+        {
+            var response = controller.Response;
+            response.Headers.ContentDisposition = CompanyMedia.InlineDisposition(fileName);
+            response.Headers.XContentTypeOptions = "nosniff";
+            response.Headers.CacheControl = CompanyMedia.CacheControl(isPublic);
+            if (file.Length.HasValue)
+            {
+                response.ContentLength = file.Length.Value;
+            }
+
+            return controller.File(file.Content, contentType);
+        }
+        catch
+        {
+            await file.DisposeAsync();
+            throw;
+        }
+    }
 }

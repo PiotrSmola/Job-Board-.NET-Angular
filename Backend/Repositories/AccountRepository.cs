@@ -175,9 +175,17 @@ public class AccountRepository : IAccountRepository
 
         if (deleteCompany)
         {
-            await _context.Companies
+            // zdjęcia i tło firmy (wiersz firmy jest już zablokowany - upload mediów czeka na tę transakcję);
+            // zdjęcia usuwa kaskada w bazie, pliki - wywołujący po zatwierdzeniu
+            var companyFileKeys = await CompanyRepository.CompanyFileKeysAsync(_context, companyId!.Value);
+
+            var deletedCompanies = await _context.Companies
                 .Where(c => c.Id == companyId && !c.Members.Any() && !c.JobOffers.Any())
                 .ExecuteDeleteAsync();
+            if (deletedCompanies > 0)
+            {
+                fileKeys.AddRange(companyFileKeys);
+            }
         }
 
         await transaction.CommitAsync();

@@ -22,4 +22,10 @@ public class CompanyDto
 
     // liczba kont pracodawców firmy - tylko w odpowiedziach /api/admin/companies
     public int? MembersCount { get; set; }
+
+    // liczba zdjęć w galerii (GET /api/companies/{id}/photos)
+    public int PhotosCount { get; set; }
+
+    // tło nagłówka ofert; null - firma nie ma obrazu tła
+    public OfferBackgroundDto? OfferBackground { get; set; }
 }
