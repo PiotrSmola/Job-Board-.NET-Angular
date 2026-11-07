@@ -71,3 +71,10 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
+
+# Playwright (testy E2E)
+/e2e/test-results/
+/e2e/.artifacts/
+/e2e/.auth/
+/e2e/.state/
+/playwright-report/
