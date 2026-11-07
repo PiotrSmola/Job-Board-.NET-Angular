@@ -39,10 +39,9 @@ import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-err
     :host { display: inline-flex; }
     /* w wierszu flex: dosuń do przycisków po prawej stronie */
     :host(.push-end) { margin-left: auto; }
-    .save-job-button { color: var(--text-secondary, #b0b0b0); }
-    /* #ff80ab na ciemnym tle – kontrast > 3:1 dla elementu graficznego (WCAG 1.4.11) */
-    .save-job-button.saved { color: #ff80ab; }
-    .save-job-button:focus-visible { outline: 3px solid var(--primary-color, #00e5ff); outline-offset: 2px; }
+    .save-job-button { color: var(--color-text-secondary); }
+    /* stan widać po kształcie ikony (pełna / obrys); akcent ma kontrast > 3:1 na każdej powierzchni (WCAG 1.4.11) */
+    .save-job-button.saved { color: var(--color-accent); }
   `]
 })
 export class SaveJobButtonComponent {

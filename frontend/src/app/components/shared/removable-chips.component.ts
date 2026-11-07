@@ -31,17 +31,16 @@ export interface ChipItem {
   styles: [`
     :host { display: block; }
     .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    /* wybrana wartość = wypełnienie --color-selected (jak aktywna zakładka), bez ramki i akcentu */
     .chip {
-      display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 12px; border-radius: 16px;
-      border: 1px solid var(--primary-color); background: rgba(0, 229, 255, 0.08);
-      color: var(--text-primary); font-size: 0.875rem;
+      display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 12px; border-radius: var(--radius-input);
+      background: var(--color-selected); color: var(--color-text); font-size: var(--font-size-sm);
     }
     button {
       display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0;
-      border: 0; border-radius: 50%; background: transparent; color: var(--text-secondary); cursor: pointer;
+      border: 0; border-radius: 50%; background: transparent; color: var(--color-text-secondary); cursor: pointer;
     }
-    button:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.1); }
-    button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+    button:hover { color: var(--color-text); background: var(--color-raised); }
     mat-icon { font-size: 18px; width: 18px; height: 18px; }
   `]
 })

@@ -1,60 +1,85 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { JobTaxonomyComponent } from './job-taxonomy.component';
-import { ContractTypes, JobOffer, SeniorityLevel } from '../../models/job-offer.model';
+import {
+  JobTaxonomyComponent, formatDayMonth, formatJobMeta, formatPosted, formatSkills, getWorkModeLabel, isoDate
+} from './job-taxonomy.component';
+import { ContractTypes, JobOffer, SeniorityLevel, WorkType } from '../../models/job-offer.model';
 import { makeJob } from '../../../testing/job-fixtures';
 
-// Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
-vi.setConfig({ testTimeout: 20000 });
+describe('job taxonomy text', () => {
+  it('builds the meta line from the level, the contract types and the work mode', () => {
+    expect(formatJobMeta(makeJob(1, {
+      seniority: SeniorityLevel.Senior, contractTypes: ContractTypes.B2B | ContractTypes.EmploymentContract, workType: WorkType.Remote
+    }))).toBe('Senior · Umowa o pracę, B2B · Zdalnie');
+  });
+
+  it('skips the missing parts of the meta line', () => {
+    expect(formatJobMeta(makeJob(1, { seniority: null, contractTypes: 0, workType: WorkType.Hybrid }))).toBe('Hybrydowo');
+  });
+
+  it('names the work modes as adverbs', () => {
+    expect([WorkType.Remote, WorkType.Hybrid, WorkType.Onsite].map(getWorkModeLabel)).toEqual(['Zdalnie', 'Hybrydowo', 'Stacjonarnie']);
+    expect(getWorkModeLabel(null)).toBeNull();
+  });
+
+  it('formats the posting date relative to today and then as a Polish date', () => {
+    const now = new Date(2026, 10, 7, 12, 0, 0);
+    expect(formatPosted(new Date(2026, 10, 7, 8), now)).toBe('dziś');
+    expect(formatPosted(new Date(2026, 10, 6, 23), now)).toBe('wczoraj');
+    expect(formatPosted(new Date(2026, 10, 4), now)).toBe('3 dni temu');
+    expect(formatPosted(new Date(2026, 9, 30), now)).toBe('tydzień temu');
+    expect(formatPosted(new Date(2026, 9, 4), now)).toBe('4 października');
+    expect(formatDayMonth(new Date(2025, 2, 1), now)).toBe('1 marca 2025');
+    expect(isoDate('nie-data')).toBeNull();
+  });
+
+  it('lists the skills as comma text with the number of the hidden ones', () => {
+    expect(formatSkills(['A', 'B', 'C'])).toBe('A, B, C');
+    expect(formatSkills(['A', 'B', 'C', 'D'], 2)).toBe('A, B i 2 więcej');
+    expect(formatSkills(['A', 'B'], 2)).toBe('A, B');
+    expect(formatSkills(null)).toBe('');
+  });
+});
 
 describe('JobTaxonomyComponent', () => {
   let fixture: ComponentFixture<JobTaxonomyComponent>;
 
   const root = () => fixture.nativeElement as HTMLElement;
-  const texts = (selector: string) => Array.from(root().querySelectorAll(selector)).map(e => e.textContent?.trim());
 
-  function create(job: JobOffer, inputs: { showTags?: boolean; skillsLimit?: number | null } = {}): void {
+  function create(job: JobOffer, inputs: { showMeta?: boolean; skillsLimit?: number | null } = {}): void {
     fixture = TestBed.createComponent(JobTaxonomyComponent);
     fixture.componentRef.setInput('job', job);
-    if (inputs.showTags !== undefined) fixture.componentRef.setInput('showTags', inputs.showTags);
+    if (inputs.showMeta !== undefined) fixture.componentRef.setInput('showMeta', inputs.showMeta);
     if (inputs.skillsLimit !== undefined) fixture.componentRef.setInput('skillsLimit', inputs.skillsLimit);
     fixture.detectChanges();
   }
 
   beforeEach(() => TestBed.configureTestingModule({ imports: [JobTaxonomyComponent] }));
 
-  it('renders nothing for an offer without taxonomy data', () => {
-    create(makeJob());
+  it('renders plain text lines, no lists or tags', () => {
+    create(makeJob(1, { seniority: SeniorityLevel.Junior, skills: ['Angular', 'RxJS'] }));
 
     expect(root().querySelector('ul')).toBeNull();
+    expect(root().querySelector('.meta')?.textContent?.trim()).toBe('Junior · Zdalnie');
+    expect(root().querySelector('.skills')?.textContent?.trim()).toBe('Umiejętności: Angular, RxJS');
+    expect(root().querySelector('.skills .visually-hidden')?.textContent).toBe('Umiejętności: ');
   });
 
-  it('lists category, level and contract types as labelled tags', () => {
-    create(makeJob(1, {
-      categoryName: 'Testowanie', seniority: SeniorityLevel.Intern,
-      contractTypes: ContractTypes.Internship | ContractTypes.MandateContract
-    }));
-
-    expect(texts('.tags li')).toEqual(['Testowanie', 'Stażysta', 'Umowa zlecenie', 'Staż']);
-    expect(root().querySelector('.tags')?.getAttribute('aria-label')).toBe('Kategoria, poziom i typ umowy');
-  });
-
-  it('shows at most 5 skills by default with a "+N" counter that has an accessible name', () => {
+  it('shows at most 5 skills by default', () => {
     create(makeJob(1, { skills: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] }));
 
-    expect(texts('.skills li')).toEqual(['A', 'B', 'C', 'D', 'E', '+2']);
-    expect(root().querySelector('.more')?.getAttribute('aria-label')).toBe('oraz 2 więcej');
+    expect(root().querySelector('.skills')?.textContent).toContain('A, B, C, D, E i 2 więcej');
   });
 
-  it('does not show "+N" when all skills fit', () => {
-    create(makeJob(1, { skills: ['A', 'B', 'C', 'D', 'E'] }));
+  it('shows every skill and no meta line when the limit is removed and the meta is hidden', () => {
+    create(makeJob(1, { skills: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] }), { showMeta: false, skillsLimit: null });
 
-    expect(root().querySelector('.more')).toBeNull();
+    expect(root().querySelector('.skills')?.textContent).toContain('A, B, C, D, E, F, G');
+    expect(root().querySelector('.meta')).toBeNull();
   });
 
-  it('shows every skill and no tags when the limit is removed and tags are hidden', () => {
-    create(makeJob(1, { categoryName: 'X', skills: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] }), { showTags: false, skillsLimit: null });
+  it('renders no skills line for an offer without skills', () => {
+    create(makeJob());
 
-    expect(texts('.skills li').length).toBe(7);
-    expect(root().querySelector('.tags')).toBeNull();
+    expect(root().querySelector('.skills')).toBeNull();
   });
 });
