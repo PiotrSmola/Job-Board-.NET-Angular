@@ -4,6 +4,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Subject, of, throwError } from 'rxjs';
 import { AttachmentListComponent } from './attachment-list.component';
 import { JobApplicationService } from '../../services/job-application.service';
+import { ConfirmService } from '../../services/confirm.service';
 import { ApplicationAttachment, AttachmentKind } from '../../models/job-application.model';
 
 const CV: ApplicationAttachment = { id: 1, kind: AttachmentKind.Cv, fileName: 'jan-cv.pdf', size: 350 * 1024, uploadedAt: '2026-01-02T10:00:00Z' };
@@ -44,7 +45,7 @@ describe('AttachmentListComponent', () => {
   let host: HostComponent;
   let downloadAttachment: ReturnType<typeof vi.fn>;
   let deleteAttachment: ReturnType<typeof vi.fn>;
-  let confirmSpy: ReturnType<typeof vi.spyOn>;
+  let confirmSpy: ReturnType<typeof vi.fn>;
 
   function create(): void {
     fixture = TestBed.createComponent(HostComponent);
@@ -72,12 +73,15 @@ describe('AttachmentListComponent', () => {
   beforeEach(async () => {
     downloadAttachment = vi.fn().mockReturnValue(of(undefined));
     deleteAttachment = vi.fn().mockReturnValue(of(undefined));
-    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    confirmSpy = vi.fn().mockReturnValue(of(true));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
       imports: [HostComponent],
-      providers: [{ provide: JobApplicationService, useValue: { downloadAttachment, deleteAttachment } }]
+      providers: [
+        { provide: JobApplicationService, useValue: { downloadAttachment, deleteAttachment } },
+        { provide: ConfirmService, useValue: { confirm: confirmSpy } }
+      ]
     }).compileComponents();
     create();
   });
@@ -215,14 +219,19 @@ describe('AttachmentListComponent', () => {
     it('deletes after confirmation and tells the parent', () => {
       deleteButtons()[1].click();
 
-      expect(confirmSpy).toHaveBeenCalledWith('Czy na pewno chcesz usunąć załącznik „list.docx” (List motywacyjny)?');
+      expect(confirmSpy).toHaveBeenCalledWith({
+        title: 'Usunąć załącznik?',
+        message: '„list.docx” (List motywacyjny) zostanie usunięty. Tej operacji nie da się cofnąć.',
+        confirmLabel: 'Usuń',
+        destructive: true
+      });
       expect(deleteAttachment).toHaveBeenCalledWith(7, 2);
       expect(host.deleted).toEqual([LETTER]);
       expect(Array.from(root().querySelectorAll('.file-name')).map(e => e.textContent)).toEqual(['jan-cv.pdf', 'projekt.png']);
     });
 
     it('does not delete when the confirmation is declined', () => {
-      confirmSpy.mockReturnValue(false);
+      confirmSpy.mockReturnValue(of(false));
 
       deleteButtons()[0].click();
 

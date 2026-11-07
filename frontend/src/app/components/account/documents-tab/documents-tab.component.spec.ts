@@ -4,6 +4,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { Subject, of, throwError } from 'rxjs';
 import { DocumentsTabComponent } from './documents-tab.component';
 import { AccountService } from '../../../services/account.service';
+import { ConfirmService } from '../../../services/confirm.service';
 import { ProfileDocument, ProfileDocumentUploadEvent } from '../../../models/account.model';
 import { AttachmentKind } from '../../../models/job-application.model';
 
@@ -19,6 +20,7 @@ describe('DocumentsTabComponent', () => {
   let deleteDocument: ReturnType<typeof vi.fn>;
   let downloadDocument: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.fn>;
 
   function create(documents: ProfileDocument[] = [LETTER, CV]): void {
     getDocuments.mockReturnValue(of(documents));
@@ -47,12 +49,14 @@ describe('DocumentsTabComponent', () => {
     deleteDocument = vi.fn();
     downloadDocument = vi.fn().mockReturnValue(of(undefined));
     snackBarOpen = vi.fn();
+    confirm = vi.fn().mockReturnValue(of(true));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     TestBed.configureTestingModule({
       imports: [DocumentsTabComponent],
       providers: [
         { provide: AccountService, useValue: { getDocuments, uploadDocuments, deleteDocument, downloadDocument } },
-        { provide: MatSnackBar, useValue: { open: snackBarOpen } }
+        { provide: MatSnackBar, useValue: { open: snackBarOpen } },
+        { provide: ConfirmService, useValue: { confirm } }
       ]
     });
   });
@@ -68,7 +72,6 @@ describe('DocumentsTabComponent', () => {
 
   it('downloads and deletes through the account endpoints', () => {
     create();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     deleteDocument.mockReturnValue(of(undefined));
 
     root().querySelector<HTMLButtonElement>('.download-button')!.click();
@@ -76,7 +79,8 @@ describe('DocumentsTabComponent', () => {
 
     root().querySelector<HTMLButtonElement>('.delete-button')!.click();
     fixture.detectChanges();
-    expect(window.confirm).toHaveBeenCalledWith('Czy na pewno chcesz usunąć dokument „cv.pdf” (CV)?');
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Usunąć dokument?', confirmLabel: 'Usuń', destructive: true }));
+    expect(confirm.mock.calls[0][0].message).toContain('„cv.pdf” (CV)');
     expect(deleteDocument).toHaveBeenCalledWith(1);
     expect(root().querySelectorAll('.download-button').length).toBe(1);
     expect(snackBarOpen).toHaveBeenCalledWith('Dokument został usunięty', 'OK', { duration: 5000, politeness: 'polite' });

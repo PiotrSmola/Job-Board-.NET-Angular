@@ -44,7 +44,6 @@ describe('MyApplicationsComponent', () => {
   let dialogOpen: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
   let confirm: ReturnType<typeof vi.fn>;
-  let windowConfirm: ReturnType<typeof vi.spyOn>;
 
   function create(initial: Observable<JobApplication[]> = of([makeApplication(1), makeApplication(2)])): void {
     getMyApplications.mockReturnValue(initial);
@@ -100,8 +99,6 @@ describe('MyApplicationsComponent', () => {
     dialogOpen = vi.fn().mockReturnValue({ afterClosed: () => of(undefined) });
     snackBarOpen = vi.fn();
     confirm = vi.fn().mockReturnValue(of(true));
-    // usuwanie załącznika potwierdza jeszcze wspólny komponent listy (window.confirm)
-    windowConfirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
@@ -308,7 +305,6 @@ describe('MyApplicationsComponent', () => {
 
       expect(withdraw).not.toHaveBeenCalled();
       expect(byId(1).status).toBe(ApplicationStatus.Submitted);
-      expect(windowConfirm).not.toHaveBeenCalled();
     });
 
     it('offers withdrawal only for statuses the API allows', () => {

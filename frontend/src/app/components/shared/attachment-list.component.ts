@@ -1,10 +1,11 @@
 import { AfterViewChecked, ChangeDetectionStrategy, Component, DestroyRef, ElementRef, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Observable } from 'rxjs';
+import { Observable, filter } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { ConfirmService } from '../../services/confirm.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { ApplicationAttachment, AttachmentKind } from '../../models/job-application.model';
 import { formatFileSize, getAttachmentKindLabel } from '../../utils/attachments';
@@ -99,6 +100,7 @@ const ALREADY_DELETED_MESSAGES = ['Attachment not found', 'Document not found'];
 })
 export class AttachmentListComponent implements AfterViewChecked {
   private readonly applicationService = inject(JobApplicationService);
+  private readonly confirmService = inject(ConfirmService);
   private readonly destroyRef = inject(DestroyRef);
   /** Usunięto ostatnią pozycję – po przerysowaniu fokus trafia na tekst pustej listy. */
   private focusEmptyAfterId: number | null = null;
@@ -107,7 +109,7 @@ export class AttachmentListComponent implements AfterViewChecked {
   /** Aplikacja, do której należą załączniki – wymagana, gdy nie podano `actions`. */
   readonly applicationId = input<number | null>(null);
   readonly actions = input<AttachmentListActions | null>(null);
-  /** Rzeczownik w pytaniu o usunięcie („Czy na pewno chcesz usunąć załącznik …”). */
+  /** Rzeczownik (rodzaj męski) w oknie potwierdzenia usunięcia („Usunąć załącznik?”, „Usunąć dokument?”). */
   readonly itemNoun = input('załącznik');
   readonly attachments = input<readonly ApplicationAttachment[]>([]);
   /** Usuwanie – tylko dla kandydata (właściciela aplikacji). */
@@ -156,8 +158,17 @@ export class AttachmentListComponent implements AfterViewChecked {
   remove(attachment: ApplicationAttachment, index: number): void {
     if (this.deletingId() !== null) return;
     const kind = this.kindLabel(attachment.kind);
-    if (!confirm(`Czy na pewno chcesz usunąć ${this.itemNoun()} „${attachment.fileName}” (${kind})?`)) return;
+    // okno MatDialog zamiast blokującego window.confirm(); po zamknięciu fokus wraca na przycisk „Usuń”
+    this.confirmService.confirm({
+      title: `Usunąć ${this.itemNoun()}?`,
+      message: `„${attachment.fileName}” (${kind}) zostanie usunięty. Tej operacji nie da się cofnąć.`,
+      confirmLabel: 'Usuń',
+      destructive: true
+    }).pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.delete(attachment, index));
+  }
 
+  private delete(attachment: ApplicationAttachment, index: number): void {
+    if (this.deletingId() !== null) return;
     this.deletingId.set(attachment.id);
     this.error.set(null);
     this.deleteRequest(attachment)
