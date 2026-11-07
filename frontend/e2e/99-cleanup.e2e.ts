@@ -14,6 +14,9 @@ test.describe('sprzątanie po testach E2E', () => {
       await page.getByRole('tab', { name: 'Oferty' }).click();
       await page.getByRole('textbox', { name: 'Szukaj' }).fill('E2E Frontend Developer');
       await expect(page.getByRole('status').filter({ hasText: /Znaleziono: \d+/ })).toBeVisible();
+      // wyszukiwarka ma debounce – lista przerysowuje się po chwili, a kliknięcie w odłączony przycisk kończyło się timeoutem
+      await page.waitForTimeout(800);
+      await page.waitForLoadState('networkidle');
       let guard = 0;
       while (guard++ < 10) {
         const delete_ = page.getByRole('button', { name: /^Usuń ofertę: E2E Frontend Developer/ }).first();
