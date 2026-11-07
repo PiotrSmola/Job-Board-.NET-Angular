@@ -1,12 +1,24 @@
-// App-level styles
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
 
-// Miejsce na baner „Potwierdź adres e-mail” – stała wysokość (zmienna dziedziczona przez komponent banera)
-// i to samo tło, więc doładowanie banera niczego nie przesuwa
+.app-header {
+  background: var(--color-topbar);
+}
+
+.app-main {
+  flex: 1 0 auto;
+  display: block;
+}
+
+// Miejsce na baner „Potwierdź adres e-mail” – minimalna wysokość (zmienna dziedziczona przez komponent banera)
+// i to samo tło, więc doładowanie banera niczego nie przesuwa; dłuższy tekst może je powiększyć (reflow, WCAG 1.4.10)
 .email-banner-slot {
   --email-banner-height: 56px;
-  height: var(--email-banner-height);
-  background: #2b2410;
-  box-sizing: border-box;
+  min-height: var(--email-banner-height);
+  background: var(--color-warning-bg);
 }
 
 @media (max-width: 600px) {

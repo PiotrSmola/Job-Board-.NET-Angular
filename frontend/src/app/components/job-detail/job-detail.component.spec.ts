@@ -13,6 +13,7 @@ import { ApplicationAttachment, ApplicationStatus, AttachmentKind, AttachmentUpl
 import { SavedJobsService } from '../../services/saved-jobs.service';
 import { AccountService } from '../../services/account.service';
 import { ProfileDocument } from '../../models/account.model';
+import { PageTitleService } from '../../services/page-title.service';
 
 const JOB: JobOffer = {
   id: 5, title: 'Angular Developer', company: 'Acme', companyId: 1, description: 'Opis', salaryMin: 1000, salaryMax: 2000,
@@ -141,6 +142,22 @@ describe('JobDetailComponent', () => {
       expect(root().querySelector('.skills-section')).toBeNull();
       expect(root().textContent).not.toContain('Poziom');
       expect(root().textContent).not.toContain('Typ umowy');
+    });
+  });
+
+  describe('page title', () => {
+    it('uses the offer title once the offer is loaded', () => {
+      const set = vi.spyOn(TestBed.inject(PageTitleService), 'set').mockImplementation(() => undefined);
+      create();
+
+      expect(set).toHaveBeenCalledExactlyOnceWith(JOB.title);
+    });
+
+    it('reports an unavailable offer when loading fails', () => {
+      const set = vi.spyOn(TestBed.inject(PageTitleService), 'set').mockImplementation(() => undefined);
+      create(throwError(() => httpError(404, { message: 'Job offer not found' })));
+
+      expect(set).toHaveBeenCalledExactlyOnceWith('Oferta niedostępna');
     });
   });
 

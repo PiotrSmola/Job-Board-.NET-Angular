@@ -16,6 +16,7 @@ import { JobParams } from '../../models/job-params.model';
 import { PaginatedResult } from '../../models/pagination.model';
 import { CompanyService } from '../../services/company.service';
 import { JobService } from '../../services/job.service';
+import { PageTitleService } from '../../services/page-title.service';
 import { getApiErrorMessage } from '../../utils/http-errors';
 import { safeWebsiteUrl } from '../../utils/company-form';
 import { getCompanyStatusPresentation } from '../../utils/status-labels';
@@ -51,6 +52,7 @@ export class CompanyDetailComponent {
   private route = inject(ActivatedRoute);
   private companyService = inject(CompanyService);
   private jobService = inject(JobService);
+  private pageTitle = inject(PageTitleService);
 
   readonly company = signal<Company | null>(null);
   readonly loading = signal(false);
@@ -119,12 +121,14 @@ export class CompanyDetailComponent {
   private onCompanyLoaded(company: Company): void {
     this.company.set(company);
     this.loading.set(false);
+    this.pageTitle.set(company.name);
     this.jobsLoad$.next(true);
   }
 
   private onCompanyError(error: unknown): void {
     console.error('Error loading company:', error);
     this.loading.set(false);
+    this.pageTitle.set('Firma niedostępna');
     if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 400)) {
       this.notFound.set(true);
     } else {

@@ -17,6 +17,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { JobService } from '../../services/job.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
+import { PageTitleService } from '../../services/page-title.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
 import { ApplicationAttachment, ApplicationStatus, AttachmentUploadItem, JobApplication } from '../../models/job-application.model';
 import { getApplicationStatusPresentation, getJobState, StatusPresentation } from '../../utils/status-labels';
@@ -139,6 +140,7 @@ export class JobDetailComponent implements OnInit {
   private cdr = inject(ChangeDetectorRef);
   private snackBar = inject(MatSnackBar);
   private destroyRef = inject(DestroyRef);
+  private pageTitle = inject(PageTitleService);
 
   job: JobOffer | null = null;
   loading = false;
@@ -218,11 +220,13 @@ export class JobDetailComponent implements OnInit {
       next: (job) => {
         this.job = job;
         this.loading = false;
+        this.pageTitle.set(job.title);
         this.cdr.detectChanges();
       },
       error: (err) => {
         console.error('Error loading job:', err);
         this.loading = false;
+        this.pageTitle.set('Oferta niedostępna');
         this.cdr.detectChanges();
         if (!isHandledByInterceptor(err)) {
           this.notify(getApiErrorMessage(err, 'Nie udało się wczytać oferty'));

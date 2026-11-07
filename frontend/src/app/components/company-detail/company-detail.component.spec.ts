@@ -6,6 +6,7 @@ import { Observable, Subject, of, throwError } from 'rxjs';
 import { CompanyDetailComponent } from './company-detail.component';
 import { CompanyService } from '../../services/company.service';
 import { JobService } from '../../services/job.service';
+import { PageTitleService } from '../../services/page-title.service';
 import { Company, CompanyStatus } from '../../models/company.model';
 import { JobOffer, WorkType } from '../../models/job-offer.model';
 import { JobParams } from '../../models/job-params.model';
@@ -61,6 +62,23 @@ describe('CompanyDetailComponent', () => {
   });
 
   afterEach(() => vi.restoreAllMocks());
+
+  describe('page title', () => {
+    it('uses the company name once the profile is loaded', async () => {
+      const set = vi.spyOn(TestBed.inject(PageTitleService), 'set').mockImplementation(() => undefined);
+      await open(5);
+
+      expect(set).toHaveBeenCalledExactlyOnceWith('Acme');
+    });
+
+    it('reports an unavailable company when loading fails', async () => {
+      const set = vi.spyOn(TestBed.inject(PageTitleService), 'set').mockImplementation(() => undefined);
+      getCompany.mockReturnValue(throwError(() => httpError(404)));
+      await open(5);
+
+      expect(set).toHaveBeenCalledExactlyOnceWith('Firma niedostępna');
+    });
+  });
 
   describe('profile', () => {
     it('loads the company by the id from the route', async () => {

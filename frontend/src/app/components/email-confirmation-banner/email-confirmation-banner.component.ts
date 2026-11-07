@@ -10,7 +10,7 @@ const ALREADY_CONFIRMED_MESSAGE = 'Email is already confirmed';
 
 /**
  * Baner „Potwierdź adres e-mail” dla zalogowanych z `emailConfirmed=false` (nie blokuje korzystania z aplikacji).
- * Jest w powłoce aplikacji (paczka startowa), więc ma minimum zależności; stała wysokość – bez przesunięć układu (CLS).
+ * Ładowany leniwie do miejsca o minimalnej wysokości w powłoce – bez przesunięć układu (CLS), a dłuższy tekst się zawija.
  * Wynik wysyłki ogłasza stały region `role="status"`; trwające żądanie jest przerywane przy zniszczeniu.
  */
 @Component({
@@ -33,15 +33,16 @@ const ALREADY_CONFIRMED_MESSAGE = 'Email is already confirmed';
   `,
   styles: [`
     :host { display: block; }
-    /* stała wysokość (zmienna z .email-banner-slot w app.scss) – zawijany tekst nie zmienia układu */
-    .email-banner { box-sizing: border-box; height: var(--email-banner-height, 56px); display: flex; align-items: center;
-      gap: 12px; padding: 0 24px; background: #2b2410; border-bottom: 1px solid #ffb74d; color: #fff3e0; overflow: hidden; }
-    .icon { color: #ffb74d; flex-shrink: 0; }
-    .text { flex: 1; min-width: 0; margin: 0; font-size: 0.9rem; line-height: 1.3;
-      display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    /* minimalna wysokość (zmienna z .email-banner-slot w app.scss); dłuższy tekst zawija się bez obcinania (WCAG 1.4.10) */
+    .email-banner { min-height: var(--email-banner-height, 56px); display: flex; flex-wrap: wrap; align-items: center;
+      gap: 8px 16px; padding: 10px var(--page-gutter, 24px); background: var(--color-warning-bg, #2a2417);
+      color: var(--color-warning-text, #f3dfb5); }
+    .icon { color: var(--color-warning-icon, #e3b15a); flex-shrink: 0; }
+    .text { flex: 1 1 280px; min-width: 0; margin: 0; line-height: 1.4; }
+    .text strong { font-weight: 500; }
     .details { margin-left: 4px; }
-    .resend { flex-shrink: 0; }
-    @media (max-width: 600px) { .email-banner { padding: 0 12px; gap: 8px; } .icon { display: none; } }
+    .resend { flex-shrink: 0; --mat-button-outlined-label-text-color: var(--color-warning-text, #f3dfb5); }
+    @media (max-width: 600px) { .icon { display: none; } }
   `]
 })
 export class EmailConfirmationBannerComponent {
