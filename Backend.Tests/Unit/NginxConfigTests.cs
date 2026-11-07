@@ -5,7 +5,7 @@ using Backend.Tests.Infrastructure;
 
 namespace Backend.Tests.Unit;
 
-// frontend/docker/nginx.conf: 26 MB tylko dla uploadu załączników aplikacji i dokumentów profilu, reszta API z limitem
+// frontend/docker/nginx.conf: 26 MB tylko dla uploadu załączników aplikacji, dokumentów profilu i mediów firmy, reszta API z limitem
 // 1 MB (jak backend); nagłówki bezpieczeństwa (CSP), kompresja i Cache-Control na poziomie server
 public class NginxConfigTests
 {
@@ -63,8 +63,32 @@ public class NginxConfigTests
         Assert.Contains("proxy_pass http://backend:8080;", location.Body);
     }
 
+    // POST zdjęć firmy (do 20 plików po 5 MB w limicie żądania 26 MB) i PUT obrazu tła ofert
+    [Theory]
+    [InlineData("/api/employer/company/photos")]
+    [InlineData("/api/Employer/Company/Photos")]
+    [InlineData("/api/employer/company/photos/")]
+    [InlineData("/api/employer/company/offer-background")]
+    [InlineData("/api/employer/company/offer-background/")]
+    public void CompanyMediaUpload_Allows26Megabytes(string path)
+    {
+        var location = Match(ReadLocations(), path);
+
+        Assert.Equal("26m", BodySizeLimit(location));
+        Assert.Equal(AttachmentFiles.MaxRequestSize, 26 * 1024 * 1024);
+        Assert.Contains("proxy_pass http://backend:8080;", location.Body);
+    }
+
     [Theory]
     [InlineData("/api/auth/login")]
+    [InlineData("/api/employer/company")]
+    [InlineData("/api/employer/company/photos/order")]
+    [InlineData("/api/employer/company/photos/5")]
+    [InlineData("/api/employer/company/photosx")]
+    [InlineData("/api/employer/company/offer-backgroundx")]
+    [InlineData("/api/companies/5/photos")]
+    [InlineData("/api/admin/companies/5/photos/2")]
+    [InlineData("/api/v2/employer/company/photos")]
     [InlineData("/api/account/documents/5")]
     [InlineData("/api/account/documentsx")]
     [InlineData("/api/account/documents/5/download")]
@@ -261,6 +285,9 @@ public class NginxConfigTests
     [Theory]
     [InlineData("/api/jobs")]
     [InlineData("/api/jobapplications/1/attachments/2")]
+    // obrazy firm: Cache-Control (publiczny tylko dla firm zatwierdzonych) ustawia backend
+    [InlineData("/api/companies/5/photos/2/file")]
+    [InlineData("/api/companies/5/offer-background/file")]
     [InlineData("/api/files/report-ABCD1234.js")]
     public void ApiResponses_GetNoCacheControlFromNginx(string uri)
     {
