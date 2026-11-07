@@ -22,14 +22,14 @@ export const FOCUS_OPTIONS: readonly { value: BackgroundFocus; label: string; po
 ];
 
 /**
- * Maska nagłówka oferty dla przyciemnienia `dim` (55–95 %): kolor tła strony o kryciu dim → dim + 12 → pełny.
- * Ten sam przebieg co na stronie oferty (makieta: 70 % → 82 % → #121417).
+ * Maska nagłówka oferty dla przyciemnienia `dim` (55–95 %): kolor tła strony o kryciu dim → 40 % drogi do pełnego → pełny.
+ * Ten sam przebieg co nagłówek na stronie oferty (job-detail `heroStyle`; makieta: 70 % → 82 % → tło strony).
  */
 export function offerHeroMask(dim: number): string {
   const top = Math.min(100, Math.max(0, dim));
-  const middle = Math.min(100, top + 12);
+  const middle = Math.round(top + (100 - top) * 0.4);
   return `linear-gradient(180deg, color-mix(in srgb, var(--color-bg) ${top}%, transparent) 0%, ` +
-    `color-mix(in srgb, var(--color-bg) ${middle}%, transparent) 60%, var(--color-bg) 100%)`;
+    `color-mix(in srgb, var(--color-bg) ${middle}%, transparent) 55%, var(--color-bg) 100%)`;
 }
 
 /**

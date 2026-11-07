@@ -67,12 +67,13 @@ describe('OfferBackgroundSettingsComponent', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it('offerHeroMask darkens from dim to dim + 12 and ends with the page background', () => {
+  it('offerHeroMask matches the offer hero: dim, 40% of the way to opaque, then the page background', () => {
     const mask = offerHeroMask(75);
     expect(mask).toContain('var(--color-bg) 75%');
-    expect(mask).toContain('var(--color-bg) 87%');
+    expect(mask).toContain('var(--color-bg) 85%');
+    expect(offerHeroMask(70)).toContain('var(--color-bg) 82%');
     expect(mask).toContain('var(--color-bg) 100%');
-    expect(offerHeroMask(95)).toContain('var(--color-bg) 100%, transparent) 60%');
+    expect(offerHeroMask(95)).toContain('var(--color-bg) 97%, transparent) 55%');
   });
 
   it('shows the live preview with the saved settings, image loaded with the token', () => {
