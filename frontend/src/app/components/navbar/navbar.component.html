@@ -1,70 +1,89 @@
-<mat-toolbar color="primary">
-  <span class="logo" routerLink="/jobs">Job Board</span>
+<div class="bar">
+  <a class="logo" routerLink="/jobs">Job Board</a>
 
-  <span class="spacer"></span>
-
-  <nav class="nav-links">
-    <a mat-button routerLink="/jobs" routerLinkActive="active">
-      <mat-icon>work</mat-icon>
-      Oferty
-    </a>
-
-    <a mat-button routerLink="/companies" routerLinkActive="active">
-      <mat-icon>business</mat-icon>
-      Firmy
-    </a>
-
-    @if (authService.currentUser()) {
-      @if (authService.isAdmin()) {
-        <a mat-button routerLink="/admin" routerLinkActive="active">
-          <mat-icon>admin_panel_settings</mat-icon>
-          Panel Admina
+  <nav class="nav" aria-label="Główna nawigacja">
+    <ul class="nav-links">
+      <li>
+        <a class="nav-link" routerLink="/jobs" routerLinkActive="active" ariaCurrentWhenActive="page">
+          <mat-icon aria-hidden="true">work_outline</mat-icon>
+          <span class="nav-label">Oferty</span>
         </a>
-      } @else if (authService.isEmployer()) {
-        <a mat-button routerLink="/employer" routerLinkActive="active">
-          <mat-icon>badge</mat-icon>
-          Panel pracodawcy
+      </li>
+      <li>
+        <a class="nav-link" routerLink="/companies" routerLinkActive="active" ariaCurrentWhenActive="page">
+          <mat-icon aria-hidden="true">business</mat-icon>
+          <span class="nav-label">Firmy</span>
         </a>
-      } @else {
-        <a mat-button routerLink="/my-applications" routerLinkActive="active">
-          <mat-icon>assignment</mat-icon>
-          Moje Aplikacje
-        </a>
+      </li>
+
+      @if (user()) {
+        @if (authService.isAdmin()) {
+          <li>
+            <a class="nav-link" routerLink="/admin" routerLinkActive="active" ariaCurrentWhenActive="page">
+              <mat-icon aria-hidden="true">admin_panel_settings</mat-icon>
+              <span class="nav-label">Panel admina</span>
+            </a>
+          </li>
+        } @else if (authService.isEmployer()) {
+          <li>
+            <a class="nav-link" routerLink="/employer" routerLinkActive="active" ariaCurrentWhenActive="page">
+              <mat-icon aria-hidden="true">badge</mat-icon>
+              <span class="nav-label">Panel pracodawcy</span>
+            </a>
+          </li>
+        } @else {
+          <li>
+            <a class="nav-link" routerLink="/my-applications" routerLinkActive="active" ariaCurrentWhenActive="page">
+              <mat-icon aria-hidden="true">assignment</mat-icon>
+              <span class="nav-label">Moje aplikacje</span>
+            </a>
+          </li>
+          <li>
+            <a class="nav-link" routerLink="/saved-jobs" routerLinkActive="active" ariaCurrentWhenActive="page">
+              <mat-icon aria-hidden="true">favorite_border</mat-icon>
+              <span class="nav-label">Zapisane</span>
+            </a>
+          </li>
+        }
       }
+    </ul>
 
-      <button mat-button [matMenuTriggerFor]="userMenu">
-        <mat-icon>account_circle</mat-icon>
-        {{ authService.currentUser()?.firstName }}
+    @if (user(); as current) {
+      <button type="button" class="account-button" [matMenuTriggerFor]="userMenu"
+        [attr.aria-label]="'Menu konta: ' + fullName()">
+        <span class="avatar" aria-hidden="true">{{ initials() }}</span>
+        <span class="account-name" aria-hidden="true">{{ current.firstName }}</span>
+        <mat-icon class="chevron" aria-hidden="true">expand_more</mat-icon>
       </button>
-      <mat-menu #userMenu="matMenu">
-        <button mat-menu-item disabled>
-          <mat-icon>email</mat-icon>
-          {{ authService.currentUser()?.email }}
+      <mat-menu #userMenu="matMenu" xPosition="before">
+        <button mat-menu-item disabled class="menu-email">
+          <mat-icon aria-hidden="true">email</mat-icon>
+          {{ current.email }}
         </button>
         <a mat-menu-item routerLink="/account">
           <mat-icon aria-hidden="true">manage_accounts</mat-icon>
           Moje konto
         </a>
-        @if (!authService.isAdmin() && !authService.isEmployer()) {
-          <a mat-menu-item routerLink="/saved-jobs">
-            <mat-icon aria-hidden="true">favorite</mat-icon>
-            Zapisane oferty
-          </a>
-        }
-        <button mat-menu-item (click)="logout()">
-          <mat-icon>logout</mat-icon>
+        <button mat-menu-item type="button" (click)="logout()">
+          <mat-icon aria-hidden="true">logout</mat-icon>
           Wyloguj
         </button>
       </mat-menu>
     } @else {
-      <a mat-button routerLink="/login" routerLinkActive="active">
-        <mat-icon>login</mat-icon>
-        Logowanie
-      </a>
-      <a mat-button routerLink="/register" routerLinkActive="active">
-        <mat-icon>person_add</mat-icon>
-        Rejestracja
-      </a>
+      <ul class="nav-links guest-links">
+        <li>
+          <a class="nav-link" routerLink="/login" routerLinkActive="active" ariaCurrentWhenActive="page">
+            <mat-icon aria-hidden="true">login</mat-icon>
+            <span class="nav-label">Logowanie</span>
+          </a>
+        </li>
+        <li>
+          <a class="nav-link" routerLink="/register" routerLinkActive="active" ariaCurrentWhenActive="page">
+            <mat-icon aria-hidden="true">person_add</mat-icon>
+            <span class="nav-label">Rejestracja</span>
+          </a>
+        </li>
+      </ul>
     }
   </nav>
-</mat-toolbar>
+</div>
