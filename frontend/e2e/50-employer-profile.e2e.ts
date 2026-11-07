@@ -221,7 +221,8 @@ test.describe('pracodawca – profil firmy: tło ofert', () => {
       const hero = pub.locator('section.hero');
       await expect(hero).toHaveClass(/has-image/);
       await expect(hero).toHaveAttribute('style', /url\(/);
-      await expect(hero).toHaveAttribute('style', /--hero-dim/);
+      // maska ze wspólnej funkcji offerHeroMask: przyciemnienie 90 → efektywne krycie 93 % (zakres 82–95 % – kontrast WCAG)
+      await expect(hero.locator('.hero-mask')).toHaveAttribute('style', /linear-gradient.*93%/);
       await scanA11y(pub, 'oferta z tłem firmy');
     } finally {
       await anon.close();
