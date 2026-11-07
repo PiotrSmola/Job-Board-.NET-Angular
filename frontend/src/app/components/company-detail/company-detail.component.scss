@@ -1,114 +1,166 @@
-.company-detail-container {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 32px 24px;
-}
-
 .back {
-  margin-bottom: 16px;
-}
+  margin: 0 0 24px;
 
-.company-card {
-  padding: 16px;
-
-  mat-icon[mat-card-avatar] {
-    color: var(--primary-color);
-    font-size: 40px;
+  a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+    text-decoration: none;
   }
 
-  mat-card-title {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px;
-    font-size: 2rem;
-    line-height: 1.3;
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.profile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 40px;
+}
+
+.main {
+  flex: 999 1 560px;
+  min-width: 0;
+}
+
+.title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+
+  h1 {
+    margin: 0;
+    overflow-wrap: anywhere;
   }
 }
 
 .meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  margin: 16px 0;
+  margin: 4px 0 20px;
+  color: var(--color-text-secondary);
+}
 
-  .meta-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--text-secondary);
-    word-break: break-all;
-
-    mat-icon {
-      color: var(--primary-color);
-    }
-  }
-
-  a.meta-item {
-    color: var(--primary-color);
-  }
+.website-link {
+  overflow-wrap: anywhere;
 }
 
 .description {
-  margin: 16px 0 0;
-  color: var(--text-primary);
-  line-height: 1.7;
+  max-width: 640px;
+  margin: 0 0 28px;
+  color: var(--color-text-prose);
   white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
-.jobs-section {
-  margin-top: 32px;
+h2 {
+  margin: 0 0 12px;
+}
 
-  h2 {
-    margin-bottom: 16px;
-  }
+.photos {
+  margin-bottom: 36px;
+}
+
+// Wysokość jak siatka galerii (2 rzędy po 120 px + odstęp)
+.gallery-skeleton {
+  height: 248px;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.job-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .job-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
-  padding: 16px 20px;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  background-color: var(--surface-color);
-  color: inherit;
-  transition: border-color 0.2s;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  padding: 14px 0;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+}
 
-  &:hover {
-    border-color: var(--primary-color);
+.job-title {
+  flex: 1 1 260px;
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.job-meta {
+  flex: 0 1 260px;
+  color: var(--color-text-secondary);
+}
+
+.job-salary {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.empty {
+  padding: 14px 0;
+}
+
+.jobs-skeleton {
+  min-height: 160px;
+}
+
+mat-paginator {
+  margin-top: 16px;
+}
+
+.facts {
+  flex: 1 1 260px;
+  max-width: 320px;
+
+  dl {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin: 0;
   }
 
-  .job-title {
-    display: block;
-    font-weight: 600;
-    font-size: 1.1rem;
+  dt {
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
   }
 
-  .job-meta {
-    color: var(--text-secondary);
-    font-size: 0.9rem;
+  dd {
+    margin: 2px 0 0;
   }
+}
+
+.profile-skeleton {
+  min-height: 480px;
 }
 
 .state {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
-  padding: 64px 24px;
-  color: var(--text-secondary);
-  text-align: center;
 
-  &.small {
-    padding: 24px;
+  h1,
+  p {
+    margin: 0;
   }
+}
 
-  mat-icon {
-    font-size: 48px;
-    width: 48px;
-    height: 48px;
+@media (max-width: 900px) {
+  .facts {
+    max-width: none;
+  }
+}
+
+// Galeria w dwóch kolumnach (duże zdjęcie + 2 rzędy małych po 100 px)
+@media (max-width: 600px) {
+  .gallery-skeleton {
+    height: 424px;
   }
 }

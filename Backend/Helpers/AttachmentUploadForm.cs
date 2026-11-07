@@ -54,36 +54,11 @@ public static class AttachmentUploadForm
     public static async Task<AttachmentUploadFormResult> ReadAsync(HttpContext context, AttachmentLimitMessages messages,
         CancellationToken cancellationToken)
     {
-        var request = context.Request;
-
-        // limit całego żądania (26 MB) ustawia RequestBodyLimitMiddleware z atrybutu [RequestSizeLimit] akcji - także
-        // niezależnie od serwera (strumień z limitem); przekroczenie w trakcie odczytu to 413 zamieniane niżej na
-        // komunikat o łącznym rozmiarze
-        if (request.ContentLength > AttachmentFiles.MaxRequestSize)
+        var (form, formError) = await ReadFormAsync(context, Options, messages.TotalTooLarge, AttachmentFiles.NoFileMessage,
+            cancellationToken);
+        if (form == null)
         {
-            return AttachmentUploadFormResult.Failed(messages.TotalTooLarge);
-        }
-
-        if (!request.HasFormContentType)
-        {
-            return AttachmentUploadFormResult.Failed(AttachmentFiles.NoFileMessage);
-        }
-
-        IFormCollection form;
-        try
-        {
-            context.Features.Set<IFormFeature>(new FormFeature(request, Options));
-            form = await request.ReadFormAsync(cancellationToken);
-        }
-        catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
-        {
-            return AttachmentUploadFormResult.Failed(messages.TotalTooLarge);
-        }
-        catch (Exception ex) when (ex is InvalidDataException or IOException)
-        {
-            // uszkodzony albo ucięty multipart, przekroczony limit części lub bufora (BadHttpRequestException
-            // jest IOException)
-            return AttachmentUploadFormResult.Failed(AttachmentFiles.InvalidFormMessage);
+            return AttachmentUploadFormResult.Failed(formError!);
         }
 
         var files = form.Files;
@@ -118,6 +93,42 @@ public static class AttachmentUploadForm
         }
 
         return new AttachmentUploadFormResult(items, null);
+    }
+
+    // Odczyt formularza multipart z limitami options (wspólny dla załączników, dokumentów profilu i obrazów firm):
+    // formularz albo komunikat błędu. Limit całego żądania (26 MB) ustawia RequestBodyLimitMiddleware z atrybutu
+    // [RequestSizeLimit] akcji - także niezależnie od serwera (strumień z limitem); przekroczenie w trakcie odczytu to
+    // 413 zamieniane na komunikat tooLargeMessage; żądanie bez formularza - noFileMessage.
+    internal static async Task<(IFormCollection? Form, string? Error)> ReadFormAsync(HttpContext context, FormOptions options,
+        string tooLargeMessage, string noFileMessage, CancellationToken cancellationToken)
+    {
+        var request = context.Request;
+
+        if (request.ContentLength > AttachmentFiles.MaxRequestSize)
+        {
+            return (null, tooLargeMessage);
+        }
+
+        if (!request.HasFormContentType)
+        {
+            return (null, noFileMessage);
+        }
+
+        try
+        {
+            context.Features.Set<IFormFeature>(new FormFeature(request, options));
+            return (await request.ReadFormAsync(cancellationToken), null);
+        }
+        catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            return (null, tooLargeMessage);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException)
+        {
+            // uszkodzony albo ucięty multipart, przekroczony limit części lub bufora (BadHttpRequestException
+            // jest IOException)
+            return (null, AttachmentFiles.InvalidFormMessage);
+        }
     }
 
     // Rozmiar i typ pliku (po zawartości): wykryty typ albo komunikat błędu

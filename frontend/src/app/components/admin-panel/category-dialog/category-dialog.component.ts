@@ -36,7 +36,7 @@ export const CATEGORY_SLUG_PATTERN = /^[a-z0-9-]+$/;
       <form [formGroup]="form" class="category-form" (ngSubmit)="onSubmit()" id="category-form">
         <mat-form-field appearance="outline">
           <mat-label>Nazwa kategorii</mat-label>
-          <input matInput formControlName="name" [maxlength]="nameMax" required>
+          <input matInput formControlName="name" [maxlength]="nameMax" required cdkFocusInitial>
           @if (form.controls.name.invalid && form.controls.name.touched) {
             <mat-error>Nazwa jest wymagana (maks. {{ nameMax }} znaków)</mat-error>
           }
@@ -63,7 +63,7 @@ export const CATEGORY_SLUG_PATTERN = /^[a-z0-9-]+$/;
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button type="button" mat-dialog-close [disabled]="submitting()">Anuluj</button>
-      <button mat-raised-button color="primary" type="submit" form="category-form" [disabled]="form.invalid || submitting()">
+      <button mat-flat-button type="submit" class="submit-button" form="category-form" [disabled]="form.invalid || submitting()">
         @if (submitting()) {
           <mat-spinner diameter="20" aria-label="Zapisywanie"></mat-spinner>
         } @else {
@@ -126,14 +126,14 @@ export class CategoryDialogComponent {
         console.error('Error saving category:', error);
         this.submitting.set(false);
         if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Błąd podczas zapisywania kategorii'));
+          this.notify(getApiErrorMessage(error, 'Błąd podczas zapisywania kategorii'), 'assertive');
         }
       }
     });
   }
 
-  private notify(message: string): void {
-    this.snackBar.open(message, 'OK', { duration: 5000 });
+  private notify(message: string, politeness: 'polite' | 'assertive' = 'polite'): void {
+    this.snackBar.open(message, 'OK', { duration: 5000, politeness });
   }
 }
 

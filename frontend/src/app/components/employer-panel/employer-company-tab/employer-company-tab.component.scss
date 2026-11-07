@@ -1,72 +1,62 @@
 .company-tab {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
   padding-top: 24px;
 }
 
+// Status weryfikacji: spokojny pasek (bez ramki); ikona w kolorze statusu, tekst w kolorze zwykłym
 .status-banner {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
-  gap: 16px;
-  padding: 16px 20px;
-  border: 1px solid currentColor;
-  border-radius: 12px;
-  background-color: color-mix(in srgb, currentColor 8%, transparent);
+  gap: 12px 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
 
-  &.tone-pending { color: #ffb74d; }
-  &.tone-approved { color: var(--success-color); }
-  &.tone-rejected { color: var(--error-color); }
+  &.tone-pending,
+  &.tone-rejected {
+    background: var(--color-warning-bg);
+    color: var(--color-warning-text);
+  }
+
+  &.tone-pending mat-icon { color: var(--color-warning-icon); }
+  &.tone-rejected mat-icon { color: var(--status-rejected); }
+  &.tone-approved mat-icon { color: var(--status-hired); }
 
   .banner-content {
     display: flex;
-    flex: 1;
+    flex: 1 1 260px;
     flex-direction: column;
-    gap: 4px;
-
-    span {
-      color: var(--text-primary);
-    }
-
-    .reason {
-      white-space: pre-line;
-      font-weight: 500;
-    }
-
-    .reviewed {
-      color: var(--text-secondary);
-      font-size: 0.85rem;
-    }
+    gap: 2px;
+    min-width: 0;
   }
+
+  .reason {
+    font-weight: 500;
+    white-space: pre-line;
+  }
+
+  .reviewed { font-size: var(--font-size-sm); opacity: .85; }
 }
 
-.form-card {
-  padding: 24px;
-}
+.status-banner.tone-approved .reviewed { color: var(--color-text-secondary); opacity: 1; }
 
 .company-form {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-width: 680px;
 
-  mat-form-field {
-    width: 100%;
-  }
+  mat-form-field { width: 100%; }
 
   .row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-  }
-
-  .actions {
     display: flex;
-    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0 16px;
   }
-}
 
-@media (max-width: 768px) {
-  .company-form .row {
-    grid-template-columns: 1fr;
-  }
+  .name-field { flex: 2 1 260px; }
+  .city-field { flex: 1 1 180px; }
 }

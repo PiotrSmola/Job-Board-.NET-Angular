@@ -1,8 +1,13 @@
-<app-navbar></app-navbar>
-@if (authService.emailConfirmationPending()) {
-  <!-- miejsce o stałej wysokości od pierwszego renderu – doładowany leniwie baner nie przesuwa treści (CLS) -->
-  <div class="email-banner-slot">
-    <ng-container #emailBanner />
-  </div>
-}
-<router-outlet></router-outlet>
+<a class="skip-link" href="#main" (click)="skipToMain($event)">Przejdź do treści</a>
+<header class="app-header">
+  <app-navbar />
+  @if (authService.emailConfirmationPending()) {
+    <!-- miejsce o minimalnej wysokości od pierwszego renderu – doładowany leniwie baner nie przesuwa treści (CLS) -->
+    <div class="email-banner-slot">
+      <ng-container #emailBanner />
+    </div>
+  }
+</header>
+<main id="main" class="app-main" tabindex="-1" #main>
+  <router-outlet />
+</main>

@@ -5,9 +5,14 @@
   <title>Job Board</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Job Board – oferty pracy od zweryfikowanych firm, aplikowanie online i panel pracodawcy.">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#16191d">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <!-- fonty serwowane lokalnie (public/fonts); wstępnie ładujemy tylko najczęstsze kroje tekstu -->
+  <link rel="preload" href="/fonts/roboto-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/roboto-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
 </head>
 <body>
   <app-root></app-root>

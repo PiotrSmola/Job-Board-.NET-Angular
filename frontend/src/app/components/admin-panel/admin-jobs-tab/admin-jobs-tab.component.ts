@@ -1,11 +1,10 @@
-import { Component, computed, inject, input, signal, viewChild, ChangeDetectionStrategy } from '@angular/core';
+import { Component, DestroyRef, computed, inject, input, signal, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { CommonModule } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatTableModule } from '@angular/material/table';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -14,21 +13,24 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { providePolishPaginatorIntl } from '../../../services/polish-paginator-intl';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { Subject, catchError, debounceTime, filter, map, of, switchMap, tap } from 'rxjs';
 import { JobService } from '../../../services/job.service';
+import { ConfirmService } from '../../../services/confirm.service';
 import { JobOffer, JobOfferStatus, WorkType } from '../../../models/job-offer.model';
 import { JobOrderBy, JobState, ManageJobParams } from '../../../models/job-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
 import { Company, CompanyStatus } from '../../../models/company.model';
 import { PanelMode } from '../../../models/panel-mode.model';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
+import { formatJobSalary, getContractTypeLabels, getSeniorityLabel, offersNoun } from '../../../utils/job-labels';
 import { JOB_STATE_OPTIONS, getJobState, getJobStatePresentation } from '../../../utils/status-labels';
 import { StatusChipComponent } from '../../shared/status-chip.component';
 import { CompanyAutocompleteComponent, CompanyOption } from '../../shared/company-autocomplete.component';
 import { JobDialogComponent, JobDialogData } from '../job-dialog/job-dialog.component';
 
-const ALL_COLUMNS = ['id', 'title', 'status', 'company', 'location', 'workType', 'salary', 'createdAt', 'actions'];
+const ALL_COLUMNS = ['title', 'company', 'location', 'status', 'salary', 'createdAt', 'actions'];
 
 // Kolumny sortowane po stronie serwera -> wartości orderBy z API
 const SORT_ORDER: Record<string, { asc: JobOrderBy; desc: JobOrderBy }> = {
@@ -41,16 +43,17 @@ const SORT_ORDER: Record<string, { asc: JobOrderBy; desc: JobOrderBy }> = {
 
 const DEFAULT_SORT: Sort = { active: 'createdAt', direction: 'desc' };
 
+/** Tabela ofert: admin – wszystkie oferty (z filtrem firmy), pracodawca – oferty własnej firmy. */
 @Component({
   selector: 'app-admin-jobs-tab',
+  providers: [providePolishPaginatorIntl()],
   standalone: true,
   imports: [
-    CommonModule,
+    DatePipe,
     FormsModule,
     MatTableModule,
     MatButtonModule,
     MatIconModule,
-    MatCardModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
     MatFormFieldModule,
@@ -62,13 +65,15 @@ const DEFAULT_SORT: Sort = { active: 'createdAt', direction: 'desc' };
     CompanyAutocompleteComponent
   ],
   templateUrl: './admin-jobs-tab.component.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './admin-jobs-tab.component.scss'
 })
 export class AdminJobsTabComponent {
   private jobService = inject(JobService);
   private dialog = inject(MatDialog);
   private snackBar = inject(MatSnackBar);
+  private confirm = inject(ConfirmService);
+  private destroyRef = inject(DestroyRef);
 
   /** admin – wszystkie oferty z kolumną i filtrem firmy; employer – oferty własnej firmy. */
   readonly mode = input<PanelMode>('admin');
@@ -87,10 +92,12 @@ export class AdminJobsTabComponent {
   ];
   readonly stateOptions = JOB_STATE_OPTIONS;
   readonly JobOfferStatus = JobOfferStatus;
+  readonly offersNoun = offersNoun;
 
   readonly jobs = signal<JobOffer[]>([]);
   readonly totalItems = signal(0);
   readonly loading = signal(false);
+  readonly loadError = signal<string | null>(null);
   readonly deletingId = signal<number | null>(null);
   readonly statusChangingId = signal<number | null>(null);
 
@@ -122,12 +129,15 @@ export class AdminJobsTabComponent {
 
     // switchMap anuluje poprzednie żądanie – odpowiedzi nie nadpiszą się w złej kolejności
     this.load$.pipe(
-      tap(() => this.loading.set(true)),
+      tap(() => {
+        this.loading.set(true);
+        this.loadError.set(null);
+      }),
       switchMap(() => this.jobService.getManagedJobs(this.buildParams()).pipe(
         catchError(error => {
           console.error('Error loading jobs:', error);
           if (!isHandledByInterceptor(error)) {
-            alert('Błąd podczas ładowania ofert');
+            this.loadError.set(getApiErrorMessage(error, 'Błąd podczas ładowania ofert'));
           }
           return of(null);
         })
@@ -201,6 +211,17 @@ export class AdminJobsTabComponent {
     return getJobStatePresentation(job);
   }
 
+  /** Linia pod tytułem: „Senior · B2B · Zdalna”. */
+  metaLine(job: JobOffer): string {
+    return [getSeniorityLabel(job.seniority), ...getContractTypeLabels(job.contractTypes), this.getWorkTypeLabel(job.workType)]
+      .filter(Boolean)
+      .join(' · ');
+  }
+
+  salary(job: JobOffer): string {
+    return formatJobSalary(job);
+  }
+
   /** Szybkie akcje zależne od stanu: szkic → publikacja, aktywna/wygasła → zamknięcie, zamknięta → wznowienie. */
   quickActions(job: JobOffer): { status: JobOfferStatus; icon: string; label: string }[] {
     const actions = this.stateActions(job);
@@ -219,7 +240,7 @@ export class AdminJobsTabComponent {
 
   changeStatus(job: JobOffer, status: JobOfferStatus): void {
     this.statusChangingId.set(job.id);
-    this.jobService.updateJobStatus(job.id, status).subscribe({
+    this.jobService.updateJobStatus(job.id, status).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (updated) => {
         this.statusChangingId.set(null);
         this.notify(`Status oferty „${updated.title}”: ${getJobStatePresentation(updated).label}`);
@@ -230,7 +251,7 @@ export class AdminJobsTabComponent {
         console.error('Error changing job status:', error);
         this.statusChangingId.set(null);
         if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Błąd podczas zmiany statusu oferty'));
+          this.notify(getApiErrorMessage(error, 'Błąd podczas zmiany statusu oferty'), 'assertive');
         }
       }
     });
@@ -245,33 +266,18 @@ export class AdminJobsTabComponent {
   }
 
   deleteJob(id: number): void {
+    const title = this.jobs().find(job => job.id === id)?.title;
     // admin usuwa ofertę razem z aplikacjami; pracodawca tylko ofertę bez aplikacji (API zwraca 400 – trzeba ją zamknąć)
-    const question = this.isAdmin()
+    const message = this.isAdmin()
       ? 'Czy na pewno chcesz usunąć tę ofertę? Wszystkie aplikacje na to stanowisko również zostaną usunięte.'
       : 'Czy na pewno chcesz usunąć tę ofertę? Ofertę, na którą wpłynęły aplikacje, można tylko zamknąć.';
-    if (!confirm(question)) {
-      return;
-    }
 
-    this.deletingId.set(id);
-    this.jobService.deleteJob(id).subscribe({
-      next: () => {
-        this.deletingId.set(null);
-        // Usunięto ostatnią ofertę na stronie – cofamy się o stronę
-        if (this.jobs().length === 1 && this.pageIndex() > 0) {
-          this.pageIndex.update(index => index - 1);
-        }
-        this.reload();
-        alert('Oferta została usunięta');
-      },
-      error: (error) => {
-        console.error('Error deleting job:', error);
-        this.deletingId.set(null);
-        if (!isHandledByInterceptor(error)) {
-          alert(getApiErrorMessage(error, 'Błąd podczas usuwania oferty'));
-        }
-      }
-    });
+    this.confirm.confirm({
+      title: title ? `Usunąć ofertę „${title}”?` : 'Usunąć ofertę?',
+      message,
+      confirmLabel: 'Usuń',
+      destructive: true
+    }).pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.delete(id));
   }
 
   getWorkTypeLabel(workType: WorkType): string {
@@ -283,12 +289,26 @@ export class AdminJobsTabComponent {
     }
   }
 
-  formatSalary(salaryMin: number | null, salaryMax: number | null): string {
-    if (!salaryMin && !salaryMax) return 'Nieokreślona';
-    if (salaryMin && salaryMax) return `${salaryMin} - ${salaryMax} PLN`;
-    if (salaryMin) return `Od ${salaryMin} PLN`;
-    if (salaryMax) return `Do ${salaryMax} PLN`;
-    return 'Nieokreślona';
+  private delete(id: number): void {
+    this.deletingId.set(id);
+    this.jobService.deleteJob(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
+        this.deletingId.set(null);
+        // Usunięto ostatnią ofertę na stronie – cofamy się o stronę
+        if (this.jobs().length === 1 && this.pageIndex() > 0) {
+          this.pageIndex.update(index => index - 1);
+        }
+        this.reload();
+        this.notify('Oferta została usunięta');
+      },
+      error: (error) => {
+        console.error('Error deleting job:', error);
+        this.deletingId.set(null);
+        if (!isHandledByInterceptor(error)) {
+          this.notify(getApiErrorMessage(error, 'Błąd podczas usuwania oferty'), 'assertive');
+        }
+      }
+    });
   }
 
   private applySearch(term: string): void {
@@ -299,20 +319,23 @@ export class AdminJobsTabComponent {
   private openJobDialog(job: JobOffer | null): void {
     const data: JobDialogData = { job, mode: this.mode(), company: this.company() };
     const dialogRef = this.dialog.open(JobDialogComponent, {
-      width: '600px',
+      width: '640px',
+      maxWidth: '95vw',
       disableClose: true,
+      ariaModal: true,
       data
     });
 
-    dialogRef.afterClosed().subscribe(saved => {
+    dialogRef.afterClosed().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(saved => {
       if (saved === true) {
         this.reload();
       }
     });
   }
 
-  private notify(message: string): void {
-    this.snackBar.open(message, 'OK', { duration: 5000 });
+  /** Sukcesy ogłaszane grzecznie, błędy – od razu. */
+  private notify(message: string, politeness: 'polite' | 'assertive' = 'polite'): void {
+    this.snackBar.open(message, 'OK', { duration: 5000, politeness });
   }
 
   private buildParams(): ManageJobParams {

@@ -1,14 +1,14 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { Subject, catchError, of, switchMap, tap } from 'rxjs';
+import { Subject, catchError, filter, of, switchMap, tap } from 'rxjs';
+import { ConfirmService } from '../../../services/confirm.service';
 import { Category } from '../../../models/taxonomy.model';
 import { AdminService } from '../../../services/admin.service';
 import { CategoryService } from '../../../services/category.service';
@@ -20,7 +20,7 @@ import { CategoryDialogComponent } from '../category-dialog/category-dialog.comp
   selector: 'app-admin-categories-tab',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatTableModule, MatButtonModule, MatCardModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule],
+  imports: [MatTableModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule],
   templateUrl: './admin-categories-tab.component.html',
   styleUrl: './admin-categories-tab.component.scss'
 })
@@ -29,6 +29,8 @@ export class AdminCategoriesTabComponent {
   private adminService = inject(AdminService);
   private dialog = inject(MatDialog);
   private snackBar = inject(MatSnackBar);
+  private confirm = inject(ConfirmService);
+  private destroyRef = inject(DestroyRef);
 
   readonly displayedColumns = ['name', 'slug', 'sortOrder', 'activeJobsCount', 'actions'];
 
@@ -77,12 +79,17 @@ export class AdminCategoriesTabComponent {
   }
 
   deleteCategory(category: Category): void {
-    if (!confirm(`Czy na pewno chcesz usunąć kategorię „${category.name}”? Oferty z tej kategorii zostaną bez kategorii.`)) {
-      return;
-    }
+    this.confirm.confirm({
+      title: 'Usunąć kategorię?',
+      message: `Czy na pewno chcesz usunąć kategorię „${category.name}”? Oferty z tej kategorii zostaną bez kategorii.`,
+      confirmLabel: 'Usuń',
+      destructive: true
+    }).pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.delete(category));
+  }
 
+  private delete(category: Category): void {
     this.busyId.set(category.id);
-    this.adminService.deleteCategory(category.id).subscribe({
+    this.adminService.deleteCategory(category.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.busyId.set(null);
         this.notify('Kategoria została usunięta');
@@ -92,20 +99,20 @@ export class AdminCategoriesTabComponent {
         console.error('Error deleting category:', error);
         this.busyId.set(null);
         if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Błąd podczas usuwania kategorii'));
+          this.notify(getApiErrorMessage(error, 'Błąd podczas usuwania kategorii'), 'assertive');
         }
       }
     });
   }
 
   private openDialog(category: Category | null): void {
-    this.dialog.open(CategoryDialogComponent, { width: '520px', maxWidth: '95vw', disableClose: true, data: category })
-      .afterClosed().subscribe(saved => {
+    this.dialog.open(CategoryDialogComponent, { width: '520px', maxWidth: '95vw', disableClose: true, ariaModal: true, data: category })
+      .afterClosed().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(saved => {
         if (saved) this.reload();
       });
   }
 
-  private notify(message: string): void {
-    this.snackBar.open(message, 'OK', { duration: 5000 });
+  private notify(message: string, politeness: 'polite' | 'assertive' = 'polite'): void {
+    this.snackBar.open(message, 'OK', { duration: 5000, politeness });
   }
 }

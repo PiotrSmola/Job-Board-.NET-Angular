@@ -1,80 +1,60 @@
-<div class="company-list-container">
-  <div class="header">
+<div class="page">
+  <div class="page-header">
     <h1>Firmy</h1>
-    <p class="subtitle">Poznaj pracodawców i ich aktualne oferty</p>
-  </div>
-
-  <mat-card class="filters-card">
-    <div class="filters-grid">
-      <mat-form-field appearance="outline">
-        <mat-label>Szukaj</mat-label>
-        <input matInput [ngModel]="searchInput()" (ngModelChange)="onSearchInput($event)" placeholder="Nazwa, lokalizacja...">
-        <mat-icon matPrefix>search</mat-icon>
+    <div class="tools" role="search" aria-label="Szukaj firm">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="search">
+        <mat-icon matPrefix aria-hidden="true">search</mat-icon>
+        <input #searchField matInput type="search" autocomplete="off" maxlength="100"
+          aria-label="Szukaj firmy" placeholder="Nazwa firmy lub miasto"
+          [value]="searchInput()" (input)="onSearchEvent($event)">
         @if (searchInput()) {
-          <button mat-icon-button matSuffix (click)="clearSearch()" aria-label="Wyczyść wyszukiwanie">
-            <mat-icon>close</mat-icon>
+          <button mat-icon-button matSuffix type="button" (click)="clearSearch(); searchField.focus()" aria-label="Wyczyść wyszukiwanie">
+            <mat-icon aria-hidden="true">close</mat-icon>
           </button>
         }
       </mat-form-field>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Sortowanie</mat-label>
-        <mat-select [ngModel]="orderBy()" (ngModelChange)="onOrderChange($event)">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="sort">
+        <mat-select aria-label="Sortowanie" [value]="orderBy()" (selectionChange)="onOrderChange($event.value)">
           @for (option of sortOptions; track option.value) {
             <mat-option [value]="option.value">{{ option.label }}</mat-option>
           }
         </mat-select>
-        <mat-icon matPrefix>sort</mat-icon>
       </mat-form-field>
     </div>
-  </mat-card>
+  </div>
 
-  @if (loadError()) {
-    <div class="state">
-      <mat-icon>cloud_off</mat-icon>
-      <h3>{{ loadError() }}</h3>
-      <button mat-raised-button color="primary" (click)="reload()">
-        <mat-icon>refresh</mat-icon>
-        Spróbuj ponownie
-      </button>
-    </div>
-  } @else if (loading() && companies().length === 0) {
-    <div class="state">
-      <mat-spinner></mat-spinner>
-    </div>
-  } @else {
-    <div class="results-info">Znaleziono: <strong>{{ totalItems() }}</strong> firm</div>
+  <p class="results-info visually-hidden" role="status" aria-live="polite" aria-atomic="true">{{ resultsText() }}</p>
 
-    <div class="companies-grid" [class.reloading]="loading()">
-      @for (company of companies(); track company.id) {
-        <a class="company-card" [routerLink]="['/companies', company.id]">
-          <mat-card>
-            <mat-card-header>
-              <mat-icon mat-card-avatar>business</mat-icon>
-              <mat-card-title>{{ company.name }}</mat-card-title>
-              @if (company.location) {
-                <mat-card-subtitle>{{ company.location }}</mat-card-subtitle>
-              }
-            </mat-card-header>
-            <mat-card-content>
-              @if (company.description) {
-                <p class="description">{{ company.description | slice: 0 : 160 }}{{ company.description.length > 160 ? '…' : '' }}</p>
-              }
-              <span class="jobs-badge">
-                <mat-icon>work</mat-icon>
-                {{ jobsLabel(company.activeJobsCount) }}
-              </span>
-            </mat-card-content>
-          </mat-card>
-        </a>
-      } @empty {
-        <div class="state">
-          <mat-icon>domain_disabled</mat-icon>
-          <h3>Brak firm</h3>
-          <p>Spróbuj zmienić kryteria wyszukiwania</p>
-        </div>
+  @if (loadError(); as error) {
+    <div class="state surface" role="alert">
+      <p class="state-title">{{ error }}</p>
+      <button mat-flat-button type="button" (click)="reload()">Spróbuj ponownie</button>
+    </div>
+  } @else if (!loaded()) {
+    <div class="grid" aria-busy="true">
+      @for (index of skeletons; track index) {
+        <div class="company-skeleton surface" aria-hidden="true"></div>
       }
     </div>
+  } @else {
+    <ul class="grid" [class.stale]="loading()" [attr.aria-busy]="loading()" aria-label="Lista firm">
+      @for (company of companies(); track company.id) {
+        <li>
+          <a class="company-card surface surface-interactive" [routerLink]="['/companies', company.id]">
+            <span class="name">{{ company.name }}</span>
+            @if (company.location) {
+              <span class="location">{{ company.location }}</span>
+            }
+            <span class="jobs-badge">{{ jobsLabel(company.activeJobsCount) }}</span>
+          </a>
+        </li>
+      } @empty {
+        <li class="state surface">
+          <p class="state-title">Brak firm</p>
+          <p class="muted">Spróbuj zmienić kryteria wyszukiwania</p>
+        </li>
+      }
+    </ul>
 
     @if (companies().length > 0) {
       <mat-paginator

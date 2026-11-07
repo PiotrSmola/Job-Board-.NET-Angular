@@ -1,125 +1,96 @@
-.company-list-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 40px 24px;
+.page-header {
+  align-items: center;
 }
 
-.header {
-  margin-bottom: 32px;
-
-  h1 {
-    font-size: 3rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-  }
-
-  .subtitle {
-    margin: 8px 0 0;
-    color: var(--text-secondary);
-    font-size: 1.2rem;
-  }
+h1 {
+  margin: 0;
 }
 
-.filters-card {
-  margin-bottom: 24px;
-  padding: 24px 24px 4px;
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 0 1 520px;
+  min-width: 0;
 }
 
-.filters-grid {
+.search {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.sort {
+  flex: 0 1 200px;
+  min-width: 0;
+}
+
+// Siatka z przepływem do jednej kolumny przy 320 px
+.grid {
   display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 20px;
-}
-
-.results-info {
-  margin-bottom: 16px;
-  color: var(--text-secondary);
-
-  strong {
-    color: var(--primary-color);
-  }
-}
-
-.companies-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 24px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
   transition: opacity 0.2s;
 
-  &.reloading {
-    opacity: 0.5;
+  &.stale {
+    opacity: 0.6;
   }
 }
 
 .company-card {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  min-height: 112px;
+  padding: 20px;
   color: inherit;
+  text-decoration: none;
 
-  mat-card {
-    height: 100%;
-    transition: transform 0.2s, border-color 0.2s;
+  &:hover .name {
+    text-decoration: underline;
   }
+}
 
-  &:hover mat-card {
-    transform: translateY(-4px);
-    border-color: var(--primary-color);
-  }
+.company-skeleton {
+  min-height: 112px;
+}
 
-  mat-icon[mat-card-avatar] {
-    color: var(--primary-color);
-    font-size: 40px;
-  }
+.name {
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
 
-  .description {
-    color: var(--text-secondary);
-    line-height: 1.5;
-  }
+.location {
+  color: var(--color-text-secondary);
+}
 
-  .jobs-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--primary-color);
-    font-weight: 600;
-
-    mat-icon {
-      font-size: 18px;
-      width: 18px;
-      height: 18px;
-    }
-  }
+.jobs-badge {
+  margin-top: 8px;
+  color: var(--color-text-prose);
 }
 
 .state {
   grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 64px 24px;
-  color: var(--text-secondary);
-  text-align: center;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 32px;
 
-  mat-icon {
-    font-size: 64px;
-    width: 64px;
-    height: 64px;
+  p {
+    margin: 0;
   }
 }
 
-@media (max-width: 768px) {
-  .company-list-container {
-    padding: 16px;
-  }
+.state-title {
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+}
 
-  .header h1 {
-    font-size: 2rem;
-  }
-
-  .filters-grid {
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
+mat-paginator {
+  margin-top: 24px;
 }

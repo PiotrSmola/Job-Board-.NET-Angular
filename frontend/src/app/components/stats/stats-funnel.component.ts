@@ -25,7 +25,7 @@ const BAR_HEIGHT = 14;
     @if (showTable()) {
       <div class="scroll" tabindex="0" role="region" aria-label="Lejek rekrutacji – tabela danych">
         <table>
-          <caption class="sr-only">Lejek rekrutacji – liczba aplikacji na każdym etapie</caption>
+          <caption class="visually-hidden">Lejek rekrutacji – liczba aplikacji na każdym etapie</caption>
           <thead>
             <tr>
               <th scope="col">Etap</th>
@@ -62,21 +62,21 @@ const BAR_HEIGHT = 14;
   styles: [`
     :host { display: block; }
     .header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
-    h3 { font-size: 1.15rem; }
-    .note { margin: 4px 0 12px; color: var(--text-secondary); font-size: 0.85rem; }
-    .row { display: grid; grid-template-columns: 96px minmax(0, 1fr) 110px; align-items: center; gap: 12px; min-height: 36px; }
-    .label { color: var(--text-primary); font-size: 0.95rem; }
-    .bar { display: block; width: 100%; height: 18px; }
-    .track { fill: #2a2a2a; }
-    .fill { fill: #00e5ff; }
-    .value { color: var(--text-secondary); font-size: 0.9rem; text-align: right; font-variant-numeric: tabular-nums; }
-    .value strong { color: var(--text-primary); }
+    h3 { margin: 0; font-size: var(--font-size-lg); font-weight: 500; }
+    .note { margin: 4px 0 16px; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+    .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 8px; margin-bottom: 12px; }
+    .label { color: var(--color-text); }
+    .bar { grid-column: 1 / -1; display: block; width: 100%; height: 10px; border-radius: 5px; overflow: hidden; }
+    .track { fill: var(--color-selected); }
+    .fill { fill: var(--color-accent); }
+    .value { color: var(--color-text-secondary); text-align: right; font-variant-numeric: tabular-nums; }
+    .value strong { color: var(--color-text); font-weight: 500; }
     .scroll { overflow-x: auto; }
-    .scroll:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    th, td { padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--border-color); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px 12px; text-align: left; box-shadow: inset 0 -1px 0 var(--color-hairline); }
+    thead th { color: var(--color-text-tertiary); font-size: var(--font-size-sm); font-weight: 500; }
+    tbody th { font-weight: 400; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   `]
 })
 export class StatsFunnelComponent {

@@ -1,58 +1,64 @@
-<main class="saved-jobs-container">
-  <header class="header">
-    <h1 id="saved-jobs-heading">Zapisane oferty</h1>
-    <p class="subtitle">Oferty, do których chcesz wrócić</p>
-  </header>
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 id="saved-jobs-heading">Zapisane oferty</h1>
+      @if (!loading() && !loadError() && totalItems()) {
+        <p class="page-subtitle">{{ countLabel() }}</p>
+      }
+    </div>
+  </div>
 
-  <!-- stałe minimum wysokości listy – wczytywanie nie przesuwa stopki strony -->
   <section class="results" aria-labelledby="saved-jobs-heading" [attr.aria-busy]="loading()">
     @if (loading()) {
-      <div class="state" role="status">
-        <mat-spinner diameter="48" aria-hidden="true"></mat-spinner>
-        <span class="sr-only">Wczytywanie zapisanych ofert…</span>
+      <!-- szkielet kart rezerwuje miejsce na listę (CLS) -->
+      <div class="list" role="status">
+        <span class="visually-hidden">Wczytywanie zapisanych ofert…</span>
+        @for (placeholder of skeletons; track placeholder) {
+          <div class="surface skeleton" aria-hidden="true"></div>
+        }
       </div>
     } @else if (loadError()) {
-      <div class="state" role="alert">
-        <mat-icon class="state-icon" aria-hidden="true">cloud_off</mat-icon>
+      <div class="surface state" role="alert">
         <p>{{ loadError() }}</p>
-        <button mat-raised-button color="primary" type="button" (click)="load()">
-          <mat-icon aria-hidden="true">refresh</mat-icon>
-          Spróbuj ponownie
-        </button>
+        <button mat-stroked-button type="button" (click)="load()">Spróbuj ponownie</button>
       </div>
     } @else if (!items().length) {
-      <div class="state">
-        <mat-icon class="state-icon" aria-hidden="true">favorite_border</mat-icon>
-        <p>Nie masz jeszcze zapisanych ofert.</p>
-        <a mat-raised-button color="primary" routerLink="/jobs">Przeglądaj oferty</a>
+      <div class="surface state">
+        <p>Nie masz jeszcze zapisanych ofert. Zapisuj oferty ikoną serca, aby wrócić do nich później.</p>
+        <a mat-flat-button routerLink="/jobs">Przeglądaj oferty</a>
       </div>
     } @else {
-      <p class="count">Zapisanych ofert: <strong>{{ totalItems() }}</strong></p>
-      <ul class="list">
+      <div class="list">
         @for (item of items(); track item.job.id) {
           @let saved = savedJobs.isSaved(item.job.id);
-          <li class="item" [class.removed]="!saved">
+          @let pay = salary(item);
+          <article class="surface item" [class.removed]="!saved" [attr.aria-labelledby]="'saved-job-' + item.job.id">
             <div class="main">
-              <h2 class="title"><a [routerLink]="['/jobs', item.job.id]">{{ item.job.title }}</a></h2>
-              <p class="meta">
-                <a class="company" [routerLink]="['/companies', item.job.companyId]">{{ item.job.company }}</a>
-                <span aria-hidden="true">·</span>
-                <span>{{ item.job.location }}</span>
+              <h2 class="title" [id]="'saved-job-' + item.job.id">
+                <a [routerLink]="['/jobs', item.job.id]">{{ item.job.title }}</a>
+              </h2>
+              <p class="company">
+                <a class="company-link" [routerLink]="['/companies', item.job.companyId]">{{ item.job.company }}</a>
+                · {{ item.job.location }}
               </p>
-              <p class="meta">
-                @if (inactiveState(item); as state) {
-                  <app-status-chip [label]="state.label" [tone]="state.tone" />
-                }
-                <span>Zapisano: {{ item.savedAt | date: 'dd.MM.yyyy' }}</span>
-                @if (!saved) {
-                  <span class="removed-note">Usunięto z zapisanych</span>
-                }
-              </p>
+              <app-job-taxonomy [job]="item.job" />
+              @if (inactiveState(item); as state) {
+                <app-status-chip class="state-chip" [label]="state.label" [tone]="state.tone" />
+              }
             </div>
-            <app-save-job-button [jobId]="item.job.id" [jobTitle]="item.job.title" />
-          </li>
+            <div class="side">
+              @if (pay) {
+                <p class="salary">{{ pay }}</p>
+              }
+              <p class="saved-at">Zapisano {{ savedAt(item) }}</p>
+              @if (!saved) {
+                <p class="removed-note">Usunięto z zapisanych</p>
+              }
+              <app-save-job-button [jobId]="item.job.id" [jobTitle]="item.job.title" />
+            </div>
+          </article>
         }
-      </ul>
+      </div>
 
       @if (totalItems() > pageSize) {
         <mat-paginator
@@ -66,4 +72,4 @@
       }
     }
   </section>
-</main>
+</div>

@@ -59,7 +59,7 @@ describe('RegisterComponent', () => {
   }
 
   function errorText(): string | undefined {
-    return root().querySelector('.error-message')?.textContent?.trim();
+    return root().querySelector('[role="alert"] .auth-alert')?.textContent?.trim();
   }
 
   function submitButton(): HTMLButtonElement {
@@ -87,31 +87,33 @@ describe('RegisterComponent', () => {
     it('defaults to the candidate form without company fields', () => {
       create();
 
-      expect(component.accountType).toBe('candidate');
-      expect(component.isEmployer).toBe(false);
+      expect(component.accountType()).toBe('candidate');
+      expect(component.isEmployer()).toBe(false);
       expect(companySection()).toBeNull();
-      expect(submitButton().textContent).toContain('Zarejestruj się');
+      expect(submitButton().textContent).toContain('Załóż konto');
     });
 
     it('opens the employer form for ?type=employer', () => {
       create({ type: 'employer' });
 
-      expect(component.accountType).toBe('employer');
+      expect(component.accountType()).toBe('employer');
       expect(companySection()).not.toBeNull();
-      expect(submitButton().textContent).toContain('Zarejestruj firmę');
+      expect(submitButton().textContent).toContain('Załóż konto');
+      expect(root().textContent).toContain('Służbowy e-mail');
     });
 
     it.each(['candidate', 'admin', '', 'EMPLOYER'])('falls back to the candidate form for ?type=%j', type => {
       create({ type });
 
-      expect(component.accountType).toBe('candidate');
+      expect(component.accountType()).toBe('candidate');
     });
 
     it('shows both toggle options with the right one selected', () => {
       create({ type: 'employer' });
 
       const labels = Array.from(root().querySelectorAll('mat-button-toggle')).map(t => t.textContent?.replace(/\s+/g, ' ').trim());
-      expect(labels).toEqual(['person_search Szukam pracy', 'business_center Rekrutuję']);
+      expect(labels).toEqual(['Szukam pracy', 'Rekrutuję']);
+      expect(root().querySelector('mat-button-toggle-group')?.getAttribute('aria-label')).toBe('Typ konta');
       expect(root().querySelector('mat-button-toggle.mat-button-toggle-checked')?.textContent).toContain('Rekrutuję');
     });
 
@@ -119,12 +121,12 @@ describe('RegisterComponent', () => {
       create();
 
       toggle('Rekrutuję').click();
-      expect(component.accountType).toBe('employer');
+      expect(component.accountType()).toBe('employer');
       expect(companySection()).not.toBeNull();
-      expect(companySection()!.textContent).toContain('Twoja firma');
+      expect(companySection()!.querySelector('h2')?.textContent?.trim()).toBe('Firma');
 
       toggle('Szukam pracy').click();
-      expect(component.accountType).toBe('candidate');
+      expect(component.accountType()).toBe('candidate');
       expect(companySection()).toBeNull();
     });
 
@@ -132,7 +134,7 @@ describe('RegisterComponent', () => {
       create({ type: 'employer' });
 
       const names = Array.from(companySection()!.querySelectorAll('[formControlName]')).map(e => e.getAttribute('formControlName'));
-      expect(names).toEqual(['companyName', 'location', 'website', 'companyDescription']);
+      expect(names).toEqual(['companyName', 'website', 'location', 'companyDescription']);
     });
 
     it('clears an error message when the account type changes', () => {
@@ -164,7 +166,8 @@ describe('RegisterComponent', () => {
       fillPerson();
 
       expect(component.registerForm.valid).toBe(false);
-      expect(submitButton().disabled).toBe(true);
+      // przycisk zostaje aktywny – błędy pokazujemy po próbie wysłania
+      expect(submitButton().disabled).toBe(false);
 
       fillCompany({ companyName: 'Acme' });
       expect(component.registerForm.valid).toBe(true);
@@ -185,7 +188,7 @@ describe('RegisterComponent', () => {
 
       component.registerForm.get('companyName')!.markAsTouched();
 
-      expect(root().textContent).toContain('Nazwa firmy jest wymagana');
+      expect(root().textContent).toContain('Podaj nazwę firmy');
     });
 
     it.each([['javascript:alert(1)'], ['ftp://acme.pl'], ['acme.pl']])('employer: rejects the website "%s"', website => {
@@ -196,7 +199,6 @@ describe('RegisterComponent', () => {
       component.registerForm.get('website')!.markAsTouched();
 
       expect(component.registerForm.get('website')!.valid).toBe(false);
-      expect(submitButton().disabled).toBe(true);
       expect(root().textContent).toContain('Podaj adres zaczynający się od http:// lub https://');
     });
 
@@ -230,15 +232,39 @@ describe('RegisterComponent', () => {
       expect(component.registerForm.valid).toBe(false);
     });
 
-    it('does not call the API when the form is invalid', () => {
+    it('requires the API password rules (upper and lower case letter, digit)', () => {
+      create();
+
+      component.registerForm.patchValue({ password: 'secret1' });
+      expect(component.registerForm.get('password')!.hasError('passwordPolicy')).toBe(true);
+
+      component.registerForm.patchValue({ password: 'Secret1' });
+      expect(component.registerForm.get('password')!.valid).toBe(true);
+    });
+
+    it('does not call the API when the form is invalid, shows errors and focuses the first invalid field', () => {
       create({ type: 'employer' });
       fillPerson();
+      root(); // klasy ng-invalid odświeżają się przy detekcji zmian (w aplikacji – po wpisaniu znaków)
 
       submit();
 
       expect(registerEmployer).not.toHaveBeenCalled();
       expect(register).not.toHaveBeenCalled();
-      expect(component.loading).toBe(false);
+      expect(component.loading()).toBe(false);
+      expect(root().textContent).toContain('Podaj nazwę firmy');
+      expect(document.activeElement).toBe(root().querySelector('input[formControlName="companyName"]'));
+    });
+
+    it('describes the password strength in text, linked to the password field', () => {
+      create();
+
+      component.registerForm.controls.password.setValue('Abcdef1');
+      const input = root().querySelector('input[formControlName="password"]')!;
+
+      expect(input.getAttribute('aria-describedby')).toContain('register-password-strength');
+      expect(input.getAttribute('autocomplete')).toBe('new-password');
+      expect(root().querySelector('#register-password-strength')?.textContent).toContain('Siła hasła: średnia');
     });
   });
 
@@ -326,7 +352,7 @@ describe('RegisterComponent', () => {
       expect(registerEmployer).toHaveBeenCalledTimes(1);
     });
 
-    it('shows a spinner and disables the button while the request is in flight', () => {
+    it('shows a spinner and keeps the button focusable (aria-disabled) while the request is in flight', () => {
       registerEmployer.mockReturnValue(new Subject<UserDto>());
       create({ type: 'employer' });
       fillPerson();
@@ -334,8 +360,9 @@ describe('RegisterComponent', () => {
 
       submit();
 
-      expect(component.loading).toBe(true);
-      expect(submitButton().disabled).toBe(true);
+      expect(component.loading()).toBe(true);
+      expect(submitButton().disabled).toBe(false);
+      expect(submitButton().getAttribute('aria-disabled')).toBe('true');
       expect(root().querySelector('button[type="submit"] mat-spinner')).not.toBeNull();
       expect(navigate).not.toHaveBeenCalled();
     });
@@ -351,7 +378,7 @@ describe('RegisterComponent', () => {
       submit();
 
       expect(errorText()).toBe('Ta nazwa firmy jest już zajęta');
-      expect(component.loading).toBe(false);
+      expect(component.loading()).toBe(false);
       expect(navigate).not.toHaveBeenCalled();
       expect(submitButton().disabled).toBe(false);
     });
@@ -386,7 +413,17 @@ describe('RegisterComponent', () => {
 
       submit();
 
-      expect(errorText()).toBe('Błąd podczas rejestracji');
+      expect(errorText()).toBe('Nie udało się założyć konta – spróbuj ponownie za chwilę.');
+    });
+
+    it('translates Identity password errors', () => {
+      register.mockReturnValue(httpError(400, { errors: { Password: ['Passwords must have at least one digit (\'0\'-\'9\').'] } }));
+      create();
+      fillPerson();
+
+      submit();
+
+      expect(errorText()).toBe('Hasło musi zawierać cyfrę');
     });
 
     it('shows a connection message when the server is unreachable', () => {

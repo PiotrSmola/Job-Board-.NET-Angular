@@ -3,8 +3,12 @@ import { ApplicationStatus } from '../models/job-application.model';
 import { JobState } from '../models/job-params.model';
 import { CompanyStatus } from '../models/company.model';
 
-/** Kolor chipa statusu – klasy zdefiniowane w StatusChipComponent. */
-export type StatusTone = 'neutral' | 'info' | 'accent' | 'warning' | 'success' | 'danger' | 'muted';
+/**
+ * Kolor kropki statusu (StatusChipComponent, tokeny --status-* w styles.scss): info – niebieski (złożona),
+ * warning – bursztynowy (w analizie, oczekuje, wygasła), accent – cyjan (rozmowa), positive – zielony (oferta),
+ * success – zielony (zatrudniony, aktywna, zatwierdzona), danger – czerwony (odrzucona), neutral/muted – szary.
+ */
+export type StatusTone = 'neutral' | 'info' | 'accent' | 'warning' | 'positive' | 'success' | 'danger' | 'muted';
 
 export interface StatusPresentation {
   label: string;
@@ -14,7 +18,7 @@ export interface StatusPresentation {
 // --- oferty ---
 
 export const JOB_STATE_PRESENTATION: Record<JobState, StatusPresentation> = {
-  draft: { label: 'Szkic', tone: 'neutral' },
+  draft: { label: 'Szkic', tone: 'muted' },
   active: { label: 'Aktywna', tone: 'success' },
   expired: { label: 'Wygasła', tone: 'warning' },
   closed: { label: 'Zamknięta', tone: 'muted' }
@@ -51,10 +55,10 @@ export function getJobStatePresentation(job: Pick<JobOffer, 'status' | 'isExpire
 // --- aplikacje ---
 
 export const APPLICATION_STATUS_PRESENTATION: Record<ApplicationStatus, StatusPresentation> = {
-  [ApplicationStatus.Submitted]: { label: 'Złożona', tone: 'neutral' },
-  [ApplicationStatus.InReview]: { label: 'W analizie', tone: 'info' },
+  [ApplicationStatus.Submitted]: { label: 'Złożona', tone: 'info' },
+  [ApplicationStatus.InReview]: { label: 'W analizie', tone: 'warning' },
   [ApplicationStatus.Interview]: { label: 'Rozmowa', tone: 'accent' },
-  [ApplicationStatus.Offered]: { label: 'Oferta', tone: 'warning' },
+  [ApplicationStatus.Offered]: { label: 'Oferta', tone: 'positive' },
   [ApplicationStatus.Hired]: { label: 'Zatrudniony', tone: 'success' },
   [ApplicationStatus.Rejected]: { label: 'Odrzucona', tone: 'danger' },
   [ApplicationStatus.Withdrawn]: { label: 'Wycofana', tone: 'muted' }

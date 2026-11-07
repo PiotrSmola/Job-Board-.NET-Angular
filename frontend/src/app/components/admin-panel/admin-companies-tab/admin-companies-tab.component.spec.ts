@@ -6,6 +6,8 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { AdminCompaniesTabComponent } from './admin-companies-tab.component';
 import { AdminService } from '../../../services/admin.service';
+import { ConfirmService } from '../../../services/confirm.service';
+import { CompanyMediaDialogComponent } from '../company-media-dialog/company-media-dialog.component';
 import { Company, CompanyStatus } from '../../../models/company.model';
 import { AdminCompanyParams } from '../../../models/company-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
@@ -24,7 +26,7 @@ describe('AdminCompaniesTabComponent', () => {
   let deleteCompany: ReturnType<typeof vi.fn>;
   let dialogOpen: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
-  let confirmSpy: ReturnType<typeof vi.spyOn>;
+  let confirmSpy: ReturnType<typeof vi.fn>;
 
   function lastParams(): AdminCompanyParams {
     return getCompanies.mock.calls[getCompanies.mock.calls.length - 1][0] as AdminCompanyParams;
@@ -55,7 +57,7 @@ describe('AdminCompaniesTabComponent', () => {
   }
 
   function actionButton(index: number, label: string): HTMLButtonElement | null {
-    return row(index).querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+    return row(index).querySelector<HTMLButtonElement>(`button[aria-label^="${label}"]`);
   }
 
   beforeEach(async () => {
@@ -64,7 +66,7 @@ describe('AdminCompaniesTabComponent', () => {
     deleteCompany = vi.fn().mockReturnValue(of(undefined));
     dialogOpen = vi.fn().mockReturnValue({ afterClosed: () => of(undefined) });
     snackBarOpen = vi.fn();
-    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    confirmSpy = vi.fn().mockReturnValue(of(true));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
@@ -73,7 +75,8 @@ describe('AdminCompaniesTabComponent', () => {
         provideRouter([]),
         { provide: AdminService, useValue: { getCompanies, approveCompany, deleteCompany } },
         { provide: MatDialog, useValue: { open: dialogOpen } },
-        { provide: MatSnackBar, useValue: { open: snackBarOpen } }
+        { provide: MatSnackBar, useValue: { open: snackBarOpen } },
+        { provide: ConfirmService, useValue: { confirm: confirmSpy } }
       ]
     }).compileComponents();
   });
@@ -81,6 +84,30 @@ describe('AdminCompaniesTabComponent', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  describe('gallery moderation', () => {
+    it('shows the media button only for companies with photos or a background', () => {
+      createWith([
+        makeCompany(1, { photosCount: 2 }),
+        makeCompany(2, { photosCount: 0, offerBackground: { url: '/bg?v=1', dim: 70, focus: 0 } }),
+        makeCompany(3, { photosCount: 0 })
+      ]);
+
+      expect(actionButton(0, 'Zdjęcia i tło ofert: Firma 1')).not.toBeNull();
+      expect(actionButton(1, 'Zdjęcia i tło ofert')).not.toBeNull();
+      expect(actionButton(2, 'Zdjęcia i tło ofert')).toBeNull();
+    });
+
+    it('opens the media dialog with the company and reloads after closing', () => {
+      createWith([makeCompany(1, { photosCount: 2 })]);
+      const calls = getCompanies.mock.calls.length;
+
+      actionButton(0, 'Zdjęcia i tło ofert')!.click();
+
+      expect(dialogOpen).toHaveBeenCalledWith(CompanyMediaDialogComponent, expect.objectContaining({ data: expect.objectContaining({ id: 1 }), maxWidth: '95vw' }));
+      expect(getCompanies.mock.calls.length).toBe(calls + 1);
+    });
   });
 
   describe('initial load', () => {
@@ -123,7 +150,7 @@ describe('AdminCompaniesTabComponent', () => {
       expect(link.getAttribute('href')).toBe('/companies/7');
       expect(row(0).querySelector('app-status-chip')?.textContent?.trim()).toBe('Oczekuje');
       expect(row(1).querySelector('app-status-chip')?.textContent?.trim()).toBe('Zatwierdzona');
-      expect(row(0).textContent).toContain('#7');
+      expect(row(0).textContent).toContain('Rzeszów');
     });
 
     it('shows the rejection reason only for rejected companies', () => {
@@ -494,7 +521,7 @@ describe('AdminCompaniesTabComponent', () => {
   describe('deleting', () => {
     it('does nothing when the user cancels the confirmation', () => {
       create();
-      confirmSpy.mockReturnValue(false);
+      confirmSpy.mockReturnValue(of(false));
 
       component.deleteCompany(makeCompany(3));
 
@@ -506,7 +533,7 @@ describe('AdminCompaniesTabComponent', () => {
 
       component.deleteCompany(makeCompany(3, { name: 'Acme' }));
 
-      expect(confirmSpy).toHaveBeenCalledWith('Czy na pewno chcesz usunąć firmę „Acme”?');
+      expect(confirmSpy.mock.calls[0][0].message).toContain('Czy na pewno chcesz usunąć firmę „Acme”?');
     });
 
     it('deletes, notifies and reloads the current page', () => {

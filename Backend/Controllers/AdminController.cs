@@ -97,8 +97,9 @@ public class AdminController : ControllerBase
     // ale z limitem czasu, żeby zawieszony magazyn nie blokował odpowiedzi w nieskończoność
     private async Task DeleteAllAttachmentFilesAsync()
     {
-        // załączniki aplikacji i dokumenty profili - wszystkie rekordy zostały usunięte razem z użytkownikami
-        foreach (var prefix in new[] { AttachmentFiles.StorageKeyPrefix, AttachmentFiles.ProfileStorageKeyPrefix })
+        // załączniki aplikacji i dokumenty profili - wszystkie rekordy zostały usunięte razem z użytkownikami; zdjęcia
+        // i tła firm - razem z firmami
+        foreach (var prefix in new[] { AttachmentFiles.StorageKeyPrefix, AttachmentFiles.ProfileStorageKeyPrefix, CompanyMedia.StorageKeyPrefix })
         {
             try
             {

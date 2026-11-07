@@ -1,81 +1,77 @@
 <section class="panel" aria-labelledby="filters-heading">
-  <h2 id="filters-heading" class="panel-title">Filtry</h2>
+  <h2 id="filters-heading" class="visually-hidden">Filtry</h2>
 
   <button type="button" class="toggle" mat-stroked-button
     [attr.aria-expanded]="open()" aria-controls="filters-body" (click)="open.set(!open())">
     <mat-icon aria-hidden="true">tune</mat-icon>
     Filtry
     @if (activeCount() > 0) {
-      <span class="badge" aria-hidden="true">{{ activeCount() }}</span>
-      <span class="sr-only">(aktywnych filtrów: {{ activeCount() }})</span>
+      <span aria-hidden="true">({{ activeCount() }})</span>
+      <span class="visually-hidden">– aktywnych: {{ activeCount() }}</span>
     }
   </button>
 
   <div id="filters-body" class="body" [class.open]="open()">
-    <mat-form-field appearance="outline" subscriptSizing="dynamic">
-      <mat-label>Szukaj</mat-label>
-      <input matInput type="search" autocomplete="off" placeholder="Stanowisko, firma..."
-        [ngModel]="searchInput()" (ngModelChange)="onSearchInput($event)" (keydown.enter)="applySearchNow()">
-      <mat-icon matPrefix aria-hidden="true">search</mat-icon>
-    </mat-form-field>
-
-    <mat-form-field appearance="outline" subscriptSizing="dynamic">
-      <mat-label>Lokalizacja</mat-label>
-      <input matInput autocomplete="off" placeholder="Warszawa, Kraków..."
-        [ngModel]="locationInput()" (ngModelChange)="onLocationInput($event)">
-      <mat-icon matPrefix aria-hidden="true">location_on</mat-icon>
-    </mat-form-field>
-
-    <mat-form-field appearance="outline" subscriptSizing="dynamic">
-      <mat-label>Sortowanie</mat-label>
-      <mat-select [value]="params().orderBy" (selectionChange)="onSort($event.value)">
-        @for (option of sortOptions; track option.value) {
-          <mat-option [value]="option.value">{{ option.label }}</mat-option>
-        }
-      </mat-select>
-      <mat-icon matPrefix aria-hidden="true">sort</mat-icon>
-    </mat-form-field>
-
     @if (categoryOptions().length > 0) {
-      <fieldset class="group">
+      <fieldset>
         <legend>Kategoria</legend>
-        <mat-radio-group [value]="params().category ?? ''" (change)="onCategory($event)" aria-label="Kategoria">
-          <mat-radio-button value="">Wszystkie kategorie</mat-radio-button>
-          @for (category of categoryOptions(); track category.id) {
-            <mat-radio-button [value]="category.slug" [aria-label]="category.ariaLabel">
-              {{ category.name }}@if (category.count !== null) {<span class="count" aria-hidden="true"> ({{ category.count }})</span>}
-            </mat-radio-button>
-          }
-        </mat-radio-group>
+        <label class="check">
+          <input type="radio" name="job-category" value="" [checked]="!params().category" (change)="onCategory('')">
+          <span>Wszystkie</span>
+        </label>
+        @for (category of categoryOptions(); track category.id) {
+          <label class="check">
+            <input type="radio" name="job-category" [value]="category.slug" [checked]="params().category === category.slug"
+              [attr.aria-label]="category.ariaLabel" (change)="onCategory(category.slug)">
+            <span>{{ category.name }}</span>
+            @if (category.count !== null) {<span class="count" aria-hidden="true">{{ category.count }}</span>}
+          </label>
+        }
       </fieldset>
     }
 
     @for (section of sections(); track section.group) {
-      <fieldset class="group">
+      <fieldset>
         <legend>{{ section.legend }}</legend>
         @for (option of section.options; track option.value) {
-          <mat-checkbox [checked]="option.checked" [aria-label]="option.ariaLabel"
-            (change)="toggleOption(section.group, option.value, $event)">
-            {{ option.label }}@if (option.count !== null) {<span class="count" aria-hidden="true"> ({{ option.count }})</span>}
-          </mat-checkbox>
+          <label class="check">
+            <input type="checkbox" [checked]="option.checked" [attr.aria-label]="option.ariaLabel"
+              (change)="toggleOption(section.group, option.value, $event)">
+            <span>{{ option.label }}</span>
+            @if (option.count !== null) {<span class="count" aria-hidden="true">{{ option.count }}</span>}
+          </label>
         }
       </fieldset>
     }
 
-    <fieldset class="group">
+    <fieldset>
       <legend>Umiejętności</legend>
       <app-skills-input [skills]="params().skills" [max]="maxSkills" label="Szukaj umiejętności" (skillsChange)="setSkills($event)" />
-      @if (popularSkills().length > 0) {
-        @for (skill of popularSkills(); track skill.name) {
-          <mat-checkbox [checked]="false" [aria-label]="skill.ariaLabel" (change)="addSkill(skill.name, $event)">
-            {{ skill.name }}<span class="count" aria-hidden="true"> ({{ skill.count }})</span>
-          </mat-checkbox>
-        }
+      @for (skill of popularSkills(); track skill.name) {
+        <label class="check">
+          <input type="checkbox" [checked]="false" [attr.aria-label]="skill.ariaLabel" (change)="addSkill(skill.name, $event)">
+          <span>{{ skill.name }}</span>
+          <span class="count" aria-hidden="true">{{ skill.count }}</span>
+        </label>
       }
     </fieldset>
 
-    <fieldset class="group salary">
+    <fieldset>
       <legend>Wynagrodzenie</legend>
+      <div class="salary-row">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic">
+          <mat-label>Od</mat-label>
+          <input matInput type="number" min="0" inputmode="numeric"
+            [value]="minInput() ?? ''" (input)="onMinInput($event)" [attr.aria-invalid]="salaryInvalid()"
+            aria-describedby="salary-error">
+        </mat-form-field>
+        <mat-form-field appearance="outline" subscriptSizing="dynamic">
+          <mat-label>Do</mat-label>
+          <input matInput type="number" min="0" inputmode="numeric"
+            [value]="maxInput() ?? ''" (input)="onMaxInput($event)" [attr.aria-invalid]="salaryInvalid()"
+            aria-describedby="salary-error">
+        </mat-form-field>
+      </div>
       <mat-form-field appearance="outline" subscriptSizing="dynamic">
         <mat-label>Waluta</mat-label>
         <mat-select [value]="params().currency" [canSelectNullableOptions]="true" (selectionChange)="onCurrency($event.value)">
@@ -85,28 +81,9 @@
           }
         </mat-select>
       </mat-form-field>
-      <div class="salary-row">
-        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-          <mat-label>Płaca od</mat-label>
-          <input matInput type="number" min="0" inputmode="numeric" placeholder="8000"
-            [ngModel]="minInput()" (ngModelChange)="onMinInput($event)" [attr.aria-invalid]="salaryInvalid()"
-            aria-describedby="salary-error">
-        </mat-form-field>
-        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-          <mat-label>Płaca do</mat-label>
-          <input matInput type="number" min="0" inputmode="numeric" placeholder="20000"
-            [ngModel]="maxInput()" (ngModelChange)="onMaxInput($event)" [attr.aria-invalid]="salaryInvalid()"
-            aria-describedby="salary-error">
-        </mat-form-field>
-      </div>
       <p id="salary-error" class="error" role="alert">
-        @if (salaryInvalid()) { Wynagrodzenie „od” nie może być wyższe niż „do” }
+        @if (salaryInvalid()) { Kwota „od” nie może być wyższa niż „do” }
       </p>
     </fieldset>
-
-    <button type="button" mat-button class="clear" [disabled]="activeCount() === 0" (click)="clear.emit()">
-      <mat-icon aria-hidden="true">clear</mat-icon>
-      Wyczyść filtry
-    </button>
   </div>
 </section>

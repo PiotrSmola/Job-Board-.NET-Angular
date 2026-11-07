@@ -1,6 +1,38 @@
 @use '../account-forms';
 
-.checkbox-error {
-  margin: 0 0 8px;
-  font-size: 0.85rem;
+.password-form {
+  max-width: 420px;
+}
+
+.password-toggle {
+  color: var(--color-text-secondary);
+}
+
+.delete-account {
+  margin-top: 28px;
+}
+
+.delete-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.delete-text {
+  flex: 1 1 240px;
+  min-width: 0;
+
+  .subheading {
+    margin-bottom: 2px;
+  }
+
+  .section-intro {
+    margin: 0;
+  }
+}
+
+.delete-form {
+  max-width: 420px;
+  margin-top: 16px;
 }

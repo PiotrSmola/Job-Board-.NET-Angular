@@ -99,6 +99,20 @@ describe('AdminService', () => {
       expect(req.request.method).toBe('DELETE');
       req.flush(null);
     });
+
+    it('deleteCompanyPhoto sends DELETE /api/admin/companies/:id/photos/:photoId', () => {
+      service.deleteCompanyPhoto(4, 9).subscribe();
+      const req = http.expectOne('/api/admin/companies/4/photos/9');
+      expect(req.request.method).toBe('DELETE');
+      req.flush(null);
+    });
+
+    it('deleteCompanyBackground sends DELETE /api/admin/companies/:id/offer-background', () => {
+      service.deleteCompanyBackground(4).subscribe();
+      const req = http.expectOne('/api/admin/companies/4/offer-background');
+      expect(req.request.method).toBe('DELETE');
+      req.flush(null);
+    });
   });
 
   describe('categories', () => {

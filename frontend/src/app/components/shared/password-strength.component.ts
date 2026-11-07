@@ -1,56 +1,74 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import { getPasswordRequirements, getPasswordStrength } from '../../utils/password';
+import { PasswordStrengthLevel, getPasswordRequirements, getPasswordStrength } from '../../utils/password';
+
+/** Ocena w zdaniu („Siła hasła: średnia”) – rodzaj żeński, bo odnosi się do „siły”. */
+const LEVEL_WORDS: Record<PasswordStrengthLevel, string> = {
+  0: '',
+  1: 'słaba',
+  2: 'średnia',
+  3: 'dobra',
+  4: 'silna'
+};
+
+/** Opis siły hasła tekstem, np. „Siła hasła: średnia. Dodaj znak specjalny lub wydłuż hasło.” */
+export function describePasswordStrength(password: string | null | undefined): string {
+  const value = password ?? '';
+  const { level } = getPasswordStrength(value);
+  const requirements = getPasswordRequirements(value);
+
+  if (level === 0) {
+    return 'Hasło: co najmniej 6 znaków, mała i wielka litera oraz cyfra.';
+  }
+  const prefix = `Siła hasła: ${LEVEL_WORDS[level]}.`;
+  if (level === 1) {
+    const missing = requirements.filter(r => !r.met).map(r => r.label.toLowerCase());
+    return `${prefix} Brakuje: ${missing.join(', ')}.`;
+  }
+  if (level === 2) return `${prefix} Dodaj znak specjalny lub wydłuż hasło.`;
+  if (level === 3) return `${prefix} Dłuższe hasło będzie jeszcze bezpieczniejsze.`;
+  return prefix;
+}
 
 /**
- * Wskaźnik siły hasła – tekstem („Siła hasła: Średnie”) i paskiem, plus lista wymagań API ze stanem
- * „spełnione / niespełnione” podanym słownie (nie tylko kolorem i ikoną). Pole hasła wskazuje go przez
- * `aria-describedby` (id nadane elementowi `<app-password-strength id="…">`), więc czytnik odczyta stan przy fokusie – bez ogłaszania każdego znaku.
+ * Wskaźnik siły hasła (makieta Logowanie.dc.html): pasek (tylko wizualnie) i zdanie z oceną oraz wskazówką,
+ * czego brakuje – informacja nie tylko kolorem. Pole hasła wskazuje go przez `aria-describedby`
+ * (id nadane elementowi `<app-password-strength id="…">`), więc czytnik odczyta opis przy fokusie – bez ogłaszania każdego znaku.
  */
 @Component({
   selector: 'app-password-strength',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="password-strength">
-      <p class="label">
-        Siła hasła: <strong>{{ strength().label || 'brak' }}</strong>
-      </p>
-      <div class="bar" aria-hidden="true">
-        @for (segment of segments; track segment) {
-          <span class="segment" [class.filled]="segment <= strength().level" [attr.data-level]="strength().level"></span>
-        }
-      </div>
-      <ul class="requirements">
-        @for (requirement of requirements(); track requirement.label) {
-          <li [class.met]="requirement.met">
-            <span class="mark" aria-hidden="true">{{ requirement.met ? '✓' : '✗' }}</span>
-            {{ requirement.label }}<span class="sr-only">{{ requirement.met ? ' – spełnione' : ' – niespełnione' }}</span>
-          </li>
-        }
-      </ul>
-    </div>
+    <span class="bar" aria-hidden="true">
+      <span class="fill" [attr.data-level]="level()" [style.width.%]="level() * 25"></span>
+    </span>
+    <span class="text">{{ description() }}</span>
   `,
   styles: [`
-    :host { display: block; margin: -8px 0 12px; }
-    .label { margin: 0 0 4px; font-size: 0.85rem; color: var(--text-secondary, #b0b0b0); }
-    .label strong { color: var(--text-primary, #fff); }
-    .bar { display: flex; gap: 4px; margin-bottom: 6px; }
-    .segment { flex: 1; height: 4px; border-radius: 2px; background: #444; }
-    .segment.filled[data-level="1"] { background: #ff8a80; }
-    .segment.filled[data-level="2"] { background: #ffb74d; }
-    .segment.filled[data-level="3"], .segment.filled[data-level="4"] { background: #69f0ae; }
-    .requirements { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 16px;
-      font-size: 0.8rem; color: var(--text-secondary, #b0b0b0); }
-    .requirements li.met { color: #69f0ae; }
-    .mark { display: inline-block; width: 1em; }
-    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
-      clip-path: inset(50%); white-space: nowrap; border: 0; }
+    :host {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 4px 0 16px;
+      color: var(--color-text-tertiary);
+      font-size: var(--font-size-sm);
+    }
+    .bar {
+      flex: 0 0 72px;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--color-selected);
+      overflow: hidden;
+    }
+    .fill { display: block; height: 100%; background: var(--status-rejected); }
+    .fill[data-level="2"] { background: var(--status-review); }
+    .fill[data-level="3"], .fill[data-level="4"] { background: var(--status-hired); }
+    .text { flex: 1; min-width: 0; }
   `]
 })
 export class PasswordStrengthComponent {
   readonly password = input<string | null>('');
 
-  readonly segments = [1, 2, 3, 4];
-  readonly strength = computed(() => getPasswordStrength(this.password()));
-  readonly requirements = computed(() => getPasswordRequirements(this.password()));
+  readonly level = computed(() => getPasswordStrength(this.password()).level);
+  readonly description = computed(() => describePasswordStrength(this.password()));
 }

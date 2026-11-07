@@ -1,54 +1,44 @@
-<section class="section" aria-labelledby="documents-heading">
-  <h2 id="documents-heading">Dokumenty w profilu</h2>
-  <p class="section-intro">
-    Zapisz tu swoje CV, list motywacyjny lub portfolio – przy aplikowaniu dołączysz je jednym kliknięciem
-    w sekcji „Dołącz z profilu”.
-  </p>
+<p class="section-intro">CV, list motywacyjny lub portfolio – przy aplikowaniu dołączysz je jednym kliknięciem.</p>
 
-  @switch (state()) {
-    @case ('loading') {
-      <div class="loading" role="status">
-        <mat-spinner diameter="40" aria-hidden="true"></mat-spinner>
-        <span class="sr-only">Wczytywanie dokumentów…</span>
-      </div>
-    }
-    @case ('error') {
-      <div class="loading load-error" role="alert">
-        <p class="error">{{ loadError() }}</p>
-        <button mat-stroked-button type="button" (click)="load()">
-          <mat-icon aria-hidden="true">refresh</mat-icon>
-          Spróbuj ponownie
-        </button>
-      </div>
-    }
-    @default {
-      <h3 class="subheading">Zapisane dokumenty</h3>
-      <app-attachment-list
-        [attachments]="documents()"
-        [actions]="listActions"
-        [allowDelete]="progress() === null"
-        [showDate]="true"
-        itemNoun="dokument"
-        emptyText="Nie masz jeszcze dokumentów w profilu"
-        (deleted)="onDeleted($event)" />
-
-      <h3 class="subheading">Dodaj dokumenty</h3>
-      <app-attachments-picker
-        [items]="items()"
-        (itemsChange)="onItemsChange($event)"
-        [existing]="documents()"
-        [progress]="progress()"
-        [errorMessage]="uploadError()"
-        [statusMessage]="uploadStatus()"
-        limitContext="profile" />
-
-      <div class="actions">
-        <button mat-raised-button color="primary" type="button" (click)="upload()"
-          [disabled]="!items().length || progress() !== null">
-          <mat-icon aria-hidden="true">cloud_upload</mat-icon>
-          {{ items().length > 1 ? 'Prześlij dokumenty (' + items().length + ')' : 'Prześlij dokument' }}
-        </button>
-      </div>
-    }
+@switch (state()) {
+  @case ('loading') {
+    <div class="loading" role="status">
+      <mat-spinner diameter="32" aria-hidden="true"></mat-spinner>
+      <span class="visually-hidden">Wczytywanie dokumentów…</span>
+    </div>
   }
-</section>
+  @case ('error') {
+    <div class="loading" role="alert">
+      <p class="danger-text">{{ loadError() }}</p>
+      <button mat-stroked-button type="button" (click)="load()">Spróbuj ponownie</button>
+    </div>
+  }
+  @default {
+    <app-attachment-list
+      [attachments]="documents()"
+      [actions]="listActions"
+      [allowDelete]="progress() === null"
+      [showDate]="true"
+      itemNoun="dokument"
+      emptyText="Nie masz jeszcze dokumentów w profilu"
+      (deleted)="onDeleted($event)" />
+
+    <h3 class="subheading add-heading">Dodaj pliki</h3>
+    <app-attachments-picker
+      [items]="items()"
+      (itemsChange)="onItemsChange($event)"
+      [existing]="documents()"
+      [progress]="progress()"
+      [errorMessage]="uploadError()"
+      [statusMessage]="uploadStatus()"
+      limitContext="profile" />
+
+    <!-- przycisk zostaje w DOM (aria-disabled bez plików / w trakcie wysyłania) – fokus nie ginie po wysłaniu -->
+    <div class="actions upload-actions">
+      <button mat-flat-button type="button" (click)="upload()" [disabled]="!items().length || progress() !== null"
+        [disabledInteractive]="true">
+        {{ items().length > 1 ? 'Prześlij dokumenty (' + items().length + ')' : 'Prześlij dokument' }}
+      </button>
+    </div>
+  }
+}

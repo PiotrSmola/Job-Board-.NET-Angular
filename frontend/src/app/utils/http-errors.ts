@@ -6,6 +6,11 @@ export function isHandledByInterceptor(error: unknown): boolean {
   return error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403);
 }
 
+/** Zasób nie istnieje (404) – oczekiwany wynik (np. usunięta oferta), nie błąd do logowania w konsoli. */
+export function isNotFound(error: unknown): boolean {
+  return error instanceof HttpErrorResponse && error.status === 404;
+}
+
 const TOO_MANY_REQUESTS = 'Too many requests - try again later';
 const TOO_MANY_REQUESTS_PL = 'Zbyt wiele żądań – spróbuj ponownie za kilka minut';
 /** 413 bez komunikatu API – limit nginx dla uploadu załączników (strona HTML). */
@@ -66,6 +71,17 @@ const KNOWN_API_MESSAGES: Record<string, string> = {
   'Total size of profile documents cannot exceed 25 MB': 'Łączny rozmiar dokumentów profilu nie może przekroczyć 25 MB',
   'Document not found': 'Nie znaleziono dokumentu',
   'No documents selected': 'Nie wybrano dokumentów z profilu',
+  // galeria i tło ofert firmy
+  'A company can have at most 20 photos': 'Firma może mieć maksymalnie 20 zdjęć',
+  'Unsupported image type - upload a PNG or JPEG file': 'Nieobsługiwany typ obrazu – prześlij plik PNG lub JPEG',
+  'Image dimensions are too large - maximum is 12000 px per side and 40 megapixels':
+    'Obraz ma za duże wymiary – maksymalnie 12000 px na bok i 40 megapikseli',
+  "No file uploaded - send images in the 'files' form field": 'Nie wybrano zdjęć do przesłania',
+  "No file uploaded - send the image in the 'file' form field": 'Nie wybrano obrazu do przesłania',
+  'Request is too large - upload at most 25 MB at once': 'Przesyłane pliki są za duże – jednorazowo można wysłać do 25 MB',
+  'Photo not found': 'Nie znaleziono zdjęcia',
+  'Invalid photo order': 'Nieprawidłowa kolejność zdjęć – odśwież galerię',
+  'Offer background not found': 'Firma nie ma tła ofert',
   [TOO_MANY_REQUESTS]: TOO_MANY_REQUESTS_PL,
   // m.in. 'Company must be approved before publishing offers'
   ...FORBIDDEN_API_MESSAGES

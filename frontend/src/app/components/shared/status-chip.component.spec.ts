@@ -15,10 +15,14 @@ describe('StatusChipComponent', () => {
     fixture = TestBed.createComponent(StatusChipComponent);
   });
 
-  it('renders the label', () => {
+  it('renders the label as text next to a decorative dot (information not conveyed by colour alone)', () => {
     fixture.componentRef.setInput('label', 'W analizie');
 
     expect(chip().textContent?.trim()).toBe('W analizie');
+    const dot = chip().querySelector('.dot');
+    expect(dot).not.toBeNull();
+    expect(dot?.getAttribute('aria-hidden')).toBe('true');
+    expect(dot?.textContent).toBe('');
   });
 
   it('uses the neutral tone by default', () => {
@@ -27,7 +31,7 @@ describe('StatusChipComponent', () => {
     expect(chip().classList).toContain('tone-neutral');
   });
 
-  it.each<StatusTone>(['neutral', 'info', 'accent', 'warning', 'success', 'danger', 'muted'])(
+  it.each<StatusTone>(['neutral', 'info', 'accent', 'warning', 'positive', 'success', 'danger', 'muted'])(
     'applies the tone-%s class',
     tone => {
       fixture.componentRef.setInput('label', 'X');

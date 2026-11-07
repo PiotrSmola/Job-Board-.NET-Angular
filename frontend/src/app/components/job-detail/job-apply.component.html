@@ -1,0 +1,93 @@
+@if (mode() !== 'hidden') {
+  <section id="apply" class="row" aria-labelledby="apply-title">
+    <div>
+      <h2 id="apply-title" #heading tabindex="-1">Twoja aplikacja</h2>
+      @if (mode() === 'form') {
+        <p class="hint">Dokumenty z profilu dołączysz jednym kliknięciem.</p>
+      }
+    </div>
+
+    <div class="body">
+      @switch (mode()) {
+        @case ('guest') {
+          <div class="panel">
+            <p>Zaloguj się na konto kandydata, aby aplikować i śledzić status rekrutacji.</p>
+            <div class="actions">
+              <a mat-flat-button routerLink="/login" [queryParams]="{ returnUrl: returnUrl() }">Zaloguj się, aby aplikować</a>
+              <a mat-button routerLink="/register">Załóż konto</a>
+            </div>
+          </div>
+        }
+        @case ('staff') {
+          <p class="muted">Konta pracodawcy i administratora nie aplikują na oferty.</p>
+        }
+        @case ('checking') {
+          <div class="panel placeholder" aria-busy="true">
+            <p class="muted">Sprawdzanie statusu aplikacji…</p>
+          </div>
+        }
+        @case ('applied') {
+          <div class="panel">
+            @if (statusPresentation(); as status) {
+              <p class="status-line">
+                <span class="muted">Status:</span>
+                <app-status-chip [label]="status.label" [tone]="status.tone" />
+              </p>
+            }
+            <p>
+              @if (hasApplied()) {
+                Już aplikowałeś na tę ofertę.
+              }
+              <a class="text-link" routerLink="/my-applications">Szczegóły w Moich aplikacjach</a>
+            </p>
+          </div>
+        }
+        @case ('form') {
+          <form class="panel" (submit)="submit($event)" [attr.aria-busy]="submitting()">
+            @if (hasWithdrawn()) {
+              <p class="withdrawn">
+                <app-status-chip label="Wycofana" tone="muted" />
+                <span>Wycofałeś wcześniej tę aplikację – możesz złożyć ją ponownie. Załączniki poprzedniej aplikacji zostaną zachowane.</span>
+              </p>
+            }
+
+            <app-profile-documents-picker
+              [pendingItems]="attachments()"
+              [existing]="existingAttachments()"
+              [disabled]="submitting()"
+              (selectionChange)="profileDocuments.set($event)" />
+
+            <!-- zachowane załączniki i wybrane dokumenty z profilu wliczają się do limitów nowych plików -->
+            <app-attachments-picker
+              label="Dodaj inne pliki"
+              [items]="attachments()"
+              (itemsChange)="attachments.set($event)"
+              [existing]="countedAttachments()"
+              [disabled]="submitting()" />
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Wiadomość do rekrutera (opcjonalnie)</mat-label>
+              <textarea matInput rows="4" [maxLength]="noteMaxLength" [value]="note()" [disabled]="submitting()"
+                (input)="onNoteInput($event)"></textarea>
+              <mat-hint align="end">{{ note().length }} / {{ noteMaxLength }}</mat-hint>
+            </mat-form-field>
+
+            <!-- stałe miejsce na błąd – pojawienie się komunikatu nie przesuwa przycisku -->
+            <p class="error" role="alert">{{ error() }}</p>
+
+            <div>
+              <button mat-flat-button type="submit" class="submit" [disabled]="submitting()">
+                @if (submitting()) {
+                  <mat-spinner diameter="18" aria-hidden="true" />
+                }
+                {{ submitLabel() }}
+              </button>
+            </div>
+          </form>
+        }
+      }
+      <!-- jedyny region ogłaszający etapy wysyłania (bez kolejnych procentów) -->
+      <p class="visually-hidden upload-status" role="status">{{ announcement() }}</p>
+    </div>
+  </section>
+}

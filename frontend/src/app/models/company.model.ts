@@ -1,3 +1,5 @@
+import { OfferBackground } from './company-media.model';
+
 export enum CompanyStatus {
   Pending = 0,
   Approved = 1,
@@ -19,6 +21,8 @@ export interface Company {
   activeJobsCount: number;
   /** Tylko w liście admina (GET /api/admin/companies). */
   membersCount?: number;
+  photosCount?: number;
+  offerBackground?: OfferBackground | null;
 }
 
 /** Body POST/PUT firmy (admin) i PUT /api/employer/company. */

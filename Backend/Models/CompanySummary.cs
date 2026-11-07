@@ -10,4 +10,7 @@ public class CompanySummary
 
     // konta pracodawców przypisane do firmy
     public int MembersCount { get; init; }
+
+    // zdjęcia w galerii firmy
+    public int PhotosCount { get; init; }
 }

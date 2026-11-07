@@ -43,7 +43,7 @@ describe('StatsLineChartComponent', () => {
     const markers = Array.from(root.querySelectorAll('svg.chart path.marker'));
 
     expect(lines.length).toBe(4);
-    expect(new Set(lines.map(line => line.getAttribute('stroke'))).size).toBe(4);
+    expect(new Set(lines.map(line => (line as SVGElement).style.getPropertyValue('stroke'))).size).toBe(4);
     expect(new Set(lines.map(line => line.getAttribute('stroke-dasharray'))).size).toBe(4);
     expect(new Set(markers.map(marker => marker.getAttribute('d'))).size).toBe(4);
     lines.forEach(line => expect(line.getAttribute('d')).toMatch(/^M[\d.]+ [\d.]+ L/));

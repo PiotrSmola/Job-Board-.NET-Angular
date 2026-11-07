@@ -76,16 +76,12 @@ function isSameLocalDay(a: Date, b: Date): boolean {
   ],
   providers: [provideNativeDateAdapter(), { provide: MAT_DATE_LOCALE, useValue: 'pl-PL' }],
   template: `
-    <h2 mat-dialog-title>
-      <mat-icon>{{ job ? 'edit' : 'add' }}</mat-icon>
-      {{ job ? 'Edytuj ofertę' : 'Dodaj nową ofertę' }}
-    </h2>
+    <h2 mat-dialog-title>{{ job ? 'Edytuj ofertę' : 'Nowa oferta' }}</h2>
     <mat-dialog-content>
       <form [formGroup]="jobForm" class="job-form">
         <mat-form-field appearance="outline">
           <mat-label>Tytuł stanowiska</mat-label>
-          <input matInput formControlName="title" placeholder="np. Senior Frontend Developer">
-          <mat-icon matPrefix>work</mat-icon>
+          <input matInput formControlName="title" placeholder="np. Senior Frontend Developer" required cdkFocusInitial>
           @if (jobForm.get('title')?.hasError('required') && jobForm.get('title')?.touched) {
             <mat-error>Tytuł jest wymagany</mat-error>
           }
@@ -102,8 +98,7 @@ function isSameLocalDay(a: Date, b: Date): boolean {
 
         <mat-form-field appearance="outline">
           <mat-label>Lokalizacja</mat-label>
-          <input matInput formControlName="location" placeholder="np. Warszawa">
-          <mat-icon matPrefix>location_on</mat-icon>
+          <input matInput formControlName="location" placeholder="np. Warszawa" required>
           @if (jobForm.get('location')?.hasError('required') && jobForm.get('location')?.touched) {
             <mat-error>Lokalizacja jest wymagana</mat-error>
           }
@@ -116,7 +111,6 @@ function isSameLocalDay(a: Date, b: Date): boolean {
             <mat-option [value]="WorkType.Hybrid">Hybrydowa</mat-option>
             <mat-option [value]="WorkType.Onsite">Stacjonarna</mat-option>
           </mat-select>
-          <mat-icon matPrefix>work_outline</mat-icon>
           @if (jobForm.get('workType')?.hasError('required') && jobForm.get('workType')?.touched) {
             <mat-error>Typ pracy jest wymagany</mat-error>
           }
@@ -131,7 +125,6 @@ function isSameLocalDay(a: Date, b: Date): boolean {
                 <mat-option [value]="category.id">{{ category.name }}</mat-option>
               }
             </mat-select>
-            <mat-icon matPrefix>category</mat-icon>
           </mat-form-field>
 
           <mat-form-field appearance="outline">
@@ -142,7 +135,6 @@ function isSameLocalDay(a: Date, b: Date): boolean {
                 <mat-option [value]="option.value">{{ option.label }}</mat-option>
               }
             </mat-select>
-            <mat-icon matPrefix>trending_up</mat-icon>
           </mat-form-field>
         </div>
 
@@ -195,9 +187,7 @@ function isSameLocalDay(a: Date, b: Date): boolean {
           </mat-form-field>
         </div>
         @if (jobForm.hasError('salaryRangeInvalid') && (jobForm.get('salaryMin')?.touched || jobForm.get('salaryMax')?.touched)) {
-          <div class="salary-error">
-            <mat-error>Wynagrodzenie "Od" nie może być wyższe niż "Do"</mat-error>
-          </div>
+          <p class="form-error" role="alert">Wynagrodzenie „od” nie może być wyższe niż „do”</p>
         }
 
         <app-skills-input
@@ -218,8 +208,7 @@ function isSameLocalDay(a: Date, b: Date): boolean {
         </mat-form-field>
 
         @if (!canPublish) {
-          <div class="publish-info" role="note">
-            <mat-icon>info</mat-icon>
+          <div class="publish-info warning-strip" role="note">
             <span>Firma nie została jeszcze zatwierdzona przez administratora – ofertę możesz zapisać tylko jako szkic. Publikacja będzie możliwa po weryfikacji firmy.</span>
           </div>
         }
@@ -232,7 +221,6 @@ function isSameLocalDay(a: Date, b: Date): boolean {
                 <mat-option [value]="option.value">{{ option.label }}</mat-option>
               }
             </mat-select>
-            <mat-icon matPrefix>flag</mat-icon>
           </mat-form-field>
 
           <mat-form-field appearance="outline">
@@ -250,138 +238,72 @@ function isSameLocalDay(a: Date, b: Date): boolean {
           </mat-form-field>
         </div>
         @if (jobForm.hasError('expiresAtInPast')) {
-          <div class="salary-error expiry-error">
-            <mat-error>Aktywna oferta musi mieć datę wygaśnięcia w przyszłości</mat-error>
-          </div>
+          <p class="form-error expiry-error" role="alert">Aktywna oferta musi mieć datę wygaśnięcia w przyszłości</p>
         }
       </form>
     </mat-dialog-content>
     <mat-dialog-actions align="end">
-      <button mat-button mat-dialog-close>
-        <mat-icon>cancel</mat-icon>
-        Anuluj
-      </button>
-      <button mat-raised-button color="primary" (click)="onSubmit()" [disabled]="jobForm.invalid || submitting">
-        @if (submitting) {
-          <mat-spinner diameter="20"></mat-spinner>
+      <button mat-button type="button" mat-dialog-close [disabled]="submitting()">Anuluj</button>
+      <button mat-flat-button type="button" class="submit-button" (click)="onSubmit()" [disabled]="jobForm.invalid || submitting()">
+        @if (submitting()) {
+          <mat-spinner diameter="20" aria-label="Zapisywanie"></mat-spinner>
         } @else {
-          <ng-container>
-            <mat-icon>{{ job ? 'save' : 'add' }}</mat-icon>
-            {{ job ? 'Zapisz' : 'Dodaj' }}
-          </ng-container>
+          {{ job ? 'Zapisz' : 'Dodaj ofertę' }}
         }
       </button>
     </mat-dialog-actions>
   `,
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [`
-    mat-dialog-content {
-      min-width: 500px;
-      max-width: 600px;
-      padding: 24px;
-    }
-
-    h2 {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      color: #e0e0e0;
-    }
+    mat-dialog-content { width: min(560px, 80vw); max-width: 100%; }
 
     .job-form {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 8px;
 
-      mat-form-field {
-        width: 100%;
-      }
+      mat-form-field { width: 100%; }
 
       .salary-row {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+        gap: 0 16px;
       }
 
       .contract-types {
-        margin: 0;
+        margin: 0 0 12px;
         padding: 0;
         border: 0;
 
-        legend {
-          padding: 0;
-          margin-bottom: 4px;
-          color: var(--text-secondary);
-        }
-
-        mat-checkbox {
-          display: inline-block;
-          margin-right: 16px;
-        }
+        legend { padding: 0; margin-bottom: 4px; color: var(--color-text-secondary); }
+        mat-checkbox { display: inline-block; margin-right: 16px; }
       }
 
-      .salary-error {
-        margin-top: -12px;
-        margin-bottom: 8px;
-
-        mat-error {
-          color: #f44336;
-          font-size: 12px;
-          display: flex;
-          align-items: center;
-          gap: 4px;
-        }
+      .form-error {
+        margin: -8px 0 8px;
+        color: var(--color-danger);
+        font-size: var(--font-size-sm);
       }
 
-      .publish-info {
-        display: flex;
-        gap: 8px;
-        align-items: flex-start;
-        padding: 12px;
-        border-radius: 8px;
-        border: 1px solid #ffb74d;
-        color: #ffb74d;
-        font-size: 0.9rem;
-      }
+      .publish-info { margin-bottom: 8px; }
 
       .salary-field input[type=number] {
         -moz-appearance: textfield;
         appearance: textfield;
 
         &::-webkit-outer-spin-button,
-        &::-webkit-inner-spin-button {
-          -webkit-appearance: none;
-          margin: 0;
-        }
-      }
-
-      .salary-field ::ng-deep .mat-mdc-form-field-text-prefix,
-      .salary-field ::ng-deep .mat-mdc-form-field-text-suffix {
-        color: var(--text-secondary);
-        font-weight: 500;
-        padding: 0 4px;
+        &::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
       }
     }
-
-    mat-dialog-actions {
-      padding: 16px 24px;
-
-      button {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-    }
-  `]
-})
+  `]})
 export class JobDialogComponent {
   private fb = inject(FormBuilder);
   private jobService = inject(JobService);
   private dialogRef = inject(MatDialogRef<JobDialogComponent>);
-  private cdr = inject(ChangeDetectorRef);
   private snackBar = inject(MatSnackBar);
   private categoryService = inject(CategoryService);
   private destroyRef = inject(DestroyRef);
+  private cdr = inject(ChangeDetectorRef);
 
   readonly categories = signal<Category[]>([]);
   readonly seniorityOptions = SENIORITY_OPTIONS;
@@ -396,7 +318,7 @@ export class JobDialogComponent {
   /** Pracodawca firmy niezatwierdzonej może zapisywać tylko szkice (API zwraca 403 przy publikacji). */
   readonly canPublish = this.isAdmin || this.data.company?.status === CompanyStatus.Approved;
   readonly initialCompany: CompanyOption | null = this.job ? { id: this.job.companyId, name: this.job.company } : null;
-  submitting = false;
+  readonly submitting = signal(false);
   WorkType = WorkType;
   readonly statusOptions = this.canPublish
     ? JOB_STATUS_OPTIONS
@@ -425,6 +347,9 @@ export class JobDialogComponent {
   }, { validators: [this.salaryRangeValidator, (group: AbstractControl) => this.expiresAtValidator(group as FormGroup)] });
 
   constructor() {
+    // OnPush: zmiany z nakładek (kalendarz, lista wyboru) i programowe patchValue odświeżają gettery szablonu
+    this.jobForm.events.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.cdr.markForCheck());
+
     this.categoryService.getCategories().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: categories => this.categories.set(categories),
       // Bez listy kategorii formularz nadal działa (kategoria jest opcjonalna)
@@ -523,9 +448,9 @@ export class JobDialogComponent {
   }
 
   onSubmit(): void {
-    if (this.jobForm.invalid) return;
+    if (this.jobForm.invalid || this.submitting()) return;
 
-    this.submitting = true;
+    this.submitting.set(true);
     const formValue = this.jobForm.value;
 
     const jobData: CreateJobOffer = {
@@ -545,17 +470,15 @@ export class JobDialogComponent {
 
     request.subscribe({
       next: () => {
-        this.submitting = false;
-        this.cdr.detectChanges();
-        this.notify(this.job ? 'Oferta zaktualizowana!' : 'Oferta dodana!');
+        this.submitting.set(false);
+        this.notify(this.job ? 'Oferta została zapisana' : 'Oferta została dodana');
         this.dialogRef.close(true);
       },
       error: (error) => {
-        this.submitting = false;
-        this.cdr.detectChanges();
+        this.submitting.set(false);
         console.error('Error saving job:', error);
         if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Błąd podczas zapisywania oferty'));
+          this.notify(getApiErrorMessage(error, 'Błąd podczas zapisywania oferty'), 'assertive');
         }
       }
     });
@@ -583,7 +506,7 @@ export class JobDialogComponent {
     return endOfLocalDay(value).toISOString();
   }
 
-  private notify(message: string): void {
-    this.snackBar.open(message, 'OK', { duration: 5000 });
+  private notify(message: string, politeness: 'polite' | 'assertive' = 'polite'): void {
+    this.snackBar.open(message, 'OK', { duration: 5000, politeness });
   }
 }

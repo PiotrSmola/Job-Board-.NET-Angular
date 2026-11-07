@@ -1,7 +1,7 @@
 namespace Backend.Settings;
 
 // Ograniczanie liczby żądań (sekcja "RateLimiting"):
-// - "uploads" - upload plików (załączniki, dokumenty profilu), osobny limit dla każdego zalogowanego użytkownika
+// - "uploads" - upload plików (załączniki, dokumenty profilu, zdjęcia i tło firm), osobny limit dla każdego zalogowanego użytkownika
 //   i wspólny limit równoległych uploadów,
 // - "auth" - logowanie, rejestracja i pozostałe endpointy AuthController (każdy przyszły też), osobny limit dla
 //   każdego adresu IP (brute force) i wspólny limit równoległych żądań (haszowanie haseł obciąża CPU),

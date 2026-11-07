@@ -1,85 +1,55 @@
-<div class="admin-panel-container">
-  <div class="header">
-    <div class="title-section">
-      <h1>Panel Administratora</h1>
-      <p class="subtitle">Zarządzaj systemem</p>
-    </div>
+<div class="page">
+  <div class="page-header">
+    <h1>Panel admina</h1>
   </div>
 
   <mat-tab-group
     [selectedIndex]="selectedTabIndex()"
     (selectedIndexChange)="onTabChange($event)"
     [preserveContent]="true"
-    class="admin-tabs">
-    <!-- TAB 1: Oferty Pracy -->
-    <mat-tab label="Oferty Pracy">
-      <ng-template mat-tab-label>
-        <mat-icon class="tab-icon">work</mat-icon>
-        Oferty Pracy
+    mat-stretch-tabs="false"
+    mat-align-tabs="start"
+    aria-label="Sekcje panelu">
+    <mat-tab label="Statystyki">
+      <ng-template matTabContent>
+        <!-- Kod wykresów jest ładowany leniwie (osobny chunk) -->
+        @defer (on immediate) {
+          <app-stats-dashboard mode="admin" />
+        } @placeholder {
+          <div class="stats-placeholder" role="status">Wczytywanie statystyk…</div>
+        }
+        <app-admin-pending-companies (changed)="onPendingChanged()" />
       </ng-template>
+    </mat-tab>
 
+    <mat-tab label="Oferty">
       <ng-template matTabContent>
         <app-admin-jobs-tab>
           @if (allowSeedRefresh()) {
-            <button mat-raised-button color="warn" (click)="refreshSeedData()" class="refresh-seed-button" [disabled]="refreshingSeed()">
-              <mat-icon>refresh</mat-icon>
-              {{ refreshingSeed() ? 'Przywracanie...' : 'Przywróć dane z seedera' }}
+            <button mat-stroked-button color="warn" type="button" (click)="refreshSeedData()" class="refresh-seed-button"
+              [disabled]="refreshingSeed()">
+              {{ refreshingSeed() ? 'Przywracanie…' : 'Przywróć dane z seedera' }}
             </button>
           }
         </app-admin-jobs-tab>
       </ng-template>
     </mat-tab>
 
-    <!-- TAB 2: Aplikacje -->
     <mat-tab label="Aplikacje">
-      <ng-template mat-tab-label>
-        <mat-icon class="tab-icon">assignment</mat-icon>
-        Aplikacje
-      </ng-template>
-
       <ng-template matTabContent>
         <app-admin-applications-tab></app-admin-applications-tab>
       </ng-template>
     </mat-tab>
 
-    <!-- TAB 3: Firmy -->
     <mat-tab label="Firmy">
-      <ng-template mat-tab-label>
-        <mat-icon class="tab-icon">business</mat-icon>
-        Firmy
-      </ng-template>
-
       <ng-template matTabContent>
         <app-admin-companies-tab></app-admin-companies-tab>
       </ng-template>
     </mat-tab>
 
-    <!-- TAB 4: Kategorie -->
     <mat-tab label="Kategorie">
-      <ng-template mat-tab-label>
-        <mat-icon class="tab-icon">category</mat-icon>
-        Kategorie
-      </ng-template>
-
       <ng-template matTabContent>
         <app-admin-categories-tab></app-admin-categories-tab>
-      </ng-template>
-    </mat-tab>
-
-    <!-- TAB 5: Statystyki -->
-    <mat-tab label="Statystyki">
-      <ng-template mat-tab-label>
-        <mat-icon class="tab-icon">insights</mat-icon>
-        Statystyki
-      </ng-template>
-
-      <ng-template matTabContent>
-        <!-- Kod wykresów jest ładowany dopiero przy pierwszym wejściu w zakładkę -->
-        @defer (on immediate) {
-          <app-stats-dashboard mode="admin" />
-        } @placeholder {
-          <div class="stats-placeholder" role="status">Wczytywanie statystyk…</div>
-        }
       </ng-template>
     </mat-tab>
   </mat-tab-group>

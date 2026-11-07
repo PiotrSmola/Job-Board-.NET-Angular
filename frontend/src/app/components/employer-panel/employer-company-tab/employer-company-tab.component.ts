@@ -1,20 +1,25 @@
-import { Component, OnInit, computed, inject, input, output, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, input, output, signal, ChangeDetectionStrategy } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { Observable, filter, of } from 'rxjs';
 import { Company, CompanyStatus, SaveCompany } from '../../../models/company.model';
+import { OfferBackground } from '../../../models/company-media.model';
 import { CompanyService } from '../../../services/company.service';
+import { ConfirmService } from '../../../services/confirm.service';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
 import { COMPANY_DESCRIPTION_MAX, buildCompanyForm, toSaveCompany } from '../../../utils/company-form';
+import { CompanyPhotosComponent } from '../company-media/company-photos.component';
+import { OfferBackgroundSettingsComponent } from '../company-media/offer-background-settings.component';
 
-const REVERIFICATION_WARNING = 'Zmiana nazwy lub strony www wymaga ponownej weryfikacji przez administratora. ' +
+export const REVERIFICATION_WARNING = 'Zmiana nazwy lub strony www wymaga ponownej weryfikacji przez administratora. ' +
   'Do czasu zatwierdzenia oferty firmy nie będą widoczne publicznie.';
 
 function normalizeName(name: string): string {
@@ -28,7 +33,7 @@ interface StatusBanner {
   text: string;
 }
 
-/** Profil firmy pracodawcy: baner statusu weryfikacji i formularz danych (ponowne zgłoszenie po odrzuceniu). */
+/** Profil firmy pracodawcy: status weryfikacji, dane firmy (ponowne zgłoszenie po odrzuceniu), zdjęcia i tło ofert. */
 @Component({
   selector: 'app-employer-company-tab',
   standalone: true,
@@ -37,20 +42,23 @@ interface StatusBanner {
     ReactiveFormsModule,
     RouterLink,
     MatButtonModule,
-    MatCardModule,
     MatFormFieldModule,
     MatIconModule,
     MatInputModule,
-    MatProgressSpinnerModule
+    MatProgressSpinnerModule,
+    CompanyPhotosComponent,
+    OfferBackgroundSettingsComponent
   ],
   templateUrl: './employer-company-tab.component.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './employer-company-tab.component.scss'
 })
 export class EmployerCompanyTabComponent implements OnInit {
   private fb = inject(FormBuilder);
   private companyService = inject(CompanyService);
+  private confirm = inject(ConfirmService);
   private snackBar = inject(MatSnackBar);
+  private destroyRef = inject(DestroyRef);
 
   readonly company = input.required<Company>();
   readonly companyChange = output<Company>();
@@ -104,11 +112,27 @@ export class EmployerCompanyTabComponent implements OnInit {
 
     const data = toSaveCompany(this.form.value);
     const reverifying = this.isApproved() && this.changesIdentity(data);
-    if (reverifying && !confirm(REVERIFICATION_WARNING)) return;
+    const confirmed: Observable<boolean> = reverifying
+      ? this.confirm.confirm({
+        title: 'Wysłać firmę do ponownej weryfikacji?',
+        message: REVERIFICATION_WARNING,
+        confirmLabel: 'Zapisz i wyślij'
+      })
+      : of(true);
 
-    const resubmitting = this.isRejected() || reverifying;
+    confirmed.pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.save(data, this.isRejected() || reverifying));
+  }
+
+  /** Nowe tło z sekcji „Tło ofert” – dane firmy w panelu pozostają aktualne. */
+  onBackgroundChange(offerBackground: OfferBackground | null): void {
+    this.companyChange.emit({ ...this.company(), offerBackground });
+  }
+
+  private save(data: SaveCompany, resubmitting: boolean): void {
+    if (this.saving()) return;
+
     this.saving.set(true);
-    this.companyService.updateMyCompany(data).subscribe({
+    this.companyService.updateMyCompany(data).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: company => {
         this.saving.set(false);
         this.form.reset(toSaveCompany(company));
@@ -133,6 +157,6 @@ export class EmployerCompanyTabComponent implements OnInit {
   }
 
   private notify(message: string): void {
-    this.snackBar.open(message, 'OK', { duration: 5000 });
+    this.snackBar.open(message, 'OK', { duration: 5000, politeness: 'polite' });
   }
 }

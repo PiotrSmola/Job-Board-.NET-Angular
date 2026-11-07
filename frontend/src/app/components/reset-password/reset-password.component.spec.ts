@@ -82,7 +82,7 @@ describe('ResetPasswordComponent', () => {
     submit();
 
     expect(resetPassword).toHaveBeenCalledWith({ email: 'jan@example.com', token: 'tok+/=', newPassword: 'Nowe1234' });
-    expect(snackBarOpen).toHaveBeenCalledWith('Hasło zostało zmienione – zaloguj się nowym hasłem', 'OK', { duration: 8000 });
+    expect(snackBarOpen).toHaveBeenCalledWith('Hasło zostało zmienione – zaloguj się nowym hasłem', 'OK', { duration: 8000, politeness: 'polite' });
     expect(navigate).toHaveBeenCalledWith(['/login']);
   });
 
@@ -107,7 +107,8 @@ describe('ResetPasswordComponent', () => {
     submit();
 
     expect(resetPassword).not.toHaveBeenCalled();
-    expect(root().querySelector('.error[role="alert"]')?.textContent).toBe('Hasła nie są takie same');
+    expect(root().querySelector('mat-error')?.textContent?.trim()).toBe('Hasła nie są takie same');
+    expect(document.activeElement).toBe(root().querySelector('[formControlName="confirmPassword"]'));
   });
 
   it('shows the strength indicator linked to the new password field', () => {
@@ -118,7 +119,7 @@ describe('ResetPasswordComponent', () => {
 
     const input = root().querySelector('[formControlName="newPassword"]')!;
     expect(input.getAttribute('aria-describedby')).toContain('reset-password-strength');
-    expect(root().querySelector('#reset-password-strength')?.textContent).toContain('Silne');
+    expect(root().querySelector('#reset-password-strength')?.textContent).toContain('Siła hasła: silna');
   });
 
   it('switches to the "request a new link" state for an invalid or expired link', () => {
@@ -146,7 +147,7 @@ describe('ResetPasswordComponent', () => {
     type('confirmPassword', 'Nowe1234');
     submit();
 
-    expect(root().querySelector('.error[role="alert"]')?.textContent).toBe('Hasło musi zawierać wielką literę');
+    expect(root().querySelector('[role="alert"] .auth-alert')?.textContent?.trim()).toBe('Hasło musi zawierać wielką literę');
     expect(root().querySelector('form')).not.toBeNull();
   });
 

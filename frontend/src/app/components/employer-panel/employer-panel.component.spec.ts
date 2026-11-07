@@ -26,6 +26,7 @@ class StubJobsTabComponent {
   readonly mode = input<PanelMode>('admin');
   readonly company = input<Company | null>(null);
   readonly reload = vi.fn();
+  readonly openAddDialog = vi.fn();
 }
 
 @Component({
@@ -121,13 +122,39 @@ describe('EmployerPanelComponent', () => {
       expect(root().querySelector('mat-tab-group')).toBeNull();
     });
 
-    it('shows the company name and status chip in the header', async () => {
-      await create(of(makeCompany(3, { name: 'Acme', status: CompanyStatus.Pending })));
+    it('shows the company name as the heading with the status and active offers below', async () => {
+      await create(of(makeCompany(3, { name: 'Acme', status: CompanyStatus.Pending, activeJobsCount: 0 })));
 
-      expect(root().querySelector('h1')?.textContent).toContain('Panel pracodawcy');
+      expect(root().querySelector('h1')?.textContent?.trim()).toBe('Acme');
       const subtitle = root().querySelector('.company-subtitle')!;
-      expect(subtitle.textContent).toContain('Acme');
       expect(subtitle.querySelector('app-status-chip')?.textContent?.trim()).toBe('Oczekuje');
+      expect(subtitle.textContent).toContain('0 aktywnych ofert');
+      expect(subtitle.querySelector('a')).toBeNull();
+    });
+
+    it('links an approved company to its public profile and counts offers in Polish', async () => {
+      await create(of(makeCompany(3, { status: CompanyStatus.Approved, activeJobsCount: 2 })));
+
+      const subtitle = root().querySelector('.company-subtitle')!;
+      expect(subtitle.textContent).toContain('2 aktywne oferty');
+      expect(subtitle.querySelector('a')?.getAttribute('href')).toBe('/companies/3');
+    });
+
+    it('"Nowa oferta" in the header opens the add dialog of the offers tab', async () => {
+      await create();
+      const button = Array.from(root().querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent?.includes('Nowa oferta'))!;
+
+      button.click();
+
+      const jobsTab = fixture.debugElement.query(By.directive(StubJobsTabComponent)).componentInstance as StubJobsTabComponent;
+      expect(jobsTab.openAddDialog).toHaveBeenCalledTimes(1);
+      expect(component.selectedTabIndex()).toBe(0);
+    });
+
+    it('shows "Panel pracodawcy" as the heading while loading', async () => {
+      await create(new Subject<Company>() as never);
+
+      expect(root().querySelector('h1')?.textContent?.trim()).toBe('Panel pracodawcy');
     });
 
     it('shows an error with a retry button when loading fails, and retries', async () => {
@@ -180,7 +207,7 @@ describe('EmployerPanelComponent', () => {
     it('renders the tabs: Oferty, Aplikacje, Profil firmy, Statystyki', async () => {
       await create();
 
-      expect(tabLabels()).toEqual(['work Oferty', 'assignment Aplikacje', 'business Profil firmy', 'insights Statystyki']);
+      expect(tabLabels()).toEqual(['Oferty', 'Aplikacje', 'Profil firmy', 'Statystyki']);
     });
 
     it('loads the statistics dashboard (lazily, in employer mode) only after visiting the tab', async () => {
@@ -280,9 +307,8 @@ describe('EmployerPanelComponent', () => {
 
       profile.componentInstance.companyChange.emit(makeCompany(3, { name: 'Acme 2', status: CompanyStatus.Pending }));
 
-      const subtitle = root().querySelector('.company-subtitle')!;
-      expect(subtitle.textContent).toContain('Acme 2');
-      expect(subtitle.querySelector('app-status-chip')?.textContent?.trim()).toBe('Oczekuje');
+      expect(root().querySelector('h1')?.textContent?.trim()).toBe('Acme 2');
+      expect(root().querySelector('.company-subtitle app-status-chip')?.textContent?.trim()).toBe('Oczekuje');
     });
   });
 

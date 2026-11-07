@@ -15,6 +15,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
     }
 
     public DbSet<Company> Companies { get; set; }
+    public DbSet<CompanyPhoto> CompanyPhotos { get; set; }
     public DbSet<JobOffer> JobOffers { get; set; }
     public DbSet<Category> Categories { get; set; }
     public DbSet<Skill> Skills { get; set; }
@@ -137,6 +138,31 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataPro
                 .WithMany()
                 .HasForeignKey(e => e.ReviewedByUserId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // tło ofert: wartość domyślna przyciemnienia (75) jest ustawiona w migracji - w modelu jej nie deklarujemy
+            // (jak przy Status oferty); domyślne Center = 0
+            entity.Property(e => e.OfferBackgroundKey).HasMaxLength(300);
+            entity.Property(e => e.OfferBackgroundContentType).HasMaxLength(100);
+            entity.Property(e => e.OfferBackgroundFocus).HasConversion<int>();
+
+            // zdjęcia usuwane razem z firmą (pliki w magazynie usuwa kod po zatwierdzeniu zmian)
+            entity.HasMany(e => e.Photos)
+                .WithOne(e => e.Company)
+                .HasForeignKey(e => e.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<CompanyPhoto>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FileKey).IsRequired().HasMaxLength(300);
+            entity.Property(e => e.ContentType).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Caption).HasMaxLength(150);
+
+            // klucz pliku w magazynie wskazuje dokładnie jedno zdjęcie
+            entity.HasIndex(e => e.FileKey).IsUnique();
+            // galeria firmy w kolejności (także indeks klucza obcego)
+            entity.HasIndex(e => new { e.CompanyId, e.SortOrder });
         });
 
         builder.Entity<JobApplication>(entity =>

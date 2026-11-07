@@ -1,10 +1,12 @@
 @use '../shared/auth-card';
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 16px;
+// Stała minimalna wysokość wyniku – przejście „potwierdzanie” → wynik nie przesuwa przycisków (CLS)
+.result {
+  min-height: 48px;
+
+  .auth-alert {
+    margin: 0;
+  }
 }
 
 .progress {
@@ -12,4 +14,13 @@
   align-items: center;
   gap: 12px;
   min-height: 48px;
+
+  p {
+    margin: 0;
+  }
+}
+
+// Pusty komunikat ponownej wysyłki nie dokłada odstępu
+.intro:empty {
+  display: none;
 }

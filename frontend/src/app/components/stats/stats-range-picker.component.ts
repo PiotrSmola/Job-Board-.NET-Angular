@@ -1,6 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { MatButtonModule } from '@angular/material/button';
 import { MAT_DATE_LOCALE, provideNativeDateAdapter } from '@angular/material/core';
 import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -24,13 +23,12 @@ import {
   selector: 'app-stats-range-picker',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatButtonModule, MatDatepickerModule, MatFormFieldModule],
+  imports: [ReactiveFormsModule, MatDatepickerModule, MatFormFieldModule],
   providers: [provideNativeDateAdapter(), { provide: MAT_DATE_LOCALE, useValue: 'pl-PL' }],
   template: `
     <div class="presets" role="group" aria-label="Gotowe zakresy dat">
       @for (preset of presets; track preset.id) {
         <button
-          mat-stroked-button
           type="button"
           [class.active]="activePreset() === preset.id"
           [attr.aria-pressed]="activePreset() === preset.id"
@@ -56,11 +54,14 @@ import {
   `,
   styles: [`
     :host { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
-    .presets { display: flex; flex-wrap: wrap; gap: 8px; }
-    .presets button { min-height: 40px; }
-    .presets button.active { border-color: var(--primary-color); color: var(--primary-color); background: rgba(0, 229, 255, 0.1); }
+    /* segmentowany wybór zakresu (makieta: .seg) */
+    .presets { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 4px; border-radius: var(--radius-button); background: var(--color-input-bg); }
+    .presets button { height: 32px; padding: 0 14px; border: 0; border-radius: 16px; background: transparent; color: var(--color-text-secondary);
+      font: inherit; font-weight: 500; cursor: pointer; }
+    .presets button:hover { color: var(--color-text); }
+    .presets button[aria-pressed='true'] { background: var(--color-selected); color: var(--color-text); }
     .custom-range { width: 280px; max-width: 100%; }
-    .error { flex-basis: 100%; margin: 0; color: #ff8a80; font-size: 0.9rem; }
+    .error { flex-basis: 100%; margin: 0; color: var(--color-danger); font-size: var(--font-size-sm); }
   `]
 })
 export class StatsRangePickerComponent {

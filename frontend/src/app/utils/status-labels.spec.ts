@@ -144,10 +144,10 @@ describe('status-labels', () => {
 
     it('maps every application status to the expected Polish label and tone', () => {
       expect(applicationStatuses.map(s => [APPLICATION_STATUS_PRESENTATION[s].label, APPLICATION_STATUS_PRESENTATION[s].tone])).toEqual([
-        ['Złożona', 'neutral'],
-        ['W analizie', 'info'],
+        ['Złożona', 'info'],
+        ['W analizie', 'warning'],
         ['Rozmowa', 'accent'],
-        ['Oferta', 'warning'],
+        ['Oferta', 'positive'],
         ['Zatrudniony', 'success'],
         ['Odrzucona', 'danger'],
         ['Wycofana', 'muted']

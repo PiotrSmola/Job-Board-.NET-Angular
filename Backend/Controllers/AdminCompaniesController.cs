@@ -17,12 +17,24 @@ public class AdminCompaniesController : ControllerBase
     private readonly ICompanyRepository _companyRepository;
     private readonly ICurrentUserAccess _access;
     private readonly IEmailOutbox _emailOutbox;
+    private readonly ICompanyMediaRepository _mediaRepository;
+    private readonly IFileStorage _fileStorage;
+    private readonly ILogger<AdminCompaniesController> _logger;
 
-    public AdminCompaniesController(ICompanyRepository companyRepository, ICurrentUserAccess access, IEmailOutbox emailOutbox)
+    public AdminCompaniesController(
+        ICompanyRepository companyRepository,
+        ICurrentUserAccess access,
+        IEmailOutbox emailOutbox,
+        ICompanyMediaRepository mediaRepository,
+        IFileStorage fileStorage,
+        ILogger<AdminCompaniesController> logger)
     {
         _companyRepository = companyRepository;
         _access = access;
         _emailOutbox = emailOutbox;
+        _mediaRepository = mediaRepository;
+        _fileStorage = fileStorage;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -179,9 +191,10 @@ public class AdminCompaniesController : ControllerBase
             return BadRequest(new { message = "Company has job offers or members" });
         }
 
+        IReadOnlyList<string> fileKeys;
         try
         {
-            await _companyRepository.DeleteCompanyAsync(company);
+            fileKeys = await _companyRepository.DeleteCompanyAsync(company);
         }
         catch (Exception ex) when (ex.IsForeignKeyViolation())
         {
@@ -189,6 +202,47 @@ public class AdminCompaniesController : ControllerBase
             return BadRequest(new { message = "Company has job offers or members" });
         }
 
+        // zdjęcia i tło firmy dopiero po zatwierdzeniu usunięcia w bazie
+        await _fileStorage.DeleteQuietlyAsync(fileKeys, _logger);
+
+        return NoContent();
+    }
+
+    // Moderacja galerii: usunięcie zdjęcia dowolnej firmy (plik po usunięciu rekordu)
+    [HttpDelete("{id:int}/photos/{photoId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> DeletePhoto(int id, int photoId)
+    {
+        var fileKey = await _mediaRepository.DeletePhotoAsync(id, photoId, HttpContext.RequestAborted);
+        if (fileKey == null)
+        {
+            return await _companyRepository.GetStatusAsync(id) == null
+                ? NotFound(new { message = CompanyMessages.NotFound })
+                : NotFound(new { message = CompanyMedia.PhotoNotFoundMessage });
+        }
+
+        await _fileStorage.DeleteQuietlyAsync(fileKey, _logger);
+        return NoContent();
+    }
+
+    // Moderacja tła ofert: usunięcie obrazu (ustawienia przyciemnienia zostają); firma bez obrazu - także 204
+    [HttpDelete("{id:int}/offer-background")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> DeleteOfferBackground(int id)
+    {
+        var change = await _mediaRepository.SetOfferBackgroundAsync(id, null, null, HttpContext.RequestAborted);
+        if (!change.Found)
+        {
+            return NotFound(new { message = CompanyMessages.NotFound });
+        }
+
+        await _fileStorage.DeleteQuietlyAsync(change.PreviousKey, _logger);
         return NoContent();
     }
 

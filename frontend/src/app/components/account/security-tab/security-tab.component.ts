@@ -1,14 +1,17 @@
-import { ChangeDetectionStrategy, Component, ElementRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { filter, switchMap, tap } from 'rxjs';
 import { AccountService } from '../../../services/account.service';
 import { AuthService } from '../../../services/auth.service';
+import { ConfirmService } from '../../../services/confirm.service';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
 import {
   PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, getPasswordErrorMessages, passwordPolicyValidator, passwordsMatchValidator
@@ -24,8 +27,9 @@ function isWrongPassword(error: unknown): boolean {
 }
 
 /**
- * Bezpieczeństwo konta: zmiana hasła (nowy token z odpowiedzi – sesja trwa) i usunięcie konta potwierdzone hasłem.
- * Hasła żyją tylko w kontrolkach formularza – po zakończeniu żądania pola są czyszczone.
+ * „Hasło i bezpieczeństwo”: zmiana hasła (nowy token z odpowiedzi – sesja trwa) i usunięcie konta (hasło + ConfirmService).
+ * Dwa osobne formularze, każdy z ukrytym polem `username`, więc menedżer haseł nie myli „obecnego hasła” z hasłem
+ * do usunięcia konta. Hasła żyją tylko w kontrolkach formularza – po zakończeniu żądania pola są czyszczone.
  * Tych dwóch żądań celowo NIE przerywamy przy opuszczeniu strony: serwer mógł już zmienić hasło (nowy token trzeba
  * zapisać, inaczej sesja wygaśnie) albo usunąć konto (sesję trzeba zakończyć). Kończą się same po odpowiedzi.
  */
@@ -36,7 +40,6 @@ function isWrongPassword(error: unknown): boolean {
   imports: [
     ReactiveFormsModule,
     MatButtonModule,
-    MatCheckboxModule,
     MatFormFieldModule,
     MatIconModule,
     MatInputModule,
@@ -49,11 +52,14 @@ function isWrongPassword(error: unknown): boolean {
 export class SecurityTabComponent {
   private readonly accountService = inject(AccountService);
   private readonly authService = inject(AuthService);
+  private readonly confirmService = inject(ConfirmService);
+  private readonly snackBar = inject(MatSnackBar);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly fb = inject(FormBuilder).nonNullable;
 
   readonly confirmMatcher = new PasswordMatchErrorStateMatcher();
-  /** Dla menedżerów haseł – ukryte pole username obok nowego hasła. */
+  /** Dla menedżerów haseł – ukryte pole username w obu formularzach. */
   readonly email = this.authService.currentUser()?.email ?? '';
   readonly minLength = PASSWORD_MIN_LENGTH;
   readonly maxLength = PASSWORD_MAX_LENGTH;
@@ -64,7 +70,7 @@ export class SecurityTabComponent {
   readonly hideNew = signal(true);
   readonly changing = signal(false);
   readonly changeError = signal('');
-  readonly changeStatus = signal('');
+  readonly deleteOpen = signal(false);
   readonly deleting = signal(false);
   readonly deleteError = signal('');
 
@@ -79,22 +85,32 @@ export class SecurityTabComponent {
     confirmPassword: ['', [Validators.required]]
   }, { validators: passwordsMatchValidator('newPassword', 'confirmPassword') });
 
+  readonly newPassword = toSignal(this.passwordForm.controls.newPassword.valueChanges, { initialValue: '' });
+
   readonly deleteForm = this.fb.group({
-    password: ['', [Validators.required, Validators.maxLength(PASSWORD_MAX_LENGTH)]],
-    acknowledge: [false, [Validators.requiredTrue]]
+    password: ['', [Validators.required, Validators.maxLength(PASSWORD_MAX_LENGTH)]]
   });
+
+  toggleCurrent(): void {
+    this.hideCurrent.update(hidden => !hidden);
+  }
+
+  toggleNew(): void {
+    this.hideNew.update(hidden => !hidden);
+  }
 
   changePassword(): void {
     if (this.changing()) return;
     this.changeError.set('');
-    this.changeStatus.set('');
 
     if (this.passwordForm.invalid) {
       this.passwordForm.markAllAsTouched();
-      this.changeError.set(this.passwordForm.hasError('passwordMismatch')
-        ? 'Nowe hasła nie są takie same'
-        : 'Popraw zaznaczone pola formularza');
-      focusFirstInvalidControl(this.host.nativeElement.querySelector('.password-section') ?? this.host.nativeElement);
+      const form = this.host.nativeElement.querySelector<HTMLElement>('.password-form') ?? this.host.nativeElement;
+      focusFirstInvalidControl(form);
+      // pola poprawne, różnią się tylko hasła – fokus na pole powtórzenia (tam jest komunikat)
+      if (this.passwordForm.controls.currentPassword.valid && this.passwordForm.controls.newPassword.valid) {
+        form.querySelector<HTMLElement>('[formControlName="confirmPassword"]')?.focus();
+      }
       return;
     }
 
@@ -104,7 +120,8 @@ export class SecurityTabComponent {
       next: () => {
         this.changing.set(false);
         this.passwordForm.reset();
-        this.changeStatus.set('Hasło zostało zmienione. Pozostałe sesje zostały wylogowane.');
+        this.snackBar.open('Hasło zostało zmienione. Pozostałe sesje zostały wylogowane.', 'OK',
+          { duration: 6000, politeness: 'polite' });
       },
       error: error => {
         console.error('Error changing password:', error);
@@ -121,20 +138,47 @@ export class SecurityTabComponent {
     });
   }
 
+  /** Pokazuje/ukrywa formularz usunięcia konta; po otwarciu fokus na polu hasła. */
+  toggleDelete(): void {
+    const open = !this.deleteOpen();
+    this.deleteOpen.set(open);
+    this.deleteError.set('');
+    if (open) {
+      afterNextRender(
+        () => this.host.nativeElement.querySelector<HTMLElement>('.delete-form input[formControlName="password"]')?.focus(),
+        { injector: this.injector });
+    } else {
+      this.deleteForm.reset();
+    }
+  }
+
+  /** „Anuluj” w formularzu usunięcia – zamyka go i oddaje fokus przyciskowi „Usuń konto”. */
+  cancelDelete(): void {
+    this.toggleDelete();
+    this.host.nativeElement.querySelector<HTMLElement>('.delete-toggle')?.focus();
+  }
+
   deleteAccount(): void {
     if (this.deleting() || this.isAdmin) return;
     this.deleteError.set('');
 
     if (this.deleteForm.invalid) {
       this.deleteForm.markAllAsTouched();
-      this.deleteError.set('Podaj hasło i potwierdź, że rozumiesz skutki usunięcia konta');
-      focusFirstInvalidControl(this.host.nativeElement.querySelector('.delete-section') ?? this.host.nativeElement);
+      focusFirstInvalidControl(this.host.nativeElement.querySelector('.delete-form') ?? this.host.nativeElement);
       return;
     }
 
     const { password } = this.deleteForm.getRawValue();
-    this.deleting.set(true);
-    this.accountService.deleteAccount(password).subscribe({
+    this.confirmService.confirm({
+      title: 'Usunąć konto?',
+      message: 'Usuniemy profil, aplikacje z załącznikami i dokumenty z profilu. Tej operacji nie da się cofnąć.',
+      confirmLabel: 'Usuń konto',
+      destructive: true
+    }).pipe(
+      filter(Boolean),
+      tap(() => this.deleting.set(true)),
+      switchMap(() => this.accountService.deleteAccount(password))
+    ).subscribe({
       next: () => {
         this.deleting.set(false);
         this.deleteForm.reset();

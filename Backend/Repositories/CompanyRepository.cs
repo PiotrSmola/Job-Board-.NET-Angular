@@ -99,10 +99,48 @@ public class CompanyRepository : ICompanyRepository
         await _context.SaveChangesAsync();
     }
 
-    public async Task DeleteCompanyAsync(Company company)
+    public async Task<IReadOnlyList<string>> DeleteCompanyAsync(Company company)
     {
+        // Blokada wiersza firmy przed odczytem kluczy plików: upload zdjęć / tła zapisuje rekordy pod tą samą blokadą,
+        // więc odczytane klucze obejmują pliki zatwierdzone tuż przed usunięciem, a późniejszy upload nie znajdzie firmy
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+
+        await LockCompanyAsync(_context, company.Id);
+        var fileKeys = await CompanyFileKeysAsync(_context, company.Id);
+
+        // zdjęcia usuwa kaskada w bazie
         _context.Companies.Remove(company);
         await _context.SaveChangesAsync();
+        await transaction.CommitAsync();
+
+        return fileKeys;
+    }
+
+    // UPDATE bez zmiany wartości tylko blokuje wiersz firmy (wynik = liczba dopasowanych wierszy)
+    internal static Task<int> LockCompanyAsync(ApplicationDbContext context, int companyId,
+        CancellationToken cancellationToken = default) =>
+        context.Companies
+            .Where(c => c.Id == companyId)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.Status, c => c.Status), cancellationToken);
+
+    // Klucze plików firmy w magazynie (zdjęcia i tło ofert) - do usunięcia po zatwierdzonym usunięciu firmy
+    internal static async Task<List<string>> CompanyFileKeysAsync(ApplicationDbContext context, int companyId)
+    {
+        var fileKeys = await context.CompanyPhotos
+            .Where(p => p.CompanyId == companyId)
+            .Select(p => p.FileKey)
+            .ToListAsync();
+
+        var backgroundKey = await context.Companies
+            .Where(c => c.Id == companyId)
+            .Select(c => c.OfferBackgroundKey)
+            .FirstOrDefaultAsync();
+        if (backgroundKey != null)
+        {
+            fileKeys.Add(backgroundKey);
+        }
+
+        return fileKeys;
     }
 
     // Filtr po nazwie i lokalizacji (bez rozróżniania wielkości liter)
@@ -128,7 +166,8 @@ public class CompanyRepository : ICompanyRepository
         {
             Company = c,
             ActiveJobsCount = c.Status == CompanyStatus.Approved ? c.JobOffers.AsQueryable().Count(published) : 0,
-            MembersCount = c.Members.Count
+            MembersCount = c.Members.Count,
+            PhotosCount = c.Photos.Count
         });
     }
 }

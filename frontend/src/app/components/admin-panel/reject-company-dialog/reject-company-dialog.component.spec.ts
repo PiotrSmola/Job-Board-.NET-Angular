@@ -32,7 +32,7 @@ describe('RejectCompanyDialogComponent', () => {
   }
 
   function submitButton(): HTMLButtonElement {
-    return root().querySelector<HTMLButtonElement>('button[mat-raised-button]')!;
+    return root().querySelector<HTMLButtonElement>('button.submit-button')!;
   }
 
   function httpError(status: number, error: unknown = null): HttpErrorResponse {

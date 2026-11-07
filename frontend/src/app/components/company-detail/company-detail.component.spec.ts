@@ -6,6 +6,9 @@ import { Observable, Subject, of, throwError } from 'rxjs';
 import { CompanyDetailComponent } from './company-detail.component';
 import { CompanyService } from '../../services/company.service';
 import { JobService } from '../../services/job.service';
+import { CompanyMediaService } from '../../services/company-media.service';
+import { CompanyPhoto } from '../../models/company-media.model';
+import { PageTitleService } from '../../services/page-title.service';
 import { Company, CompanyStatus } from '../../models/company.model';
 import { JobOffer, WorkType } from '../../models/job-offer.model';
 import { JobParams } from '../../models/job-params.model';
@@ -21,6 +24,7 @@ describe('CompanyDetailComponent', () => {
   let component: CompanyDetailComponent;
   let getCompany: ReturnType<typeof vi.fn>;
   let getJobs: ReturnType<typeof vi.fn>;
+  let getPhotos: ReturnType<typeof vi.fn>;
 
   async function open(id: number | string = 5): Promise<void> {
     component = await harness.navigateByUrl(`/companies/${id}`, CompanyDetailComponent);
@@ -47,6 +51,7 @@ describe('CompanyDetailComponent', () => {
   beforeEach(async () => {
     getCompany = vi.fn().mockReturnValue(of(makeCompany(5, { name: 'Acme' })));
     getJobs = vi.fn().mockReturnValue(withJobs([]));
+    getPhotos = vi.fn().mockReturnValue(of([]));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
@@ -54,13 +59,31 @@ describe('CompanyDetailComponent', () => {
       providers: [
         provideRouter([{ path: 'companies/:id', component: CompanyDetailComponent }]),
         { provide: CompanyService, useValue: { getCompany } },
-        { provide: JobService, useValue: { getJobs } }
+        { provide: JobService, useValue: { getJobs } },
+        { provide: CompanyMediaService, useValue: { getPhotos } }
       ]
     }).compileComponents();
     harness = await RouterTestingHarness.create();
   });
 
   afterEach(() => vi.restoreAllMocks());
+
+  describe('page title', () => {
+    it('uses the company name once the profile is loaded', async () => {
+      const set = vi.spyOn(TestBed.inject(PageTitleService), 'set').mockImplementation(() => undefined);
+      await open(5);
+
+      expect(set).toHaveBeenCalledExactlyOnceWith('Acme');
+    });
+
+    it('reports an unavailable company when loading fails', async () => {
+      const set = vi.spyOn(TestBed.inject(PageTitleService), 'set').mockImplementation(() => undefined);
+      getCompany.mockReturnValue(throwError(() => httpError(404)));
+      await open(5);
+
+      expect(set).toHaveBeenCalledExactlyOnceWith('Firma niedostępna');
+    });
+  });
 
   describe('profile', () => {
     it('loads the company by the id from the route', async () => {
@@ -81,10 +104,10 @@ describe('CompanyDetailComponent', () => {
       const text = root().textContent ?? '';
       expect(text).toContain('Acme');
       expect(text).toContain('Rzeszów');
-      expect(text).toContain('https://acme.example.com');
-      expect(text).toContain('Aktywne oferty: 4');
+      expect(text).toContain('acme.example.com');
+      expect(text).toContain('Aktywne oferty4');
       expect(text).toContain('Robimy rzeczy');
-      expect(text).toContain('05.03.2026');
+      expect(text).toContain('Na Job Board od5 marca 2026');
     });
 
     it('omits location, website and description when they are missing', async () => {
@@ -92,8 +115,8 @@ describe('CompanyDetailComponent', () => {
 
       await open(5);
 
-      expect(root().querySelector('.meta mat-icon')?.textContent).not.toBe('location_on');
-      expect(root().querySelector('a.meta-item')).toBeNull();
+      expect(root().querySelector('.location')).toBeNull();
+      expect(root().querySelector('a.website-link')).toBeNull();
       expect(root().querySelector('.description')).toBeNull();
     });
 
@@ -103,13 +126,13 @@ describe('CompanyDetailComponent', () => {
       expect(root().querySelector('.back a')?.getAttribute('href')).toBe('/companies');
     });
 
-    it('shows a spinner while the profile is loading', async () => {
+    it('reserves space while the profile is loading', async () => {
       getCompany.mockReturnValue(new Subject<Company>());
 
       await open(5);
 
       expect(component.loading()).toBe(true);
-      expect(root().querySelector('mat-spinner')).not.toBeNull();
+      expect(root().querySelector('.profile-skeleton')?.getAttribute('aria-busy')).toBe('true');
     });
   });
 
@@ -123,7 +146,7 @@ describe('CompanyDetailComponent', () => {
 
       await open(5);
 
-      const link = root().querySelector<HTMLAnchorElement>('a.meta-item')!;
+      const link = root().querySelector<HTMLAnchorElement>('a.website-link')!;
       expect(link).not.toBeNull();
       expect(link.getAttribute('href')).toBe(website.trim());
       expect(link.target).toBe('_blank');
@@ -146,7 +169,7 @@ describe('CompanyDetailComponent', () => {
 
       expect(component.websiteUrl()).toBeNull();
       const html = root().innerHTML.toLowerCase();
-      expect(root().querySelector('a.meta-item')).toBeNull();
+      expect(root().querySelector('a.website-link')).toBeNull();
       expect(root().querySelector('a[href^="javascript" i]')).toBeNull();
       expect(html).not.toContain('href="javascript');
       expect(html).not.toContain('href="data:');
@@ -163,7 +186,7 @@ describe('CompanyDetailComponent', () => {
 
       await open(5);
 
-      expect(root().querySelector('mat-card-title app-status-chip')?.textContent?.trim()).toBe(label);
+      expect(root().querySelector('.title-row app-status-chip')?.textContent?.trim()).toBe(label);
     });
 
     it('shows no chip for an approved company or when the API omits the status', async () => {
@@ -196,7 +219,7 @@ describe('CompanyDetailComponent', () => {
       expect(getJobs).not.toHaveBeenCalled();
     });
 
-    it('renders each offer as a link to its details with location, work type and salary', async () => {
+    it('renders each offer as a row with the title linking to its details, the meta line and the salary', async () => {
       getJobs.mockReturnValue(withJobs([
         makeJob(11, { title: 'Dev Angular', location: 'Kraków', workType: WorkType.Hybrid, salaryMin: 8000, salaryMax: 12000 }),
         makeJob(12, { title: 'Tester', workType: WorkType.Onsite, salaryMin: null, salaryMax: null })
@@ -204,12 +227,15 @@ describe('CompanyDetailComponent', () => {
 
       await open(5);
 
-      const rows = root().querySelectorAll<HTMLAnchorElement>('a.job-row');
+      const rows = Array.from(root().querySelectorAll<HTMLElement>('li.job-row'));
       expect(rows.length).toBe(2);
-      expect(rows[0].getAttribute('href')).toBe('/jobs/11');
-      expect(rows[0].textContent).toContain('Dev Angular');
-      expect(rows[0].textContent?.replace(/[  ]/g, ' ')).toContain('Kraków · Hybrydowa · 8 000–12 000 PLN / mies.');
-      expect(rows[1].textContent).toContain('Stacjonarna · Nieokreślona');
+      const link = rows[0].querySelector<HTMLAnchorElement>('a.job-title')!;
+      expect(link.getAttribute('href')).toBe('/jobs/11');
+      expect(link.textContent?.trim()).toBe('Dev Angular');
+      expect(rows[0].querySelector('.job-meta')?.textContent?.trim()).toBe('Hybrydowo · Kraków');
+      expect(rows[0].querySelector('.job-salary')?.textContent?.replace(/[  ]/g, ' ')).toBe('8 000–12 000 PLN / mies.');
+      expect(rows[1].querySelector('.job-meta')?.textContent?.trim()).toBe('Stacjonarnie · Rzeszów');
+      expect(rows[1].querySelector('.job-salary')?.textContent).toBe('Nieokreślona');
     });
 
     it.each([
@@ -261,6 +287,76 @@ describe('CompanyDetailComponent', () => {
     });
   });
 
+  describe('photos', () => {
+    const photo = (id: number): CompanyPhoto => ({ id, caption: null, width: 1200, height: 800, url: `/api/companies/5/photos/${id}/file` });
+
+    it('loads the gallery of an approved company after the profile and shows it under "Zdjęcia"', async () => {
+      getCompany.mockReturnValue(of(makeCompany(5, { name: 'Acme', photosCount: 2 })));
+      getPhotos.mockReturnValue(of([photo(1), photo(2)]));
+
+      await open(5);
+
+      expect(getPhotos).toHaveBeenCalledWith(5);
+      expect(root().querySelector('#photos-title')?.textContent).toBe('Zdjęcia');
+      expect(root().querySelectorAll('app-company-gallery img').length).toBe(2);
+    });
+
+    it('reserves the gallery space while the photos load', async () => {
+      getCompany.mockReturnValue(of(makeCompany(5, { photosCount: 3 })));
+      getPhotos.mockReturnValue(new Subject<CompanyPhoto[]>());
+
+      await open(5);
+
+      expect(root().querySelector('.gallery-skeleton')?.getAttribute('aria-busy')).toBe('true');
+    });
+
+    it('does not request photos when the company has none', async () => {
+      getCompany.mockReturnValue(of(makeCompany(5, { photosCount: 0 })));
+
+      await open(5);
+
+      expect(getPhotos).not.toHaveBeenCalled();
+      expect(root().querySelector('.photos')).toBeNull();
+    });
+
+    it('does not show the gallery of a company that is not approved (images need a token <img> does not send)', async () => {
+      getCompany.mockReturnValue(of(makeCompany(5, { status: CompanyStatus.Pending, photosCount: 3 })));
+
+      await open(5);
+
+      expect(getPhotos).not.toHaveBeenCalled();
+    });
+
+    it('hides the section when the photos cannot be loaded', async () => {
+      getCompany.mockReturnValue(of(makeCompany(5, { photosCount: 3 })));
+      getPhotos.mockReturnValue(throwError(() => httpError(500)));
+
+      await open(5);
+
+      expect(root().querySelector('.photos')).toBeNull();
+      expect(root().textContent).toContain('Aktualne oferty');
+    });
+  });
+
+  describe('headings', () => {
+    it('has the company name as h1 and the sections as h2', async () => {
+      await open(5);
+
+      expect(root().querySelectorAll('h1').length).toBe(1);
+      expect(root().querySelector('h1')?.textContent).toBe('Acme');
+      expect(Array.from(root().querySelectorAll('h2')).map(h => h.textContent)).toEqual(['Aktualne oferty']);
+    });
+
+    it('announces that the website opens in a new tab', async () => {
+      getCompany.mockReturnValue(of(makeCompany(5, { website: 'https://acme.example.com/' })));
+
+      await open(5);
+
+      const link = root().querySelector('a.website-link')!;
+      expect(link.textContent).toBe('acme.example.com (otwiera się w nowej karcie)');
+    });
+  });
+
   describe('errors', () => {
     it.each([404, 400])('shows the "not found" state for %i and does not request offers', async status => {
       getCompany.mockReturnValue(throwError(() => httpError(status)));
@@ -269,8 +365,10 @@ describe('CompanyDetailComponent', () => {
 
       expect(component.notFound()).toBe(true);
       expect(root().textContent).toContain('Nie znaleziono firmy');
-      expect(root().querySelector('.company-card')).toBeNull();
+      expect(root().querySelector('.profile')).toBeNull();
       expect(getJobs).not.toHaveBeenCalled();
+      // oczekiwany stan strony – bez console.error
+      expect(console.error).not.toHaveBeenCalled();
     });
 
     it('treats a non-numeric id as not found', async () => {

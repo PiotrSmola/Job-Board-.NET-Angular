@@ -1,9 +1,11 @@
-<main class="auth-container">
-  <mat-card class="auth-card">
-    <h1>Potwierdzenie adresu e-mail</h1>
+<div class="auth-page">
+  <section class="auth-card" aria-labelledby="confirm-title">
+    <div class="auth-heading">
+      <h1 id="confirm-title">Potwierdzenie adresu e-mail</h1>
+    </div>
 
     <!-- jeden region przez cały czas – czytnik ogłosi przejście z „potwierdzanie” do wyniku -->
-    <div class="feedback" role="status" aria-live="polite">
+    <div class="result" role="status" aria-live="polite">
       @switch (state()) {
         @case ('confirming') {
           <div class="progress">
@@ -12,23 +14,21 @@
           </div>
         }
         @case ('confirmed') {
-          <p class="success">Adres e-mail został potwierdzony. Dziękujemy!</p>
+          <p class="auth-success">Adres e-mail został potwierdzony. Dziękujemy!</p>
         }
         @case ('error') {
-          <p class="error">{{ error() }}</p>
+          <p class="auth-alert">{{ error() }}</p>
         }
       }
     </div>
 
     @if (state() === 'error' && authService.currentUser()) {
       <div class="actions">
-        <button mat-raised-button color="primary" type="button" (click)="resend()" [disabled]="resending()">
+        <button mat-flat-button type="button" (click)="resend()" [disabled]="resending()" [disabledInteractive]="true">
           {{ resending() ? 'Wysyłanie…' : 'Wyślij nowy link' }}
         </button>
       </div>
-      <div class="feedback">
-        <p role="status">{{ resendStatus() }}</p>
-      </div>
+      <p class="intro" role="status">{{ resendStatus() }}</p>
     } @else if (state() === 'error') {
       <p class="intro">Zaloguj się, aby wysłać nowy link potwierdzający.</p>
     }
@@ -43,5 +43,5 @@
         }
       </div>
     }
-  </mat-card>
-</main>
+  </section>
+</div>

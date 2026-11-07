@@ -1,97 +1,87 @@
-<div class="job-list-container">
-  <div class="header">
-    <h1>Oferty Pracy</h1>
-    <p class="subtitle">Znajdź swoją wymarzoną pracę</p>
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Oferty pracy</h1>
+      <p class="page-subtitle">Aktualne ogłoszenia od zweryfikowanych firm</p>
+    </div>
   </div>
 
+  <app-job-search class="search" [params]="params()" (filterChange)="onFilterChange($event)" />
+
   <div class="layout">
-    <aside class="sidebar">
+    <aside class="sidebar" aria-label="Filtry">
       <app-job-filters
         [params]="params()"
         [facets]="facets()"
         [categories]="categories()"
-        (filterChange)="onFilterChange($event)"
-        (clear)="clearFilters()" />
+        (filterChange)="onFilterChange($event)" />
     </aside>
 
-    <section class="content" aria-label="Wyniki wyszukiwania">
-      <app-removable-chips [items]="chips()" ariaLabel="Aktywne filtry" [focusOnEmpty]="resultsInfo" (remove)="removeFilter($event)" />
-
-      <!-- stała wysokość i region aria-live: zmiana liczby wyników jest ogłaszana i nie przesuwa układu -->
-      <div class="results-info" #resultsInfo tabindex="-1" role="status" aria-live="polite" aria-atomic="true">
-        @if (resultCount() !== null) {
-          Znaleziono <strong>{{ resultCount() }}</strong> {{ resultsNoun() }}
+    <section class="results" aria-labelledby="results-title">
+      <div class="results-header">
+        <h2 id="results-title" class="results-title" #resultsTitle tabindex="-1">{{ resultsHeading() }}</h2>
+        @if (activeFiltersText()) {
+          <p class="active-filters"><span class="visually-hidden">Aktywne filtry: </span>{{ activeFiltersText() }}</p>
+          <button type="button" mat-button class="clear" (click)="clearFilters()">Wyczyść filtry</button>
         }
+        <div class="sort">
+          <span id="sort-label" class="muted">Sortuj</span>
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <mat-select aria-labelledby="sort-label" [value]="params().orderBy" (selectionChange)="onSort($event.value)">
+              @for (option of sortOptions; track option.value) {
+                <mat-option [value]="option.value">{{ option.label }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        </div>
       </div>
 
+      <!-- jedyny region ogłaszający liczbę wyników; nie jest czyszczony w trakcie kolejnego ładowania -->
+      <p class="results-info visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+        @if (resultCount() !== null) {Znaleziono {{ resultCount() }} {{ resultsNoun() }}}
+      </p>
+
       @if (loadError(); as error) {
-        <div class="load-error" role="alert">
-          <mat-icon aria-hidden="true">cloud_off</mat-icon>
-          <h3>{{ error }}</h3>
-          <p>Sprawdź połączenie i spróbuj ponownie</p>
-          <button mat-raised-button color="primary" (click)="retry()">
-            <mat-icon aria-hidden="true">refresh</mat-icon>
-            Spróbuj ponownie
-          </button>
+        <div class="load-error surface" role="alert">
+          <p class="error-title">{{ error }}</p>
+          <p class="muted">Sprawdź połączenie i spróbuj ponownie</p>
+          <button mat-flat-button type="button" (click)="retry()">Spróbuj ponownie</button>
         </div>
       } @else {
-        <div class="jobs-grid" [class.stale]="loading()" [attr.aria-busy]="loading()">
+        <div class="jobs" [class.stale]="loading()" [attr.aria-busy]="loading()">
           @if (!loaded()) {
             @for (index of skeletons; track index) {
-              <div class="job-skeleton" aria-hidden="true"></div>
+              <div class="job-skeleton surface" aria-hidden="true"></div>
             }
           } @else {
-            @for (job of jobs(); track job.id) {
-              <mat-card class="job-card" (click)="viewJobDetails(job.id)">
-                <mat-card-header>
-                  <mat-card-title>{{ job.title }}</mat-card-title>
-                  <mat-card-subtitle>
-                    <mat-icon aria-hidden="true">business</mat-icon>
-                    <!-- link do profilu firmy nie może otwierać szczegółów oferty (klik na karcie) -->
-                    <a class="company-link" [routerLink]="['/companies', job.companyId]" (click)="$event.stopPropagation()">{{ job.company }}</a>
-                  </mat-card-subtitle>
-                </mat-card-header>
-
-                <mat-card-content>
-                  <div class="job-info">
-                    <div class="info-item">
-                      <mat-icon aria-hidden="true">location_on</mat-icon>
-                      <span>{{ job.location }}</span>
-                    </div>
-                    <div class="info-item">
-                      <mat-icon aria-hidden="true">work</mat-icon>
-                      <span>{{ getWorkTypeLabel(job.workType) }}</span>
-                    </div>
-                  </div>
-
-                  <app-job-taxonomy [job]="job" />
-
-                  <div class="salary-badge">
-                    <mat-icon aria-hidden="true">payments</mat-icon>
-                    {{ formatSalary(job) }}
-                  </div>
-
-                  <p class="description">{{ job.description | slice:0:150 }}...</p>
-                </mat-card-content>
-
-                <mat-card-actions>
-                  <div>
-                    <span class="posted-date">Dodano: {{ job.createdAt | date:'dd.MM.yyyy' }}</span>
-                    @if (expiresSoon(job); as hint) {
-                      <span class="expires-soon">{{ hint }}</span>
-                    }
-                  </div>
-                  <app-save-job-button class="push-end" [jobId]="job.id" [jobTitle]="job.title" />
-                  <button mat-button color="primary" [attr.aria-label]="'Szczegóły oferty: ' + job.title">
-                    Szczegóły <mat-icon aria-hidden="true">arrow_forward</mat-icon>
-                  </button>
-                </mat-card-actions>
-              </mat-card>
+            @for (card of cards(); track card.job.id) {
+              <article class="job-card surface surface-interactive">
+                <div class="main">
+                  <h3 class="title">
+                    <!-- link rozciągnięty na całą kartę (::after); firma i zapis leżą nad nim -->
+                    <a class="job-link" [routerLink]="['/jobs', card.job.id]" [state]="listState()">{{ card.job.title }}</a>
+                  </h3>
+                  <p class="company">
+                    <a class="company-link" [routerLink]="['/companies', card.job.companyId]">{{ card.job.company }}</a>
+                    · {{ card.job.location }}
+                  </p>
+                  <app-job-taxonomy [job]="card.job" />
+                </div>
+                <div class="side">
+                  <p class="salary">{{ card.salary }}</p>
+                  <p class="posted">
+                    <span class="visually-hidden">Dodano </span><time [attr.datetime]="card.postedIso">{{ card.posted }}</time>
+                  </p>
+                  @if (card.expiresSoon; as hint) {
+                    <p class="expires-soon">{{ hint }}</p>
+                  }
+                  <app-save-job-button [jobId]="card.job.id" [jobTitle]="card.job.title" />
+                </div>
+              </article>
             } @empty {
-              <div class="no-results">
-                <mat-icon aria-hidden="true">work_off</mat-icon>
-                <h3>Brak ofert</h3>
-                <p>Spróbuj zmienić kryteria wyszukiwania</p>
+              <div class="no-results surface">
+                <p class="error-title">Brak ofert</p>
+                <p class="muted">Spróbuj zmienić kryteria wyszukiwania</p>
               </div>
             }
           }

@@ -50,4 +50,7 @@ public class JobOfferDto
 
     // posortowane alfabetycznie
     public List<string> Skills { get; set; } = new();
+
+    // tło nagłówka oferty z ustawień firmy; null - firma bez obrazu tła albo niezatwierdzona
+    public OfferBackgroundDto? CompanyBackground { get; set; }
 }

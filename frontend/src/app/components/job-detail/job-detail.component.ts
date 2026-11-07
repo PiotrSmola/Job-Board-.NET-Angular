@@ -1,433 +1,223 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, OnInit, ChangeDetectorRef, computed, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { MatCardModule } from '@angular/material/card';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatChipsModule } from '@angular/material/chips';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatDividerModule } from '@angular/material/divider';
-import { MAT_DIALOG_DATA, MatDialog, MatDialogConfig, MatDialogModule } from '@angular/material/dialog';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatSnackBar } from '@angular/material/snack-bar';
-import { HttpErrorResponse } from '@angular/common/http';
+import { Observable, Subject, catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
 import { JobService } from '../../services/job.service';
-import { JobApplicationService } from '../../services/job-application.service';
+import { CompanyService } from '../../services/company.service';
 import { AuthService } from '../../services/auth.service';
-import { JobOffer, JobOfferStatus, WorkType } from '../../models/job-offer.model';
-import { ApplicationAttachment, ApplicationStatus, AttachmentUploadItem, JobApplication } from '../../models/job-application.model';
-import { getApplicationStatusPresentation, getJobState, StatusPresentation } from '../../utils/status-labels';
-import { StatusChipComponent } from '../shared/status-chip.component';
-import { JobTaxonomyComponent } from '../shared/job-taxonomy.component';
-import { formatJobSalary, getContractTypeLabels, getSeniorityLabel, getWorkTypeLabel } from '../../utils/job-labels';
-import { AttachmentsPickerComponent } from '../shared/attachments-picker.component';
-import { ProfileDocumentsPickerComponent } from '../shared/profile-documents-picker.component';
+import { PageTitleService } from '../../services/page-title.service';
+import { JobOffer } from '../../models/job-offer.model';
+import { JobParams } from '../../models/job-params.model';
+import { Company } from '../../models/company.model';
+import { BackgroundFocus, OfferBackground } from '../../models/company-media.model';
+import { offerHeroMask } from '../../utils/offer-hero';
+import { getJobState } from '../../utils/status-labels';
+import {
+  SALARY_PERIOD_OPTIONS, formatJobSalary, formatSalaryRange, getContractTypeLabels, getSeniorityLabel, offersNoun
+} from '../../utils/job-labels';
+import { paramsFromQuery, urlQuery } from '../../utils/job-query';
+import { getApiErrorMessage, isNotFound } from '../../utils/http-errors';
+import { formatDayMonth, formatSkills, getWorkModeLabel, isoDate } from '../shared/job-taxonomy.component';
 import { SaveJobButtonComponent } from '../shared/save-job-button.component';
-import { ProfileDocument } from '../../models/account.model';
-import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
+import { JOBS_QUERY_STATE } from '../job-list/jobs-query-state';
+import { JobApplyComponent } from './job-apply.component';
 
-const ALREADY_APPLIED_MESSAGE = 'You have already applied to this job';
-const NOT_ACCEPTING_MESSAGE = 'This job offer is not accepting applications';
+export { ATTACHMENTS_UPLOAD_FAILED_MESSAGE } from './job-apply.component';
 
-export const ATTACHMENTS_UPLOAD_FAILED_MESSAGE =
-  'Aplikacja złożona, ale nie udało się dołączyć załączników – możesz dodać je w Moich aplikacjach';
+/** Liczba „podobnych ofert” pod ofertą. */
+const SIMILAR_COUNT = 3;
 
-/** Konfiguracja dialogu aplikowania (modalny dla czytników ekranu, miejsce na listę plików). */
-export const APPLY_DIALOG_CONFIG: MatDialogConfig = { width: '600px', maxWidth: '95vw', ariaModal: true };
+/**
+ * Adres obrazu z API wstawiany do CSS `url("…")`: tylko względny `/api/...` bez cudzysłowów, nawiasów,
+ * odstępów i ukośników wstecznych (wersja w query stringu `?v=` jest dozwolona) – nic nie może wyjść poza url().
+ */
+const SAFE_API_URL = /^\/api\/[A-Za-z0-9\-._~/?=&%]+$/;
 
-/** Dane dialogu aplikowania: załączniki, które aplikacja już ma (ponowne aplikowanie po wycofaniu je zachowuje). */
-export interface ApplyDialogData {
-  existing: readonly ApplicationAttachment[];
+export function isSafeApiUrl(url: string | null | undefined): url is string {
+  return typeof url === 'string' && url.length <= 500 && SAFE_API_URL.test(url) && !url.includes('..');
 }
 
-/** Wynik dialogu aplikowania (undefined = anulowano). */
-export interface ApplyDialogResult {
-  confirmed: boolean;
-  note: string;
-  attachments: AttachmentUploadItem[];
-  /** Dokumenty z profilu do skopiowania do aplikacji. */
-  profileDocumentIds: number[];
+const FOCUS_POSITION: Record<BackgroundFocus, string> = {
+  [BackgroundFocus.Center]: 'center',
+  [BackgroundFocus.Top]: 'center top',
+  [BackgroundFocus.Bottom]: 'center bottom'
+};
+
+/** Styl nagłówka z tłem firmy: obraz, punkt ostrości i maska z przyciemnienia (wspólna z podglądem w panelu); null = jednolite tło. */
+export function heroStyle(background: OfferBackground | null | undefined): {
+  image: string; position: string; mask: string;
+} | null {
+  if (!background || !isSafeApiUrl(background.url)) return null;
+  return {
+    image: `url("${background.url}")`,
+    position: FOCUS_POSITION[background.focus] ?? FOCUS_POSITION[BackgroundFocus.Center],
+    mask: offerHeroMask(background.dim)
+  };
 }
 
-@Component({
-  selector: 'app-apply-dialog',
-  standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    CommonModule,
-    FormsModule,
-    MatDialogModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatButtonModule,
-    AttachmentsPickerComponent,
-    ProfileDocumentsPickerComponent
-  ],
-  template: `
-    <h2 mat-dialog-title>Aplikuj na stanowisko</h2>
-    <mat-dialog-content>
-      <p>Dodaj notatkę do swojej aplikacji (opcjonalnie):</p>
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Notatka</mat-label>
-        <textarea matInput [(ngModel)]="note" rows="4" placeholder="Dlaczego jesteś idealnym kandydatem..."></textarea>
-      </mat-form-field>
-      <app-profile-documents-picker [pendingItems]="attachments" [existing]="existing" (selectionChange)="profileDocuments.set($event)" />
-      <p>Dołącz CV, list motywacyjny lub inne pliki (opcjonalnie):</p>
-      <!-- zachowane załączniki i wybrane dokumenty z profilu wliczają się do limitów nowych plików -->
-      <app-attachments-picker [(items)]="attachments" [existing]="countedAttachments()" />
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button mat-dialog-close>Anuluj</button>
-      <button mat-raised-button color="primary" [mat-dialog-close]="result()">Aplikuj</button>
-    </mat-dialog-actions>
-  `,
-  styles: [`
-    .full-width { width: 100%; }
-    mat-dialog-content { min-width: 460px; padding: 20px; }
-    @media (max-width: 600px) { mat-dialog-content { min-width: 0; } }
-  `]
-})
-export class ApplyDialogComponent {
-  /** Limity (10 plików, 25 MB) i domyślny rodzaj nowych plików liczone łącznie z tymi załącznikami. */
-  readonly existing = inject<ApplyDialogData | null>(MAT_DIALOG_DATA, { optional: true })?.existing ?? [];
-  note = '';
-  attachments: AttachmentUploadItem[] = [];
-  readonly profileDocuments = signal<ProfileDocument[]>([]);
-  readonly countedAttachments = computed<readonly ApplicationAttachment[]>(() => [...this.existing, ...this.profileDocuments()]);
-
-  result(): ApplyDialogResult {
-    return {
-      confirmed: true,
-      note: this.note,
-      attachments: this.attachments,
-      profileDocumentIds: this.profileDocuments().map(d => d.id)
-    };
-  }
-}
-
+/** Szczegóły oferty (makieta OfertaB): nagłówek z tłem firmy, blok faktów, sekcje-wiersze, aplikowanie na stronie. */
 @Component({
   selector: 'app-job-detail',
   standalone: true,
-  imports: [
-    CommonModule,
-    MatCardModule,
-    MatButtonModule,
-    MatIconModule,
-    MatChipsModule,
-    MatProgressSpinnerModule,
-    MatDividerModule,
-    MatDialogModule,
-    RouterModule,
-    StatusChipComponent,
-    JobTaxonomyComponent,
-    SaveJobButtonComponent
-  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink, MatButtonModule, MatIconModule, SaveJobButtonComponent, JobApplyComponent],
   templateUrl: './job-detail.component.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './job-detail.component.scss'
 })
-export class JobDetailComponent implements OnInit {
+export class JobDetailComponent {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private jobService = inject(JobService);
-  private applicationService = inject(JobApplicationService);
-  authService = inject(AuthService);
-  private dialog = inject(MatDialog);
-  private cdr = inject(ChangeDetectorRef);
-  private snackBar = inject(MatSnackBar);
-  private destroyRef = inject(DestroyRef);
+  private companyService = inject(CompanyService);
+  private authService = inject(AuthService);
+  private pageTitle = inject(PageTitleService);
 
-  job: JobOffer | null = null;
-  loading = false;
-  hasApplied = false;
-  /** Status aplikacji bieżącego użytkownika (także wycofanej); null = nie aplikował. */
-  applicationStatus: ApplicationStatus | null = null;
-  /** Załączniki wycofanej aplikacji – zostają po ponownym aplikowaniu, więc dialog liczy limity razem z nimi. */
-  private withdrawnAttachments: readonly ApplicationAttachment[] = [];
-  checkingApplication = false;
-  applying = false;
-  /** Postęp wysyłania załączników po złożeniu aplikacji (null = nic nie jest wysyłane). */
-  attachmentsUploadProgress: number | null = null;
-  /** Tekst regionu `role="status"`: etap wysyłania załączników (bez kolejnych procentów). */
-  uploadAnnouncement = '';
-  private destroyed = false;
+  private readonly applySection = viewChild(JobApplyComponent);
 
-  WorkType = WorkType;
+  readonly job = signal<JobOffer | null>(null);
+  readonly loading = signal(true);
+  /** Komunikat, gdy oferty nie udało się wczytać (null = brak błędu). */
+  readonly loadError = signal<string | null>(null);
+  readonly company = signal<Company | null>(null);
+  readonly similar = signal<JobOffer[]>([]);
+  readonly applied = signal(false);
 
-  constructor() {
-    this.destroyRef.onDestroy(() => {
-      this.destroyed = true;
-      // opuszczenie strony w trakcie wysyłania przerywa żądanie (takeUntilDestroyed) – aplikacja jest już złożona
-      if (this.attachmentsUploadProgress !== null) {
-        this.attachmentsUploadProgress = null;
-        this.notify(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 8000);
-      }
-    });
-  }
+  /** Filtry listy, z której przyszedł użytkownik (link „Wróć do wyników”); walidowane jak adres URL. */
+  readonly backQuery = this.readBackQuery();
 
-  /** Oferta przyjmuje aplikacje: aktywna i niewygasła. */
-  get acceptsApplications(): boolean {
-    return !!this.job && this.job.status === JobOfferStatus.Active && !this.job.isExpired;
-  }
+  readonly hero = computed(() => heroStyle(this.job()?.companyBackground));
+  readonly acceptsApplications = computed(() => {
+    const job = this.job();
+    return !!job && getJobState(job) === 'active';
+  });
+  /** Przycisk „Aplikuj” w nagłówku: oferta przyjmuje aplikacje, a użytkownik nie jest pracodawcą ani adminem. */
+  readonly showApplyButton = computed(() =>
+    this.acceptsApplications() && !this.authService.isAdmin() && !this.authService.isEmployer());
 
-  /** Zalogowany kandydat – admin i pracodawca nie aplikują na oferty (API zwraca 403). */
-  get canApplyAsCandidate(): boolean {
-    return this.authService.isAuthenticated() && !this.authService.isAdmin() && !this.authService.isEmployer();
-  }
-
-  /** Użytkownik wycofał wcześniej aplikację – może aplikować ponownie. */
-  get hasWithdrawn(): boolean {
-    return !this.hasApplied && this.applicationStatus === ApplicationStatus.Withdrawn;
-  }
-
-  /** Baner dla oferty, która nie przyjmuje aplikacji (null = brak banera). */
-  get banner(): { icon: string; text: string } | null {
-    if (!this.job) return null;
-
-    switch (getJobState(this.job)) {
+  readonly banner = computed<{ icon: string; text: string } | null>(() => {
+    const job = this.job();
+    if (!job) return null;
+    switch (getJobState(job)) {
       case 'closed': return { icon: 'lock', text: 'Rekrutacja na to stanowisko została zakończona – oferta nie przyjmuje już aplikacji.' };
       case 'expired': return { icon: 'event_busy', text: 'Ta oferta wygasła i nie przyjmuje już aplikacji.' };
       case 'draft': return { icon: 'edit_note', text: 'Szkic – oferta nie jest widoczna publicznie.' };
       default: return null;
     }
-  }
+  });
 
-  get applicationStatusPresentation(): StatusPresentation | null {
-    return this.applicationStatus === null ? null : getApplicationStatusPresentation(this.applicationStatus);
-  }
+  /** Teksty strony liczone raz na wczytanie oferty. */
+  readonly view = computed(() => {
+    const job = this.job();
+    if (!job) return null;
+    const salary = formatSalaryRange(job.salaryMin, job.salaryMax, job.salaryCurrency, job.salaryPeriod);
+    const specified = salary !== 'Nieokreślona';
+    return {
+      // kwota bez skrótu okresu („/ mies.”) – okres jest pełnym słowem obok
+      salaryAmount: specified ? salary.replace(/ \/ [^/]+$/, '') : salary,
+      salaryPeriod: specified ? SALARY_PERIOD_OPTIONS.find(o => o.value === job.salaryPeriod)?.label ?? null : null,
+      contracts: getContractTypeLabels(job.contractTypes).join(', '),
+      seniority: getSeniorityLabel(job.seniority),
+      workMode: getWorkModeLabel(job.workType),
+      posted: formatDayMonth(job.createdAt),
+      postedIso: isoDate(job.createdAt),
+      expires: job.expiresAt ? formatDayMonth(job.expiresAt) : null,
+      expiresIso: isoDate(job.expiresAt),
+      skills: formatSkills(job.skills)
+    };
+  });
 
-  ngOnInit(): void {
-    this.route.paramMap.subscribe(params => {
-      const id = params.get('id');
-      if (id) {
-        this.loadJob(+id);
-        // Pracodawca nie aplikuje – nie sprawdzamy statusu aplikacji
-        if (this.authService.isAuthenticated() && !this.authService.isEmployer()) {
-          this.checkIfApplied(+id);
+  readonly companyLinkText = computed(() => {
+    const company = this.company();
+    if (!company) return `Profil firmy ${this.job()?.company ?? ''}`.trim();
+    const count = company.activeJobsCount;
+    return count > 0 ? `Profil firmy i ${count} ${offersNoun(count)}` : 'Profil firmy';
+  });
+
+  readonly similarCards = computed(() => this.similar().map(job => ({ job, salary: formatJobSalary(job) })));
+
+  private readonly load$ = new Subject<{ id: number; silent: boolean }>();
+  private readonly related$ = new Subject<JobOffer>();
+
+  constructor() {
+    this.load$.pipe(
+      tap(({ silent }) => {
+        if (!silent) {
+          this.loading.set(true);
+          this.loadError.set(null);
         }
+      }),
+      // switchMap – szybka zmiana :id nie pozwoli starszej odpowiedzi nadpisać nowszej
+      switchMap(({ id, silent }) => this.jobService.getJob(id).pipe(
+        map(job => ({ job, error: null as unknown, silent })),
+        catchError(error => of({ job: null, error, silent }))
+      )),
+      takeUntilDestroyed()
+    ).subscribe(({ job, error, silent }) => {
+      if (job) {
+        this.job.set(job);
+        this.loadError.set(null);
+        this.pageTitle.set(job.title);
+        this.related$.next(job);
+      } else if (!silent) {
+        // brak oferty (404) to oczekiwany stan strony, nie błąd aplikacji
+        if (!isNotFound(error)) console.error('Error loading job:', error);
+        this.job.set(null);
+        this.loadError.set(getApiErrorMessage(error, 'Nie udało się wczytać oferty'));
+        this.pageTitle.set('Oferta niedostępna');
       }
+      this.loading.set(false);
+    });
+
+    // Firma i podobne oferty – tylko przy zmianie oferty, błędy nie psują strony (sekcje się nie pokazują)
+    const changed$ = this.related$.pipe(distinctUntilChanged((a, b) => a.id === b.id));
+    changed$.pipe(
+      tap(() => this.company.set(null)),
+      switchMap(job => this.companyService.getCompany(job.companyId).pipe(catchError(() => of(null)))),
+      takeUntilDestroyed()
+    ).subscribe(company => this.company.set(company));
+
+    changed$.pipe(
+      tap(() => this.similar.set([])),
+      filter(job => !!job.categorySlug),
+      switchMap(job => this.fetchSimilar(job)),
+      takeUntilDestroyed()
+    ).subscribe(jobs => this.similar.set(jobs));
+
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(params => {
+      const id = Number(params.get('id'));
+      this.applied.set(false);
+      this.load$.next({ id, silent: false });
     });
   }
 
-  loadJob(id: number): void {
-    this.loading = true;
-    this.jobService.getJob(id).subscribe({
-      next: (job) => {
-        this.job = job;
-        this.loading = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('Error loading job:', err);
-        this.loading = false;
-        this.cdr.detectChanges();
-        if (!isHandledByInterceptor(err)) {
-          this.notify(getApiErrorMessage(err, 'Nie udało się wczytać oferty'));
-        }
-      }
-    });
+  /** Oferta zmieniła stan w trakcie aplikowania – odświeżenie bez szkieletu pokazuje baner. */
+  reloadJob(): void {
+    const job = this.job();
+    if (job) this.load$.next({ id: job.id, silent: true });
   }
 
-  checkIfApplied(jobId: number): void {
-    this.checkingApplication = true;
-    this.applicationService.checkIfApplied(jobId).subscribe({
-      next: (result) => {
-        this.hasApplied = result.hasApplied;
-        this.applicationStatus = result.status ?? null;
-        this.withdrawnAttachments = [];
-        if (this.hasWithdrawn && result.applicationId) {
-          // przycisk „Aplikuj ponownie” czeka (checkingApplication) na załączniki wycofanej aplikacji
-          this.loadWithdrawnAttachments(result.applicationId);
-          return;
-        }
-        this.checkingApplication = false;
-        this.cdr.detectChanges();
-      },
-      error: (error) => {
-        console.error('Error checking application status:', error);
-        this.checkingApplication = false;
-        this.hasApplied = false;
-        this.cdr.detectChanges();
-      }
-    });
+  goToApply(): void {
+    this.applySection()?.focusSection();
   }
 
-  private loadWithdrawnAttachments(applicationId: number): void {
-    this.applicationService.getApplication(applicationId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (application) => {
-        this.withdrawnAttachments = application.attachments ?? [];
-        this.checkingApplication = false;
-        this.cdr.detectChanges();
-      },
-      error: (error) => {
-        // bez listy dialog liczy tylko nowe pliki – limity łączne i tak sprawdza serwer
-        console.error('Error loading the withdrawn application:', error);
-        this.checkingApplication = false;
-        this.cdr.detectChanges();
-      }
-    });
+  private fetchSimilar(job: JobOffer): Observable<JobOffer[]> {
+    const params = new JobParams();
+    params.category = job.categorySlug;
+    // o jedną więcej – bieżąca oferta może być w wynikach
+    params.pageSize = SIMILAR_COUNT + 1;
+    return this.jobService.getJobs(params).pipe(
+      map(page => page.result.filter(other => other.id !== job.id).slice(0, SIMILAR_COUNT)),
+      catchError(() => of([]))
+    );
   }
 
-  openApplyDialog(): void {
-    if (!this.job) return;
-
-    const data: ApplyDialogData = { existing: this.hasWithdrawn ? this.withdrawnAttachments : [] };
-    const dialogRef = this.dialog.open(ApplyDialogComponent, { ...APPLY_DIALOG_CONFIG, data });
-
-    dialogRef.afterClosed().subscribe((result: ApplyDialogResult | undefined) => {
-      if (result?.confirmed && this.job) {
-        this.applyToJob(result.note, result.attachments, result.profileDocumentIds ?? []);
-      }
-    });
-  }
-
-  /**
-   * Najpierw składa aplikację, potem (opcjonalnie) dołącza kopie dokumentów z profilu, a na końcu jednym żądaniem
-   * przesyła nowe pliki – błąd dołączania nie cofa aplikacji.
-   */
-  applyToJob(note: string, attachments: readonly AttachmentUploadItem[] = [], profileDocumentIds: readonly number[] = []): void {
-    if (!this.job) return;
-
-    this.applying = true;
-    this.applicationService.applyToJob({
-      jobOfferId: this.job.id,
-      note: note || null
-    }).subscribe({
-      next: (application: JobApplication | null) => {
-        const reapplied = this.hasWithdrawn;
-        this.hasApplied = true;
-        this.applicationStatus = application?.status ?? ApplicationStatus.Submitted;
-        const successMessage = reapplied ? 'Aplikacja została złożona ponownie!' : 'Aplikacja wysłana pomyślnie!';
-
-        if (profileDocumentIds.length) {
-          this.attachProfileDocuments(application?.id ?? null, profileDocumentIds, attachments, successMessage);
-          return;
-        }
-
-        if (attachments.length) {
-          this.uploadAttachments(application?.id ?? null, attachments, successMessage);
-          return;
-        }
-
-        this.applying = false;
-        this.cdr.detectChanges();
-        this.notify(successMessage);
-      },
-      error: (error) => {
-        this.applying = false;
-        const message = error instanceof HttpErrorResponse && error.status === 400 ? error.error?.message : null;
-        // Backend odrzucił duplikat – przycisk powinien pokazać, że aplikacja już istnieje
-        if (message === ALREADY_APPLIED_MESSAGE) {
-          this.hasApplied = true;
-          if (this.applicationStatus === null || this.applicationStatus === ApplicationStatus.Withdrawn) {
-            this.applicationStatus = ApplicationStatus.Submitted;
-          }
-        }
-        // Oferta została w międzyczasie zamknięta lub wygasła – odświeżamy ją, żeby pokazać baner
-        if (message === NOT_ACCEPTING_MESSAGE && this.job) {
-          this.loadJob(this.job.id);
-        }
-        this.cdr.detectChanges();
-        if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Błąd podczas aplikowania'));
-        }
-      }
-    });
-  }
-
-  /** Kopiuje dokumenty z profilu do aplikacji; potem (jeśli są) wysyła nowe pliki. */
-  private attachProfileDocuments(
-    applicationId: number | null,
-    documentIds: readonly number[],
-    items: readonly AttachmentUploadItem[],
-    successMessage: string
-  ): void {
-    if (applicationId === null || this.destroyed) {
-      this.finishAttachmentsUpload(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 'Przerwano wysyłanie', 8000);
-      return;
-    }
-
-    // serwer kopiuje pliki – bez postępu wysyłania, przycisk pokazuje „Przetwarzanie załączników…”
-    this.attachmentsUploadProgress = 100;
-    this.uploadAnnouncement = 'Dołączanie dokumentów z profilu…';
-    this.cdr.detectChanges();
-    this.applicationService.attachFromProfile(applicationId, documentIds).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => {
-        if (items.length) {
-          this.uploadAttachments(applicationId, items, successMessage);
-        } else {
-          this.finishAttachmentsUpload(`${successMessage} Załączniki zostały dołączone.`, 'Załączniki przesłane');
-        }
-      },
-      error: (error) => {
-        console.error('Error attaching profile documents:', error);
-        this.finishAttachmentsUpload(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 'Przerwano wysyłanie', 8000);
-      }
-    });
-  }
-
-  private uploadAttachments(applicationId: number | null, items: readonly AttachmentUploadItem[], successMessage: string): void {
-    // brak id albo użytkownik opuścił już stronę (aplikacja złożona, pliki nie zostały wysłane)
-    if (applicationId === null || this.destroyed) {
-      this.finishAttachmentsUpload(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 'Przerwano wysyłanie', 8000);
-      return;
-    }
-
-    this.attachmentsUploadProgress = 0;
-    this.uploadAnnouncement = 'Wysyłanie załączników…';
-    this.cdr.detectChanges();
-    // opuszczenie strony przerywa wysyłanie (komunikat pokazuje hook onDestroy z konstruktora)
-    this.applicationService.uploadAttachments(applicationId, items).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (event) => {
-        if (event.type === 'progress') {
-          this.attachmentsUploadProgress = event.percent;
-          this.cdr.detectChanges();
-        } else {
-          this.finishAttachmentsUpload(`${successMessage} Załączniki zostały dołączone.`, 'Załączniki przesłane');
-        }
-      },
-      error: (error) => {
-        console.error('Error uploading attachments:', error);
-        // Aplikacja jest już złożona – informujemy o tym zawsze, także przy 401/403
-        this.finishAttachmentsUpload(ATTACHMENTS_UPLOAD_FAILED_MESSAGE, 'Przerwano wysyłanie', 8000);
-      }
-    });
-  }
-
-  private finishAttachmentsUpload(message: string, announcement: string, duration?: number): void {
-    this.applying = false;
-    this.attachmentsUploadProgress = null;
-    if (!this.destroyed) {
-      this.uploadAnnouncement = announcement;
-      this.cdr.detectChanges();
-    }
-    this.notify(message, duration);
-  }
-
-  private notify(message: string, duration = 5000): void {
-    this.snackBar.open(message, 'OK', { duration });
-  }
-
-  getWorkTypeLabel(): string {
-    return this.job ? getWorkTypeLabel(this.job.workType) : '';
-  }
-
-  formatSalary(): string {
-    return this.job ? formatJobSalary(this.job) : '';
-  }
-
-  get seniorityLabel(): string | null {
-    return this.job ? getSeniorityLabel(this.job.seniority) : null;
-  }
-
-  get contractLabels(): string[] {
-    return this.job ? getContractTypeLabels(this.job.contractTypes) : [];
-  }
-
-  goBack(): void {
-    this.router.navigate(['/jobs']);
+  private readBackQuery(): Record<string, string> {
+    const state = this.router.currentNavigation()?.extras.state ?? (typeof history !== 'undefined' ? history.state : null);
+    const raw = state && typeof state === 'object' ? (state as Record<string, unknown>)[JOBS_QUERY_STATE] : null;
+    if (!raw || typeof raw !== 'object') return {};
+    const values = raw as Record<string, unknown>;
+    return urlQuery(paramsFromQuery(name => typeof values[name] === 'string' ? values[name] as string : null));
   }
 }

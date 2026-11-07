@@ -3,7 +3,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { AuthService } from '../../services/auth.service';
 import { getApiErrorMessage } from '../../utils/http-errors';
@@ -23,7 +22,7 @@ export type ConfirmEmailState = 'confirming' | 'confirmed' | 'error';
   selector: 'app-confirm-email',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, MatButtonModule, MatCardModule, MatProgressSpinnerModule],
+  imports: [RouterLink, MatButtonModule, MatProgressSpinnerModule],
   templateUrl: './confirm-email.component.html',
   styleUrl: './confirm-email.component.scss'
 })

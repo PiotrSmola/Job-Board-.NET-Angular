@@ -34,7 +34,7 @@ describe('CompanyDialogComponent', () => {
   }
 
   function submitButton(): HTMLButtonElement {
-    return root().querySelector<HTMLButtonElement>('button[mat-raised-button]')!;
+    return root().querySelector<HTMLButtonElement>('button.submit-button')!;
   }
 
   function fill(name: string, value: string): void {

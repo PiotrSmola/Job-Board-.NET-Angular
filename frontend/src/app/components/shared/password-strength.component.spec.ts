@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { PasswordStrengthComponent } from './password-strength.component';
+import { PasswordStrengthComponent, describePasswordStrength } from './password-strength.component';
 
 describe('PasswordStrengthComponent', () => {
   function render(password: string): HTMLElement {
@@ -9,28 +9,24 @@ describe('PasswordStrengthComponent', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
-  it('describes the strength in words, not only with the colour bar', () => {
+  it('describes the strength in words, the bar is decorative only', () => {
     const root = render('Abcdef1');
 
-    expect(root.querySelector('.label')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Siła hasła: Średnie');
+    expect(root.querySelector('.text')?.textContent?.trim()).toBe('Siła hasła: średnia. Dodaj znak specjalny lub wydłuż hasło.');
     expect(root.querySelector('.bar')?.getAttribute('aria-hidden')).toBe('true');
-    expect(root.querySelectorAll('.segment.filled').length).toBe(2);
+    expect((root.querySelector('.fill') as HTMLElement).style.width).toBe('50%');
   });
 
-  it('says "brak" for an empty password', () => {
-    expect(render('').querySelector('.label')?.textContent).toContain('brak');
+  it('lists the requirements before anything is typed', () => {
+    expect(render('').querySelector('.text')?.textContent).toContain('co najmniej 6 znaków, mała i wielka litera oraz cyfra');
   });
 
-  it('lists each requirement with a textual met / not met state for screen readers', () => {
-    const root = render('abcdef');
-    const items = Array.from(root.querySelectorAll('.requirements li')).map(li => li.textContent?.replace(/\s+/g, ' ').trim());
+  it('names the missing requirements of a weak password', () => {
+    expect(describePasswordStrength('abcdef')).toBe('Siła hasła: słaba. Brakuje: wielka litera, cyfra.');
+  });
 
-    expect(items).toEqual([
-      '✓ Co najmniej 6 znaków – spełnione',
-      '✓ Mała litera – spełnione',
-      '✗ Wielka litera – niespełnione',
-      '✗ Cyfra – niespełnione'
-    ]);
-    expect(root.querySelector('.mark')?.getAttribute('aria-hidden')).toBe('true');
+  it('rates long passwords with special characters as strong', () => {
+    expect(describePasswordStrength('Abcdefgh1234!xyz')).toBe('Siła hasła: silna.');
+    expect(describePasswordStrength('Abcdefgh12')).toBe('Siła hasła: dobra. Dłuższe hasło będzie jeszcze bezpieczniejsze.');
   });
 });

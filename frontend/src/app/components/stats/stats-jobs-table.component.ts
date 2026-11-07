@@ -42,7 +42,7 @@ export function sortJobRows(rows: readonly JobRow[], key: JobColumnKey, directio
     @if (rows().length) {
       <div class="scroll" tabindex="0" role="region" [attr.aria-label]="title() + ' – tabela, przewiń poziomo na wąskim ekranie'">
         <table>
-          <caption class="sr-only">{{ title() }}</caption>
+          <caption class="visually-hidden">{{ title() }}</caption>
           <thead>
             <tr>
               @for (column of columns(); track column.key) {
@@ -73,26 +73,26 @@ export function sortJobRows(rows: readonly JobRow[], key: JobColumnKey, directio
     } @else {
       <p class="empty">Brak ofert do wyświetlenia.</p>
     }
-    <p class="sr-only" role="status">{{ announcement() }}</p>
+    <p class="visually-hidden" role="status">{{ announcement() }}</p>
   `,
   styles: [`
     :host { display: block; }
-    h3 { font-size: 1.15rem; margin-bottom: 8px; }
-    .scroll { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 12px; background: var(--surface-color); }
-    .scroll:focus-visible, th button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
-    th, td { padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--border-color); }
+    h3 { margin: 0 0 12px; font-size: var(--font-size-lg); font-weight: 500; }
+    .scroll { overflow-x: auto; border-radius: var(--radius-card); background: var(--color-surface); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px 16px; text-align: left; box-shadow: inset 0 -1px 0 var(--color-hairline); }
     tbody th { font-weight: 500; }
-    tbody tr:last-child > * { border-bottom: 0; }
+    tbody tr:last-child > * { box-shadow: none; }
     thead th { padding: 4px 8px; white-space: nowrap; }
-    th button { display: inline-flex; align-items: center; gap: 2px; min-height: 36px; padding: 0 8px; color: var(--text-primary);
-      background: none; border: 0; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 500; }
-    th button:hover { background: var(--surface-hover); }
-    th button mat-icon { width: 18px; height: 18px; font-size: 18px; color: var(--text-secondary); }
-    th[aria-sort='ascending'] mat-icon, th[aria-sort='descending'] mat-icon { color: var(--primary-color); }
+    th button { display: inline-flex; align-items: center; gap: 2px; min-height: 36px; padding: 0 8px; color: var(--color-text-tertiary);
+      background: none; border: 0; border-radius: var(--radius-input); cursor: pointer; font: inherit; font-size: var(--font-size-sm); font-weight: 500; }
+    th button:hover { background: var(--color-raised); color: var(--color-text); }
+    th button mat-icon { width: 18px; height: 18px; font-size: 18px; color: var(--color-text-tertiary); }
+    th[aria-sort='ascending'] button, th[aria-sort='descending'] button { color: var(--color-text); }
+    th[aria-sort='ascending'] mat-icon, th[aria-sort='descending'] mat-icon { color: var(--color-accent); }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .empty { color: var(--text-secondary); margin: 0; }
-    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    th.num button { flex-direction: row-reverse; }
+    .empty { color: var(--color-text-secondary); margin: 0; }
   `]
 })
 export class StatsJobsTableComponent {

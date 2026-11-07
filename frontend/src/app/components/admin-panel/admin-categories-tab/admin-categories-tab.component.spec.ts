@@ -5,6 +5,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { AdminCategoriesTabComponent } from './admin-categories-tab.component';
 import { AdminService } from '../../../services/admin.service';
+import { ConfirmService } from '../../../services/confirm.service';
 import { CategoryService } from '../../../services/category.service';
 import { Category } from '../../../models/taxonomy.model';
 import { CategoryDialogComponent } from '../category-dialog/category-dialog.component';
@@ -24,7 +25,7 @@ describe('AdminCategoriesTabComponent', () => {
   let deleteCategory: ReturnType<typeof vi.fn>;
   let dialogOpen: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
-  let confirmSpy: ReturnType<typeof vi.spyOn>;
+  let confirmSpy: ReturnType<typeof vi.fn>;
 
   const root = () => fixture.nativeElement as HTMLElement;
 
@@ -42,7 +43,7 @@ describe('AdminCategoriesTabComponent', () => {
     deleteCategory = vi.fn().mockReturnValue(of(undefined));
     dialogOpen = vi.fn().mockReturnValue({ afterClosed: () => of(undefined) });
     snackBarOpen = vi.fn();
-    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    confirmSpy = vi.fn().mockReturnValue(of(true));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
@@ -51,7 +52,8 @@ describe('AdminCategoriesTabComponent', () => {
         { provide: CategoryService, useValue: { getCategories } },
         { provide: AdminService, useValue: { deleteCategory } },
         { provide: MatDialog, useValue: { open: dialogOpen } },
-        { provide: MatSnackBar, useValue: { open: snackBarOpen } }
+        { provide: MatSnackBar, useValue: { open: snackBarOpen } },
+        { provide: ConfirmService, useValue: { confirm: confirmSpy } }
       ]
     }).compileComponents();
   });
@@ -142,8 +144,8 @@ describe('AdminCategoriesTabComponent', () => {
 
       component.deleteCategory(CATEGORIES[0]);
 
-      expect(confirmSpy.mock.calls[0][0]).toContain('Programowanie');
-      expect(confirmSpy.mock.calls[0][0]).toContain('bez kategorii');
+      expect(confirmSpy.mock.calls[0][0].message).toContain('Programowanie');
+      expect(confirmSpy.mock.calls[0][0].message).toContain('bez kategorii');
       expect(deleteCategory).toHaveBeenCalledWith(1);
       expect(snackBarOpen.mock.calls[0][0]).toBe('Kategoria została usunięta');
       expect(getCategories.mock.calls.length).toBe(calls + 1);
@@ -151,7 +153,7 @@ describe('AdminCategoriesTabComponent', () => {
 
     it('does nothing when the confirmation is declined', async () => {
       await create();
-      confirmSpy.mockReturnValue(false);
+      confirmSpy.mockReturnValue(of(false));
 
       component.deleteCategory(CATEGORIES[0]);
 

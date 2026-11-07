@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { Subject, of, throwError } from 'rxjs';
 import { ProfileTabComponent } from './profile-tab.component';
 import { AccountService } from '../../../services/account.service';
@@ -25,6 +26,7 @@ describe('ProfileTabComponent', () => {
   let fixture: ComponentFixture<ProfileTabComponent>;
   let getProfile: ReturnType<typeof vi.fn>;
   let updateProfile: ReturnType<typeof vi.fn>;
+  let snackBarOpen: ReturnType<typeof vi.fn>;
 
   function create(profile: Profile | Subject<Profile> | HttpErrorResponse = PROFILE): void {
     getProfile.mockReturnValue(profile instanceof HttpErrorResponse
@@ -58,10 +60,14 @@ describe('ProfileTabComponent', () => {
   beforeEach(() => {
     getProfile = vi.fn();
     updateProfile = vi.fn();
+    snackBarOpen = vi.fn();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     TestBed.configureTestingModule({
       imports: [ProfileTabComponent],
-      providers: [{ provide: AccountService, useValue: { getProfile, updateProfile } }]
+      providers: [
+        { provide: AccountService, useValue: { getProfile, updateProfile } },
+        { provide: MatSnackBar, useValue: { open: snackBarOpen } }
+      ]
     });
   });
 
@@ -119,7 +125,7 @@ describe('ProfileTabComponent', () => {
       linkedInUrl: 'https://www.linkedin.com/in/jan',
       about: 'O mnie'
     });
-    expect(root().querySelector('.success[role="status"]')?.textContent).toBe('Zapisano zmiany w profilu');
+    expect(snackBarOpen).toHaveBeenCalledWith('Zapisano zmiany w profilu', 'OK', { duration: 5000, politeness: 'polite' });
     expect(input('firstName').value).toBe('Janek');
   });
 
@@ -136,7 +142,7 @@ describe('ProfileTabComponent', () => {
 
     expect(updateProfile).not.toHaveBeenCalled();
     expect(root().textContent).toContain(message);
-    expect(root().querySelector('.error[role="alert"]')?.textContent).toBe('Popraw zaznaczone pola formularza');
+    expect(root().querySelector('.form-error[role="alert"]')?.textContent).toBe('Popraw zaznaczone pola formularza');
     expect(document.activeElement).toBe(input(name));
   });
 
@@ -150,9 +156,11 @@ describe('ProfileTabComponent', () => {
     expect(updateProfile).toHaveBeenCalled();
   });
 
-  it('enforces the maximum lengths of the API (e.g. about ≤ 2000)', () => {
+  it('enforces the maximum lengths of the API (e.g. about ≤ 2000) and counts the characters of "about"', () => {
     create();
     expect(root().querySelector('textarea')!.getAttribute('maxlength')).toBe('2000');
+    type('about', 'abc');
+    expect(root().querySelector('mat-hint.mat-mdc-form-field-hint-end')?.textContent?.trim()).toBe('3 z 2000 znaków');
     expect(input('headline').getAttribute('maxlength')).toBe('150');
   });
 
@@ -165,7 +173,7 @@ describe('ProfileTabComponent', () => {
     type('headline', 'Nowy nagłówek');
     submit();
 
-    expect(root().querySelector('.error[role="alert"]')?.textContent).toBe('Przesłane dane są nieprawidłowe');
+    expect(root().querySelector('.form-error[role="alert"]')?.textContent).toBe('Przesłane dane są nieprawidłowe');
     expect(input('headline').value).toBe('Nowy nagłówek');
   });
 
@@ -193,7 +201,7 @@ describe('ProfileTabComponent', () => {
     submit();
 
     expect(updateProfile).toHaveBeenCalledWith(expect.objectContaining({ firstName: '\u0085'.trim() }));
-    expect(root().querySelector('.error[role="alert"]')?.textContent).toBe('Przesłane dane są nieprawidłowe');
+    expect(root().querySelector('.form-error[role="alert"]')?.textContent).toBe('Przesłane dane są nieprawidłowe');
     expect(input('firstName').value).toBe('\u0085');
   });
 });

@@ -1,12 +1,14 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Router, provideRouter } from '@angular/router';
+import { provideRouter } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatDialog } from '@angular/material/dialog';
+import { MATERIAL_ANIMATIONS } from '@angular/material/core';
 import { Observable, Subject, of, throwError } from 'rxjs';
-import { MyApplicationsComponent } from './my-applications.component';
+import { MyApplicationsComponent, formatStatusSince, isClosedApplication } from './my-applications.component';
 import { ATTACHMENTS_UPLOAD_ABORTED, AttachmentsDialogComponent } from './attachments-dialog.component';
 import { JobApplicationService } from '../../services/job-application.service';
+import { ConfirmService } from '../../services/confirm.service';
 import { ApplicationAttachment, ApplicationStatus, AttachmentKind, JobApplication } from '../../models/job-application.model';
 
 function makeApplication(id: number, status = ApplicationStatus.Submitted): JobApplication {
@@ -23,6 +25,11 @@ const HISTORY = [
   { status: ApplicationStatus.Interview, changedAt: '2026-01-02T10:00:00Z', comment: 'Zapraszamy', changedBy: null }
 ];
 
+const ALL_STATUSES = [
+  ApplicationStatus.Submitted, ApplicationStatus.InReview, ApplicationStatus.Interview, ApplicationStatus.Offered,
+  ApplicationStatus.Hired, ApplicationStatus.Rejected, ApplicationStatus.Withdrawn
+];
+
 // Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
 vi.setConfig({ testTimeout: 20000 });
 
@@ -36,8 +43,7 @@ describe('MyApplicationsComponent', () => {
   let deleteAttachment: ReturnType<typeof vi.fn>;
   let dialogOpen: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
-  let alertSpy: ReturnType<typeof vi.spyOn>;
-  let confirmSpy: ReturnType<typeof vi.spyOn>;
+  let confirm: ReturnType<typeof vi.fn>;
 
   function create(initial: Observable<JobApplication[]> = of([makeApplication(1), makeApplication(2)])): void {
     getMyApplications.mockReturnValue(initial);
@@ -51,6 +57,36 @@ describe('MyApplicationsComponent', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
+  function cards(): HTMLElement[] {
+    return Array.from(root().querySelectorAll<HTMLElement>('article.application'));
+  }
+
+  function card(index: number): HTMLElement {
+    return cards()[index];
+  }
+
+  function toggleButton(index: number): HTMLButtonElement {
+    return card(index).querySelector<HTMLButtonElement>('button.toggle')!;
+  }
+
+  function expand(index: number): HTMLElement {
+    toggleButton(index).click();
+    return card(index);
+  }
+
+  function tabLabels(): string[] {
+    return Array.from(root().querySelectorAll('[role="tab"]')).map(t => t.textContent?.trim() ?? '');
+  }
+
+  function selectTab(index: number): void {
+    root().querySelectorAll<HTMLElement>('[role="tab"]')[index].click();
+    root();
+  }
+
+  function byId(id: number): JobApplication {
+    return component.applications().find(a => a.id === id)!;
+  }
+
   beforeEach(async () => {
     getMyApplications = vi.fn();
     getApplication = vi.fn().mockReturnValue(of({ ...makeApplication(1, ApplicationStatus.Interview), history: HISTORY }));
@@ -62,8 +98,7 @@ describe('MyApplicationsComponent', () => {
     deleteAttachment = vi.fn().mockReturnValue(of(undefined));
     dialogOpen = vi.fn().mockReturnValue({ afterClosed: () => of(undefined) });
     snackBarOpen = vi.fn();
-    alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
-    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    confirm = vi.fn().mockReturnValue(of(true));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
@@ -72,75 +107,232 @@ describe('MyApplicationsComponent', () => {
         provideRouter([]),
         { provide: JobApplicationService, useValue: { getMyApplications, getApplication, withdraw, downloadAttachment, deleteAttachment } },
         { provide: MatDialog, useValue: { open: dialogOpen } },
-        { provide: MatSnackBar, useValue: { open: snackBarOpen } }
+        { provide: MatSnackBar, useValue: { open: snackBarOpen } },
+        { provide: ConfirmService, useValue: { confirm } },
+        // przełączanie zakładek bez animacji – treść podmieniana od razu
+        { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } }
       ]
     }).compileComponents();
   });
 
   afterEach(() => vi.restoreAllMocks());
 
-  it('loads and shows the current user applications', () => {
-    create();
+  describe('list', () => {
+    it('loads and shows the current user applications as cards with a heading link', () => {
+      create();
 
-    expect(component.applications.map(a => a.id)).toEqual([1, 2]);
-    expect(component.loading).toBe(false);
+      expect(component.applications().map(a => a.id)).toEqual([1, 2]);
+      expect(component.state()).toBe('loaded');
+      expect(root().querySelector('h1')?.textContent?.trim()).toBe('Moje aplikacje');
+      const link = card(0).querySelector<HTMLAnchorElement>('h2 a')!;
+      expect(link.textContent?.trim()).toBe('Oferta 1');
+      expect(link.getAttribute('href')).toBe('/jobs/10');
+      expect(card(0).getAttribute('aria-labelledby')).toBe('application-title-1');
+    });
+
+    it('shows the company, the location and since when the status holds', () => {
+      const app = { ...makeApplication(1), jobOffer: { location: 'Rzeszów' } as JobApplication['jobOffer'] };
+      create(of([app]));
+
+      expect(card(0).querySelector('.secondary')?.textContent?.trim()).toBe('Acme · Rzeszów');
+      expect(card(0).querySelector('.since')?.textContent?.trim()).toBe('od ' + formatStatusSince('2026-01-01T10:00:00Z'));
+    });
+
+    it('reserves space with a skeleton while loading', () => {
+      create(new Subject<JobApplication[]>());
+
+      expect(root().querySelectorAll('.skeleton').length).toBe(3);
+      expect(root().querySelector('[role="status"]')?.textContent).toContain('Wczytywanie aplikacji');
+    });
+
+    it('shows an inline error with a retry button when loading fails', () => {
+      create(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      const alert = root().querySelector('[role="alert"]')!;
+      expect(alert.textContent).toContain('Nie udało się wczytać aplikacji – spróbuj ponownie');
+      expect(snackBarOpen).not.toHaveBeenCalled();
+
+      getMyApplications.mockReturnValue(of([makeApplication(1)]));
+      alert.querySelector<HTMLButtonElement>('button')!.click();
+      expect(cards().length).toBe(1);
+    });
+
+    it('shows an empty state with a link to the offers', () => {
+      create(of([]));
+
+      expect(root().textContent).toContain('Nie masz jeszcze żadnych aplikacji.');
+      expect(root().querySelector('a[href="/jobs"]')).not.toBeNull();
+    });
+
+    it('shows the Polish status label of each application', () => {
+      create(of([makeApplication(1, ApplicationStatus.Interview), makeApplication(2, ApplicationStatus.InReview)]));
+
+      const labels = Array.from(root().querySelectorAll('app-status-chip')).map(e => e.textContent?.trim());
+      expect(labels).toEqual(['Rozmowa', 'W analizie']);
+    });
   });
 
-  it('shows a snackbar when loading fails', () => {
-    create(throwError(() => new HttpErrorResponse({ status: 500 })));
+  describe('tabs', () => {
+    it('splits the applications into "W toku" and "Zakończone" by status', () => {
+      create(of(ALL_STATUSES.map((status, i) => makeApplication(i + 1, status))));
 
-    expect(snackBarOpen).toHaveBeenCalledTimes(1);
-    expect(snackBarOpen.mock.calls[0][0]).toBe('Błąd podczas ładowania aplikacji');
-    expect(alertSpy).not.toHaveBeenCalled();
-    expect(component.loading).toBe(false);
+      expect(ALL_STATUSES.map(isClosedApplication)).toEqual([false, false, false, false, true, true, true]);
+      expect(tabLabels()).toEqual(['W toku (4)', 'Zakończone (3)']);
+      expect(cards().map(c => c.querySelector('h2')?.textContent?.trim())).toEqual(['Oferta 1', 'Oferta 2', 'Oferta 3', 'Oferta 4']);
+
+      selectTab(1);
+
+      expect(cards().map(c => c.querySelector('h2')?.textContent?.trim())).toEqual(['Oferta 5', 'Oferta 6', 'Oferta 7']);
+    });
+
+    it('opens "Zakończone" when nothing is in progress', () => {
+      create(of([makeApplication(1, ApplicationStatus.Rejected)]));
+
+      expect(component.selectedTab()).toBe(1);
+      expect(cards().length).toBe(1);
+    });
+
+    it('shows an empty message in an empty tab', () => {
+      create(of([makeApplication(1)]));
+
+      selectTab(1);
+
+      expect(root().textContent).toContain('Nie masz zakończonych aplikacji.');
+    });
   });
 
-  it.each([401, 403])('does not duplicate the interceptor notice when loading fails with %i', status => {
-    create(throwError(() => new HttpErrorResponse({ status, statusText: 'Error', url: '/api/jobapplications/my-applications' })));
+  describe('details', () => {
+    it('is a disclosure button with aria-expanded and aria-controls', () => {
+      create();
+      const button = toggleButton(0);
 
-    expect(snackBarOpen).not.toHaveBeenCalled();
-    expect(alertSpy).not.toHaveBeenCalled();
-    expect(component.loading).toBe(false);
-  });
+      expect(button.getAttribute('aria-label')).toBe('Szczegóły aplikacji: Oferta 1');
+      expect(button.getAttribute('aria-expanded')).toBe('false');
+      const panel = root().querySelector<HTMLElement>('#' + button.getAttribute('aria-controls'))!;
+      expect(panel.hidden).toBe(true);
 
-  it('shows the Polish status label of each application', () => {
-    create(of([makeApplication(1, ApplicationStatus.Interview), makeApplication(2, ApplicationStatus.Rejected)]));
+      button.click();
+      root();
 
-    const labels = Array.from(root().querySelectorAll('app-status-chip')).map(e => e.textContent?.trim());
-    expect(labels).toEqual(['Rozmowa', 'Odrzucona']);
+      expect(button.getAttribute('aria-expanded')).toBe('true');
+      expect(panel.hidden).toBe(false);
+    });
+
+    it('loads the history once and toggles the timeline', () => {
+      create();
+
+      expand(0);
+
+      expect(getApplication).toHaveBeenCalledWith(1);
+      expect(card(0).querySelectorAll('app-status-timeline li').length).toBe(2);
+      expect(card(0).querySelector('app-status-timeline')?.textContent).toContain('Zapraszamy');
+
+      toggleButton(0).click();
+      expect(card(0).querySelector('app-status-timeline')).toBeNull();
+
+      toggleButton(0).click();
+      expect(getApplication).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the full message of the application as text (no tooltip, no truncation)', () => {
+      const note = 'Dzień dobry,\n' + 'bardzo chętnie '.repeat(10) + '<b>dołączę</b>';
+      create(of([{ ...makeApplication(1), note }]));
+
+      const details = expand(0);
+
+      expect(details.querySelector('.note')?.textContent).toBe(note);
+      expect(details.querySelector('.note b')).toBeNull();
+      expect(root().querySelector('[mattooltip]')).toBeNull();
+    });
+
+    it('collapses and shows a snackbar when the history cannot be loaded', () => {
+      create();
+      getApplication.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      expand(0);
+
+      expect(component.isExpanded(1)).toBe(false);
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Nie udało się wczytać historii aplikacji');
+    });
+
+    it('keeps several rows expanded and loads each history independently', () => {
+      create();
+      const first = new Subject<JobApplication>();
+      const second = new Subject<JobApplication>();
+      getApplication.mockImplementation((id: number) => id === 1 ? first : second);
+
+      expand(0);
+      expand(1);
+      first.next({ ...makeApplication(1), history: HISTORY });
+
+      expect(component.isExpanded(1) && component.isExpanded(2)).toBe(true);
+      expect(component.historyLoadingIds().has(2)).toBe(true);
+      expect(card(1).querySelector('.history-loading [role="status"], .history-loading')).not.toBeNull();
+
+      second.error(new HttpErrorResponse({ status: 500 }));
+      root();
+
+      expect(component.isExpanded(1)).toBe(true);
+      expect(component.isExpanded(2)).toBe(false);
+      expect(card(0).querySelectorAll('app-status-timeline li').length).toBe(2);
+    });
   });
 
   describe('withdrawing', () => {
-    it('withdraws after confirmation and updates the status in place', () => {
+    it('asks through ConfirmService, withdraws and moves the application to "Zakończone"', () => {
       create();
+      expand(0).querySelector<HTMLButtonElement>('button.withdraw')!.click();
 
-      component.withdrawApplication(component.applications[0]);
-
+      expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Wycofać aplikację?', confirmLabel: 'Wycofaj aplikację', destructive: true
+      }));
+      expect(confirm.mock.calls[0][0].message).toContain('„Oferta 1”');
       expect(withdraw).toHaveBeenCalledWith(1);
-      expect(component.applications.map(a => a.status)).toEqual([ApplicationStatus.Withdrawn, ApplicationStatus.Submitted]);
-      expect(component.withdrawingId).toBeNull();
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja została wycofana');
+      expect(byId(1).status).toBe(ApplicationStatus.Withdrawn);
+      expect(component.withdrawingId()).toBeNull();
+      expect(snackBarOpen).toHaveBeenCalledWith(
+        'Aplikacja została wycofana – znajdziesz ją w zakładce „Zakończone”', 'OK', { duration: 5000, politeness: 'polite' });
+      expect(tabLabels()).toEqual(['W toku (1)', 'Zakończone (1)']);
+      // karta zniknęła z bieżącej zakładki – fokus na nagłówku strony
+      expect(document.activeElement).toBe(root().querySelector('h1'));
     });
 
     it('does not withdraw when the confirmation is declined', () => {
       create();
-      confirmSpy.mockReturnValue(false);
+      confirm.mockReturnValue(of(false));
 
-      component.withdrawApplication(component.applications[0]);
+      component.withdrawApplication(byId(1));
 
       expect(withdraw).not.toHaveBeenCalled();
-      expect(component.applications[0].status).toBe(ApplicationStatus.Submitted);
+      expect(byId(1).status).toBe(ApplicationStatus.Submitted);
     });
 
     it('offers withdrawal only for statuses the API allows', () => {
-      const statuses = [
-        ApplicationStatus.Submitted, ApplicationStatus.InReview, ApplicationStatus.Interview, ApplicationStatus.Offered,
-        ApplicationStatus.Hired, ApplicationStatus.Rejected, ApplicationStatus.Withdrawn
-      ];
-      create(of(statuses.map((status, i) => makeApplication(i + 1, status))));
+      create(of(ALL_STATUSES.map((status, i) => makeApplication(i + 1, status))));
 
-      expect(component.applications.map(a => component.canWithdraw(a))).toEqual([true, true, true, true, false, false, false]);
-      expect(root().querySelectorAll('button[mattooltip="Wycofaj aplikację"]').length).toBe(4);
+      expect(component.applications().map(a => component.canWithdraw(a))).toEqual([true, true, true, true, false, false, false]);
+      for (let i = 0; i < 4; i++) expand(i);
+      expect(root().querySelectorAll('button.withdraw').length).toBe(4);
+
+      selectTab(1);
+      for (let i = 0; i < 3; i++) expand(i);
+      expect(root().querySelectorAll('button.withdraw').length).toBe(0);
+    });
+
+    it('keeps the button focusable (aria-disabled) while the request is pending', () => {
+      create();
+      withdraw.mockReturnValue(new Subject<JobApplication>());
+      const button = expand(0).querySelector<HTMLButtonElement>('button.withdraw')!;
+
+      button.click();
+      root();
+
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.textContent).toContain('Wycofywanie…');
+
+      component.withdrawApplication(byId(2));
+      expect(confirm).toHaveBeenCalledTimes(1);
     });
 
     it('keeps the status and shows the translated API message when withdrawal is rejected', () => {
@@ -149,10 +341,10 @@ describe('MyApplicationsComponent', () => {
         status: 400, error: { message: 'Application cannot be withdrawn in its current status' }
       })));
 
-      component.withdrawApplication(component.applications[0]);
+      component.withdrawApplication(byId(1));
 
-      expect(component.applications[0].status).toBe(ApplicationStatus.Submitted);
-      expect(component.withdrawingId).toBeNull();
+      expect(byId(1).status).toBe(ApplicationStatus.Submitted);
+      expect(component.withdrawingId()).toBeNull();
       expect(snackBarOpen.mock.calls[0][0]).toBe('Tej aplikacji nie można już wycofać');
     });
 
@@ -160,131 +352,59 @@ describe('MyApplicationsComponent', () => {
       create();
       withdraw.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
 
-      component.withdrawApplication(component.applications[0]);
+      component.withdrawApplication(byId(1));
 
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Błąd podczas wycofywania aplikacji');
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Nie udało się wycofać aplikacji');
     });
 
     it.each([401, 403])('does not duplicate the interceptor notice when withdrawal fails with %i', status => {
       create();
       withdraw.mockReturnValue(throwError(() => new HttpErrorResponse({ status, statusText: 'Error' })));
 
-      component.withdrawApplication(component.applications[0]);
+      component.withdrawApplication(byId(1));
 
       expect(snackBarOpen).not.toHaveBeenCalled();
-      expect(alertSpy).not.toHaveBeenCalled();
-      expect(component.withdrawingId).toBeNull();
-    });
-  });
-
-  describe('history', () => {
-    it('loads the history once and toggles the timeline', () => {
-      create();
-
-      component.toggleHistory(component.applications[0]);
-
-      expect(getApplication).toHaveBeenCalledWith(1);
-      expect(component.expandedId).toBe(1);
-      expect(root().querySelectorAll('app-status-timeline li').length).toBe(2);
-      expect(root().querySelector('app-status-timeline')?.textContent).toContain('Zapraszamy');
-
-      component.toggleHistory(component.applications[0]);
-      expect(component.expandedId).toBeNull();
-
-      component.toggleHistory(component.applications[0]);
-      expect(getApplication).toHaveBeenCalledTimes(1);
-    });
-
-    it('collapses and shows a snackbar when the history cannot be loaded', () => {
-      create();
-      getApplication.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
-
-      component.toggleHistory(component.applications[0]);
-
-      expect(component.expandedId).toBeNull();
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Nie udało się wczytać historii aplikacji');
-    });
-
-    it('keeps the spinner of a row expanded later when the history of an earlier row arrives', () => {
-      create();
-      const first = new Subject<JobApplication>();
-      const second = new Subject<JobApplication>();
-      getApplication.mockImplementation((id: number) => id === 1 ? first : second);
-
-      component.toggleHistory(component.applications[0]);
-      component.toggleHistory(component.applications[1]);
-      first.next({ ...makeApplication(1), history: HISTORY });
-
-      expect(component.expandedId).toBe(2);
-      expect(component.historyLoadingId).toBe(2);
-      expect(component.histories[1].length).toBe(2);
-
-      second.next({ ...makeApplication(2), history: HISTORY.slice(0, 1) });
-      expect(component.historyLoadingId).toBeNull();
-      expect(root().querySelectorAll('app-status-timeline li').length).toBe(1);
-    });
-
-    it('does not collapse a row expanded later when the history of an earlier row fails', () => {
-      create();
-      const first = new Subject<JobApplication>();
-      const second = new Subject<JobApplication>();
-      getApplication.mockImplementation((id: number) => id === 1 ? first : second);
-
-      component.toggleHistory(component.applications[0]);
-      component.toggleHistory(component.applications[1]);
-      first.error(new HttpErrorResponse({ status: 500 }));
-
-      expect(component.expandedId).toBe(2);
-      expect(component.historyLoadingId).toBe(2);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Nie udało się wczytać historii aplikacji');
+      expect(component.withdrawingId()).toBeNull();
     });
 
     it('reloads the cached history of an expanded row after withdrawal without history in the response', () => {
       create();
-      component.toggleHistory(component.applications[0]);
-      expect(component.histories[1].length).toBe(2);
+      expand(0);
+      expect(component.histories()[1].length).toBe(2);
       withdraw.mockReturnValue(of(makeApplication(1, ApplicationStatus.Withdrawn)));
       const withWithdrawal = [...HISTORY, { status: ApplicationStatus.Withdrawn, changedAt: '2026-01-03T10:00:00Z', comment: null, changedBy: null }];
       getApplication.mockReturnValue(of({ ...makeApplication(1, ApplicationStatus.Withdrawn), history: withWithdrawal }));
 
-      component.withdrawApplication(component.applications[0]);
+      component.withdrawApplication(byId(1));
 
       expect(getApplication).toHaveBeenCalledTimes(2);
-      expect(component.histories[1].length).toBe(3);
+      expect(component.histories()[1].length).toBe(3);
     });
 
     it('drops the cached history of a collapsed row after withdrawal without history in the response', () => {
       create();
-      component.toggleHistory(component.applications[0]);
-      component.toggleHistory(component.applications[0]);
+      expand(0);
+      toggleButton(0).click();
       withdraw.mockReturnValue(of(makeApplication(1, ApplicationStatus.Withdrawn)));
 
-      component.withdrawApplication(component.applications[0]);
+      component.withdrawApplication(byId(1));
 
-      expect(component.histories[1]).toBeUndefined();
+      expect(component.histories()[1]).toBeUndefined();
       expect(getApplication).toHaveBeenCalledTimes(1);
-      component.toggleHistory(component.applications[0]);
+      component.toggleDetails(byId(1));
       expect(getApplication).toHaveBeenCalledTimes(2);
     });
 
     it('uses the history returned by withdraw without another request', () => {
       create();
-      component.withdrawApplication(component.applications[0]);
+      component.withdrawApplication(byId(1));
 
-      component.toggleHistory(component.applications[0]);
+      component.toggleDetails(byId(1));
 
       expect(getApplication).not.toHaveBeenCalled();
-      expect(component.histories[1].length).toBe(3);
+      expect(component.histories()[1].length).toBe(3);
+      expect(byId(1).history).toBeUndefined();
     });
-  });
-
-  it('viewJobDetails navigates to the job page', () => {
-    create();
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-
-    component.viewJobDetails(20);
-
-    expect(navigate).toHaveBeenCalledWith(['/jobs', 20]);
   });
 
   describe('attachments', () => {
@@ -299,169 +419,111 @@ describe('MyApplicationsComponent', () => {
       };
     }
 
-    function cell(index: number): HTMLElement {
-      return root().querySelectorAll<HTMLElement>('td.mat-column-attachments')[index];
+    function files(index: number): HTMLElement {
+      return card(index).querySelector<HTMLElement>('app-attachment-list')!;
     }
 
-    function labels(index: number): (string | null)[] {
-      return Array.from(cell(index).querySelectorAll('button')).map(b => b.getAttribute('aria-label'));
-    }
-
-    it('has an "Załączniki" column instead of the single CV column', () => {
-      create();
-
-      expect(component.displayedColumns).toContain('attachments');
-      expect(component.displayedColumns).not.toContain('cv');
-      expect(Array.from(root().querySelectorAll('th')).map(th => th.textContent?.trim())).toContain('Załączniki');
-    });
-
-    it('lists the kind, name, size and date of every attachment', () => {
+    it('lists the kind, name, size and date of every attachment in the details', () => {
       create(of([withAttachments(1), makeApplication(2)]));
+      expand(0);
+      expand(1);
 
-      const items = Array.from(cell(0).querySelectorAll('li'));
+      const items = Array.from(files(0).querySelectorAll('li'));
       expect(items.map(li => li.querySelector('.file-name')?.textContent)).toEqual(['moje-cv.pdf', 'list.docx']);
       expect(items.map(li => li.querySelector('.meta')?.textContent)).toEqual([
         'CV · 350 KB · 02.01.2026', 'List motywacyjny · 2 KB · 03.01.2026'
       ]);
-      expect(cell(1).querySelector('.empty')?.textContent).toBe('Brak');
+      expect(files(1).querySelector('.empty')?.textContent).toBe('Brak załączników');
     });
 
     it('labels the buttons with the action, the kind and the file name', () => {
-      create(of([withAttachments(1), makeApplication(2)]));
+      create(of([withAttachments(1)]));
+      const details = expand(0);
 
-      expect(labels(0)).toEqual([
+      expect(Array.from(files(0).querySelectorAll('button')).map(b => b.getAttribute('aria-label'))).toEqual([
         'Pobierz CV: moje-cv.pdf', 'Usuń CV: moje-cv.pdf',
-        'Pobierz List motywacyjny: list.docx', 'Usuń List motywacyjny: list.docx',
-        'Dodaj załączniki do aplikacji: Oferta 1'
+        'Pobierz List motywacyjny: list.docx', 'Usuń List motywacyjny: list.docx'
       ]);
-      expect(labels(1)).toEqual(['Dodaj załączniki do aplikacji: Oferta 2']);
+      // bez spacji przed dwukropkiem (ukryty dopisek w osobnym elemencie dawał „Dodaj załączniki : …”)
+      expect(details.querySelector('button.add-attachments')?.getAttribute('aria-label')).toBe('Dodaj załączniki: Oferta 1');
+      expect(details.querySelector('button.withdraw')?.getAttribute('aria-label')).toBe('Wycofaj aplikację: Oferta 1');
     });
 
     it('offers adding only in the statuses the API allows, but deleting and downloading always', () => {
-      const statuses = [
-        ApplicationStatus.Submitted, ApplicationStatus.InReview, ApplicationStatus.Interview, ApplicationStatus.Offered,
-        ApplicationStatus.Hired, ApplicationStatus.Rejected, ApplicationStatus.Withdrawn
-      ];
-      create(of(statuses.map((status, i) => withAttachments(i + 1, status, [CV]))));
+      create(of(ALL_STATUSES.map((status, i) => withAttachments(i + 1, status, [CV]))));
+      for (let i = 0; i < 4; i++) expand(i);
 
-      const adds = statuses.map((_, i) => cell(i).querySelectorAll('button.add-attachments').length);
-      expect(adds).toEqual([1, 1, 1, 1, 0, 0, 0]);
-      const others = statuses.map((_, i) => cell(i).querySelectorAll('.download-button, .delete-button').length);
-      expect(others).toEqual([2, 2, 2, 2, 2, 2, 2]);
+      expect(cards().map(c => c.querySelectorAll('button.add-attachments').length)).toEqual([1, 1, 1, 1]);
+      expect(cards().map(c => c.querySelectorAll('.download-button, .delete-button').length)).toEqual([2, 2, 2, 2]);
+
+      selectTab(1);
+      for (let i = 0; i < 3; i++) expand(i);
+      expect(cards().map(c => c.querySelectorAll('button.add-attachments').length)).toEqual([0, 0, 0]);
+      expect(cards().map(c => c.querySelectorAll('.download-button, .delete-button').length)).toEqual([2, 2, 2]);
     });
 
     it('does not offer adding when the application already has 10 attachments', () => {
       const ten = Array.from({ length: 10 }, (_, i) => ({ ...CV, id: 100 + i, fileName: `plik-${i}.pdf` }));
       create(of([withAttachments(1, ApplicationStatus.Submitted, ten)]));
 
-      expect(component.canAddAttachments(component.applications[0])).toBe(false);
-      expect(cell(0).querySelector('button.add-attachments')).toBeNull();
+      expect(component.canAddAttachments(byId(1))).toBe(false);
+      expect(expand(0).querySelector('button.add-attachments')).toBeNull();
     });
 
     it('downloads an attachment of the right application', () => {
       create(of([withAttachments(1)]));
+      expand(0);
 
-      cell(0).querySelectorAll<HTMLButtonElement>('.download-button')[1].click();
+      files(0).querySelectorAll<HTMLButtonElement>('.download-button')[1].click();
 
       expect(downloadAttachment).toHaveBeenCalledWith(1, LETTER);
     });
 
-    it('marks the download button with aria-disabled until the file arrives', () => {
+    it('deletes an attachment and updates the list and the total size', () => {
       create(of([withAttachments(1)]));
-      const pending = new Subject<void>();
-      downloadAttachment.mockReturnValue(pending);
-      const button = cell(0).querySelector<HTMLButtonElement>('.download-button')!;
+      expand(0);
 
-      button.click();
-      expect(cell(0).querySelector('.download-button')?.getAttribute('aria-disabled')).toBe('true');
-      expect(button.disabled).toBe(false);
+      files(0).querySelectorAll<HTMLButtonElement>('.delete-button')[0].click();
 
-      pending.next();
-      pending.complete();
-      expect(cell(0).querySelector('.download-button')?.getAttribute('aria-disabled')).toBeNull();
-    });
-
-    it('shows the translated API message when the download fails', () => {
-      create(of([withAttachments(1)]));
-      downloadAttachment.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { message: 'Attachment not found' } })));
-
-      cell(0).querySelector<HTMLButtonElement>('.download-button')!.click();
-
-      expect(cell(0).querySelector('[role="alert"]')?.textContent).toBe('Nie znaleziono załącznika');
-    });
-
-    it('deletes an attachment after confirmation and updates the list and the total size', () => {
-      create(of([withAttachments(1)]));
-
-      cell(0).querySelectorAll<HTMLButtonElement>('.delete-button')[0].click();
-
-      expect(confirmSpy).toHaveBeenCalled();
       expect(deleteAttachment).toHaveBeenCalledWith(1, 11);
-      expect(component.applications[0].attachments).toEqual([LETTER]);
-      expect(component.applications[0].attachmentsTotalSize).toBe(2048);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Załącznik został usunięty');
-      expect(Array.from(cell(0).querySelectorAll('.file-name')).map(e => e.textContent)).toEqual(['list.docx']);
+      expect(byId(1).attachments).toEqual([LETTER]);
+      expect(byId(1).attachmentsTotalSize).toBe(2048);
+      expect(snackBarOpen).toHaveBeenCalledWith('Załącznik został usunięty', 'OK', { duration: 5000, politeness: 'polite' });
+      expect(Array.from(files(0).querySelectorAll('.file-name')).map(e => e.textContent)).toEqual(['list.docx']);
     });
 
     it('allows deleting an attachment of a withdrawn application (right to erasure)', () => {
       create(of([withAttachments(1, ApplicationStatus.Withdrawn, [CV])]));
+      expand(0);
 
-      cell(0).querySelector<HTMLButtonElement>('.delete-button')!.click();
+      files(0).querySelector<HTMLButtonElement>('.delete-button')!.click();
 
       expect(deleteAttachment).toHaveBeenCalledWith(1, 11);
-      expect(component.applications[0].attachments).toEqual([]);
-      expect(cell(0).querySelector('.empty')?.textContent).toBe('Brak');
-    });
-
-    it('moves the focus to the next attachment after deleting one', () => {
-      create(of([withAttachments(1)]));
-
-      cell(0).querySelectorAll<HTMLButtonElement>('.delete-button')[0].click();
-      root();
-
-      expect(document.activeElement?.getAttribute('aria-label')).toBe('Usuń List motywacyjny: list.docx');
-    });
-
-    it('moves the focus to the empty-list text after deleting the last attachment', () => {
-      create(of([withAttachments(1, ApplicationStatus.Submitted, [CV])]));
-
-      cell(0).querySelector<HTMLButtonElement>('.delete-button')!.click();
-      root();
-
-      expect(document.activeElement).toBe(cell(0).querySelector('.empty'));
-    });
-
-    it('does not delete when the confirmation is declined', () => {
-      create(of([withAttachments(1)]));
-      confirmSpy.mockReturnValue(false);
-
-      cell(0).querySelector<HTMLButtonElement>('.delete-button')!.click();
-
-      expect(deleteAttachment).not.toHaveBeenCalled();
-      expect(component.applications[0].attachments.length).toBe(2);
+      expect(byId(1).attachments).toEqual([]);
+      expect(files(0).querySelector('.empty')?.textContent).toBe('Brak załączników');
     });
 
     it('opens the attachments dialog as an ARIA modal and puts the updated application into the list', () => {
       create();
       const updated = withAttachments(1);
       dialogOpen.mockReturnValue({ afterClosed: () => of(updated) });
+      const original = byId(1);
 
-      const original = component.applications[0];
-      cell(0).querySelector<HTMLButtonElement>('button.add-attachments')!.click();
+      expand(0).querySelector<HTMLButtonElement>('button.add-attachments')!.click();
 
       expect(dialogOpen).toHaveBeenCalledWith(AttachmentsDialogComponent, expect.objectContaining({ data: original, ariaModal: true }));
-      expect(component.applications[0].attachments).toEqual([CV, LETTER]);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Załączniki zostały dodane do aplikacji');
-      expect(getApplication).not.toHaveBeenCalled();
+      expect(byId(1).attachments).toEqual([CV, LETTER]);
+      expect(snackBarOpen).toHaveBeenCalledWith('Załączniki zostały dodane do aplikacji', 'OK', { duration: 5000, politeness: 'polite' });
+      expect(getApplication).toHaveBeenCalledTimes(1); // tylko historia przy rozwinięciu
     });
 
     it('leaves the list unchanged when the dialog is cancelled', () => {
       create();
       dialogOpen.mockReturnValue({ afterClosed: () => of(undefined) });
 
-      component.openAttachmentsDialog(component.applications[0]);
+      component.openAttachmentsDialog(byId(1));
 
-      expect(component.applications[0].attachments).toEqual([]);
+      expect(byId(1).attachments).toEqual([]);
       expect(snackBarOpen).not.toHaveBeenCalled();
       expect(getApplication).not.toHaveBeenCalled();
     });
@@ -471,14 +533,13 @@ describe('MyApplicationsComponent', () => {
       dialogOpen.mockReturnValue({ afterClosed: () => of(ATTACHMENTS_UPLOAD_ABORTED) });
       getApplication.mockReturnValue(of({ ...withAttachments(1, ApplicationStatus.Submitted, [CV]), history: HISTORY }));
 
-      component.openAttachmentsDialog(component.applications[0]);
+      component.openAttachmentsDialog(byId(1));
 
       expect(getApplication).toHaveBeenCalledWith(1);
-      expect(component.applications[0].attachments).toEqual([CV]);
-      expect(component.applications[0].history).toBeUndefined();
-      expect(component.histories[1]).toEqual(HISTORY);
+      expect(byId(1).attachments).toEqual([CV]);
+      expect(byId(1).history).toBeUndefined();
+      expect(component.histories()[1]).toEqual(HISTORY);
       expect(snackBarOpen.mock.calls[0][0]).toBe('Przerwano wysyłanie załączników');
-      expect(Array.from(cell(0).querySelectorAll('.file-name')).map(e => e.textContent)).toEqual(['moje-cv.pdf']);
     });
 
     it('tells the user to reload when refreshing after an abort fails', () => {
@@ -486,22 +547,11 @@ describe('MyApplicationsComponent', () => {
       dialogOpen.mockReturnValue({ afterClosed: () => of(ATTACHMENTS_UPLOAD_ABORTED) });
       getApplication.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
 
-      component.openAttachmentsDialog(component.applications[0]);
+      component.openAttachmentsDialog(byId(1));
 
       expect(snackBarOpen.mock.calls.map(call => call[0])).toEqual([
         'Przerwano wysyłanie załączników', 'Nie udało się odświeżyć aplikacji – odśwież stronę'
       ]);
-    });
-
-    it('stops listening to a pending download when the page is destroyed', () => {
-      create(of([withAttachments(1)]));
-      const pending = new Subject<void>();
-      downloadAttachment.mockReturnValue(pending);
-
-      cell(0).querySelector<HTMLButtonElement>('.download-button')!.click();
-      fixture.destroy();
-
-      expect(pending.observed).toBe(false);
     });
 
     it('stops listening to the refresh after an abort when the page is destroyed', () => {
@@ -510,7 +560,7 @@ describe('MyApplicationsComponent', () => {
       dialogOpen.mockReturnValue({ afterClosed: () => of(ATTACHMENTS_UPLOAD_ABORTED) });
       getApplication.mockReturnValue(refresh);
 
-      component.openAttachmentsDialog(component.applications[0]);
+      component.openAttachmentsDialog(byId(1));
       fixture.destroy();
 
       expect(refresh.observed).toBe(false);
@@ -519,9 +569,16 @@ describe('MyApplicationsComponent', () => {
     it('renders markup in attachment names as text', () => {
       const name = '<img src=x onerror="window.__pwned=true">.pdf';
       create(of([withAttachments(1, ApplicationStatus.Submitted, [{ ...CV, fileName: name }])]));
+      expand(0);
 
-      expect(cell(0).querySelector('.file-name')?.textContent).toBe(name);
-      expect(cell(0).querySelector('img')).toBeNull();
+      expect(files(0).querySelector('.file-name')?.textContent).toBe(name);
+      expect(files(0).querySelector('img')).toBeNull();
     });
+  });
+
+  it('formats since when the status holds (with the year only for other years)', () => {
+    const now = new Date('2026-11-07T12:00:00');
+    expect(formatStatusSince('2026-11-03T10:00:00', now)).toBe('3 listopada');
+    expect(formatStatusSince('2025-11-03T10:00:00', now)).toBe('3 listopada 2025');
   });
 });

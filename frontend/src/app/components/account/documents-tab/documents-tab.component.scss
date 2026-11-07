@@ -1,7 +1,9 @@
 @use '../account-forms';
 
-.subheading {
-  font-size: 1rem;
-  margin: 24px 0 8px;
-  color: var(--text-secondary);
+.add-heading {
+  margin-top: 24px;
+}
+
+.upload-actions {
+  margin-top: 12px;
 }

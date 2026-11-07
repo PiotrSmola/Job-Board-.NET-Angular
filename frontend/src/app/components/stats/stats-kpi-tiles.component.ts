@@ -21,12 +21,13 @@ import { KpiTile } from '../../utils/stats-view';
   `,
   styles: [`
     :host { display: block; }
-    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; margin: 0; }
-    .tile { margin: 0; padding: 16px; min-height: 96px; background: var(--surface-color); border: 1px solid var(--border-color); border-radius: 12px; }
-    dt { color: var(--text-secondary); font-size: 0.9rem; }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 12px; margin: 0; }
+    .tile { display: flex; flex-direction: column; margin: 0; padding: 18px 20px; min-height: 96px; background: var(--color-surface); border-radius: var(--radius-card); }
+    dt { color: var(--color-text-secondary); }
     dd { margin: 0; }
-    .value { margin-top: 4px; color: var(--text-primary); font-size: 1.9rem; font-weight: 700; line-height: 1.2; }
-    .hint { margin-top: 6px; color: var(--text-secondary); font-size: 0.8rem; }
+    /* wartość nad etykietą (makieta), w DOM etykieta pierwsza – czytnik czyta „etykieta: wartość” */
+    .value { order: -1; color: var(--color-text); font-size: var(--font-size-h1); font-weight: 500; line-height: 1.25; font-variant-numeric: tabular-nums; }
+    .hint { margin-top: 4px; color: var(--color-text-tertiary); font-size: var(--font-size-sm); }
   `]
 })
 export class StatsKpiTilesComponent {

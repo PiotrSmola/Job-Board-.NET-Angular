@@ -18,5 +18,6 @@ public interface ICompanyRepository
     Task<bool> HasJobsOrMembersAsync(int id);
     Task AddCompanyAsync(Company company);
     Task UpdateCompanyAsync(Company company);
-    Task DeleteCompanyAsync(Company company);
+    // usuwa firmę (zdjęcia kaskadowo) i zwraca klucze jej plików do usunięcia z magazynu po zatwierdzeniu
+    Task<IReadOnlyList<string>> DeleteCompanyAsync(Company company);
 }
