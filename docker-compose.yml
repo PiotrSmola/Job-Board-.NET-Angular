@@ -34,14 +34,17 @@ services:
     # Uwierzytelnianie S3: przy każdym starcie plik konfiguracyjny S3 SeaweedFS (-s3.config) z jedną tożsamością
     # o kluczach z .env (alfanumeryczne - wstawiane do JSON bez escapowania), potem oryginalny entrypoint obrazu
     # (uprawnienia /data i uruchomienie jako użytkownik seaweed). -ip.bind=0.0.0.0 - healthcheck przez 127.0.0.1.
+    # Plik leży w katalogu roota, nie w /tmp: przy restarcie kontenera jądro (protected_regular) nie pozwala
+    # nadpisać w katalogu ze sticky bit pliku należącego do innego użytkownika, nawet rootowi.
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -e
         umask 077
-        printf '{"identities":[{"name":"jobboard","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /tmp/s3.json
-        if id seaweed >/dev/null 2>&1; then chown seaweed:seaweed /tmp/s3.json; fi
-        exec /entrypoint.sh server -s3 -dir=/data -ip.bind=0.0.0.0 -s3.config=/tmp/s3.json
+        mkdir -p /etc/jobboard
+        printf '{"identities":[{"name":"jobboard","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /etc/jobboard/s3.json
+        if id seaweed >/dev/null 2>&1; then chown seaweed:seaweed /etc/jobboard /etc/jobboard/s3.json; fi
+        exec /entrypoint.sh server -s3 -dir=/data -ip.bind=0.0.0.0 -s3.config=/etc/jobboard/s3.json
     volumes:
       - storage-data:/data
     healthcheck:

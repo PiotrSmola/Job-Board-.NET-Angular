@@ -65,8 +65,10 @@ public class DockerComposeTests
         Assert.Contains("- storage-data:/data", storage);
         Assert.Contains("healthcheck:", storage);
         // tożsamość S3 z kluczami z .env generowana przy starcie; $$ - zmienna kontenera, nie interpolacja compose
-        Assert.Contains("\"$$S3_ACCESS_KEY\" \"$$S3_SECRET_KEY\" > /tmp/s3.json", storage);
-        Assert.Contains("-s3.config=/tmp/s3.json", storage);
+        Assert.Contains("\"$$S3_ACCESS_KEY\" \"$$S3_SECRET_KEY\" > /etc/jobboard/s3.json", storage);
+        Assert.Contains("-s3.config=/etc/jobboard/s3.json", storage);
+        // nie w /tmp - po restarcie kontenera root nie nadpisze tam pliku należącego do użytkownika seaweed
+        Assert.DoesNotContain("/tmp/s3.json", storage);
         Assert.Contains("exec /entrypoint.sh server -s3 -dir=/data", storage);
     }
 
