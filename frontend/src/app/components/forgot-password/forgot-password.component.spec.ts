@@ -40,7 +40,8 @@ describe('ForgotPasswordComponent', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('has an e-mail field with autocomplete and a persistent status region', () => {
-    expect(email().getAttribute('autocomplete')).toBe('email');
+    expect(email().getAttribute('autocomplete')).toBe('username');
+    expect(root().querySelector('h1')?.textContent?.trim()).toBe('Nie pamiętasz hasła?');
     expect(email().type).toBe('email');
     expect(root().querySelector('[role="status"]')).not.toBeNull();
   });
@@ -74,7 +75,8 @@ describe('ForgotPasswordComponent', () => {
     typeAndSubmit('nie-email');
 
     expect(forgotPassword).not.toHaveBeenCalled();
-    expect(root().querySelector('.error[role="alert"]')?.textContent).toBe('Podaj poprawny adres e-mail');
+    expect(root().querySelector('mat-error')?.textContent?.trim()).toBe('Podaj poprawny adres e-mail');
+    expect(root().querySelector('[role="alert"] .auth-alert')).toBeNull();
     expect(document.activeElement).toBe(email());
   });
 
@@ -83,7 +85,7 @@ describe('ForgotPasswordComponent', () => {
 
     typeAndSubmit('jan@example.com');
 
-    expect(root().querySelector('.error[role="alert"]')?.textContent).toBe('Zbyt wiele żądań – spróbuj ponownie za kilka minut');
+    expect(root().querySelector('[role="alert"] .auth-alert')?.textContent?.trim()).toBe('Zbyt wiele żądań – spróbuj ponownie za kilka minut');
     expect(root().querySelector('form')).not.toBeNull();
   });
 

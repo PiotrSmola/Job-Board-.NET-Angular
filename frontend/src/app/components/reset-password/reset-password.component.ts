@@ -1,15 +1,14 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { Subscription } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { getApiErrorMessage } from '../../utils/http-errors';
 import {
@@ -37,7 +36,6 @@ const MAX_TOKEN_LENGTH = 2048;
     ReactiveFormsModule,
     RouterLink,
     MatButtonModule,
-    MatCardModule,
     MatFormFieldModule,
     MatIconModule,
     MatInputModule,
@@ -52,7 +50,7 @@ export class ResetPasswordComponent {
   private readonly router = inject(Router);
   private readonly snackBar = inject(MatSnackBar);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
-  private subscription: Subscription | null = null;
+  private readonly destroyRef = inject(DestroyRef);
   /** Jednorazowy token z linku – czyszczony po użyciu. */
   private token: string | null = null;
 
@@ -75,6 +73,8 @@ export class ResetPasswordComponent {
     confirmPassword: ['', [Validators.required]]
   }, { validators: passwordsMatchValidator('newPassword', 'confirmPassword') });
 
+  readonly newPassword = toSignal(this.form.controls.newPassword.valueChanges, { initialValue: '' });
+
   constructor() {
     const params = inject(ActivatedRoute).snapshot.queryParamMap;
     const email = (params.get('email') ?? '').trim();
@@ -91,10 +91,13 @@ export class ResetPasswordComponent {
       this.router.navigate(['/reset-password'], { replaceUrl: true });
     }
 
-    inject(DestroyRef).onDestroy(() => {
-      this.subscription?.unsubscribe();
+    this.destroyRef.onDestroy(() => {
       this.token = null;
     });
+  }
+
+  togglePassword(): void {
+    this.hidePassword.update(hidden => !hidden);
   }
 
   submit(): void {
@@ -102,23 +105,27 @@ export class ResetPasswordComponent {
     this.error.set('');
 
     if (this.form.invalid) {
+      // błędy przy polach (mat-error), fokus na pierwsze niepoprawne
       this.form.markAllAsTouched();
-      this.error.set(this.form.hasError('passwordMismatch') ? 'Hasła nie są takie same' : 'Popraw zaznaczone pola formularza');
       focusFirstInvalidControl(this.host.nativeElement);
+      // same pola są poprawne, różnią się tylko hasła – fokus na pole powtórzenia (tam jest komunikat)
+      if (this.form.controls.newPassword.valid && this.form.hasError('passwordMismatch')) {
+        this.host.nativeElement.querySelector<HTMLElement>('[formControlName="confirmPassword"]')?.focus();
+      }
       return;
     }
 
     this.saving.set(true);
-    this.subscription = this.authService.resetPassword({
+    this.authService.resetPassword({
       email: this.email,
       token: this.token,
       newPassword: this.form.getRawValue().newPassword
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.saving.set(false);
         this.token = null;
         this.form.reset();
-        this.snackBar.open('Hasło zostało zmienione – zaloguj się nowym hasłem', 'OK', { duration: 8000 });
+        this.snackBar.open('Hasło zostało zmienione – zaloguj się nowym hasłem', 'OK', { duration: 8000, politeness: 'polite' });
         this.router.navigate(['/login']);
       },
       error: error => {
