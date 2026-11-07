@@ -2,7 +2,7 @@ import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
-import { AccountComponent } from './account.component';
+import { AccountComponent, KEEP_IN_VIEW_MS } from './account.component';
 import { AuthService } from '../../services/auth.service';
 import { ProfileTabComponent } from './profile-tab/profile-tab.component';
 import { DocumentsTabComponent } from './documents-tab/documents-tab.component';
@@ -99,6 +99,63 @@ describe('AccountComponent', () => {
 
     expect(current()).toBe('Dokumenty');
     expect(document.activeElement).toBe(root().querySelector('#dokumenty-heading'));
+  });
+
+  describe('keeping the section in view while the sections above load', () => {
+    let resize: (() => void) | undefined;
+    let disconnect: ReturnType<typeof vi.fn>;
+    let scrollIntoView: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      resize = undefined;
+      disconnect = vi.fn();
+      scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView as unknown as Element['scrollIntoView'];
+      vi.stubGlobal('ResizeObserver', class {
+        constructor(callback: () => void) { resize = callback; }
+        observe(): void { /* wywołania sterowane przez resize() */ }
+        disconnect = disconnect;
+      });
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    });
+
+    it('scrolls to the section again when the column grows (profile loaded above)', async () => {
+      await create('documents');
+      const section = root().querySelector('#dokumenty');
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView.mock.contexts[0]).toBe(section);
+
+      resize!();
+
+      expect(scrollIntoView).toHaveBeenCalledTimes(2);
+      expect(scrollIntoView.mock.contexts[1]).toBe(section);
+    });
+
+    it('stops as soon as the user scrolls or uses the keyboard', async () => {
+      await create('documents');
+
+      window.dispatchEvent(new Event('wheel'));
+
+      expect(disconnect).toHaveBeenCalled();
+    });
+
+    it('stops after a while and when the page is destroyed', async () => {
+      vi.useFakeTimers();
+      await create('documents');
+      vi.advanceTimersByTime(KEEP_IN_VIEW_MS);
+      expect(disconnect).toHaveBeenCalledTimes(1);
+
+      queryParams.next(convertToParamMap({ tab: 'notifications' }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.destroy();
+      expect(disconnect).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('moves to the section when ?tab= changes while the page is open', async () => {
