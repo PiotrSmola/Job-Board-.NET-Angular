@@ -1,41 +1,41 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
-import { MatIconModule } from '@angular/material/icon';
-import { MatTabsModule } from '@angular/material/tabs';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { ProfileTabComponent } from './profile-tab/profile-tab.component';
 import { DocumentsTabComponent } from './documents-tab/documents-tab.component';
 import { SecurityTabComponent } from './security-tab/security-tab.component';
 import { NotificationsTabComponent } from './notifications-tab/notifications-tab.component';
 
-export type AccountTabId = 'profile' | 'documents' | 'security' | 'notifications';
+/** Wartości `?tab=` – zachowane z czasów zakładek (linki z dialogu aplikowania, e-maili itp.). */
+export type AccountSectionId = 'profile' | 'documents' | 'security' | 'notifications';
 
-interface AccountTab {
-  id: AccountTabId;
+export interface AccountSection {
+  id: AccountSectionId;
   label: string;
-  icon: string;
+  /** Id elementu sekcji w DOM. */
+  anchor: string;
 }
 
-const ALL_TABS: AccountTab[] = [
-  { id: 'profile', label: 'Profil', icon: 'person' },
-  { id: 'documents', label: 'Dokumenty', icon: 'folder' },
-  { id: 'security', label: 'Bezpieczeństwo', icon: 'lock' },
-  { id: 'notifications', label: 'Powiadomienia', icon: 'notifications' }
+const ALL_SECTIONS: AccountSection[] = [
+  { id: 'profile', label: 'Profil', anchor: 'profil' },
+  { id: 'documents', label: 'Dokumenty', anchor: 'dokumenty' },
+  { id: 'security', label: 'Hasło i bezpieczeństwo', anchor: 'haslo' },
+  { id: 'notifications', label: 'Powiadomienia', anchor: 'powiadomienia' }
 ];
 
 /**
- * „Moje konto” – zakładki ładowane leniwie przy pierwszym wejściu (`matTabContent`) i zachowywane potem
- * (niezapisane zmiany w formularzu nie giną przy przełączaniu). Wybrana zakładka w `?tab=` (link z dialogu
- * aplikowania do dokumentów), zmiana zakładki podmienia wpis historii zamiast dokładać nowy.
+ * „Moje konto” (makieta Konto.dc.html) – jedna strona z sekcjami i bocznym menu zamiast zakładek.
+ * Menu to zwykłe linki `?tab=…` (działa otwieranie w nowej karcie), bieżąca sekcja ma `aria-current`.
+ * Wejście z `?tab=documents` (np. link z dialogu aplikowania) albo kliknięcie w menu przewija do sekcji
+ * i przenosi fokus na jej nagłówek; zmiana sekcji podmienia wpis historii zamiast dokładać nowy.
  */
 @Component({
   selector: 'app-account',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    MatIconModule,
-    MatTabsModule,
+    RouterLink,
     ProfileTabComponent,
     DocumentsTabComponent,
     SecurityTabComponent,
@@ -46,31 +46,44 @@ const ALL_TABS: AccountTab[] = [
 })
 export class AccountComponent {
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
   private readonly authService = inject(AuthService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
 
   /** Dokumenty profilu ma tylko kandydat. */
-  readonly tabs: AccountTab[] = this.authService.isAdmin() || this.authService.isEmployer()
-    ? ALL_TABS.filter(tab => tab.id !== 'documents')
-    : ALL_TABS;
-  readonly selectedIndex = signal(0);
+  readonly sections: AccountSection[] = this.authService.isAdmin() || this.authService.isEmployer()
+    ? ALL_SECTIONS.filter(section => section.id !== 'documents')
+    : ALL_SECTIONS;
+  readonly current = signal<AccountSectionId>('profile');
 
   constructor() {
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe(params => {
-      const index = this.tabs.findIndex(tab => tab.id === params.get('tab'));
-      this.selectedIndex.set(Math.max(index, 0));
+      const id = this.sections.find(section => section.id === params.get('tab'))?.id ?? 'profile';
+      // ten sam stan (np. adres zaktualizowany po kliknięciu w menu albo pierwsze wejście bez ?tab=) – bez przewijania
+      if (id === this.current()) return;
+      this.current.set(id);
+      afterNextRender(() => this.reveal(id), { injector: this.injector });
     });
   }
 
-  onTabChange(index: number): void {
-    const tab = this.tabs[index];
-    if (!tab || index === this.selectedIndex()) return;
+  /** Kliknięcie w menu – adres aktualizuje routerLink, tu przewijamy i przenosimy fokus (także przy ponownym kliknięciu). */
+  select(event: MouseEvent, id: AccountSectionId): void {
+    // Ctrl/⌘/Shift/środkowy przycisk – otwarcie w nowej karcie lub oknie, bez zmian na tej stronie
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    this.current.set(id);
+    this.reveal(id);
+  }
 
-    this.selectedIndex.set(index);
-    this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { tab: tab.id === 'profile' ? null : tab.id },
-      replaceUrl: true
-    });
+  queryParamsFor(id: AccountSectionId): { tab: string | null } {
+    return { tab: id === 'profile' ? null : id };
+  }
+
+  private reveal(id: AccountSectionId): void {
+    const anchor = this.sections.find(section => section.id === id)?.anchor;
+    const section = anchor ? this.host.nativeElement.querySelector<HTMLElement>(`#${anchor}`) : null;
+    if (!section) return;
+    section.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
+    // jsdom (testy) nie ma scrollIntoView
+    section.scrollIntoView?.({ block: 'start' });
   }
 }

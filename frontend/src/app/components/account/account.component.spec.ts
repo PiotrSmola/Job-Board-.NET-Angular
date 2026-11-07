@@ -23,26 +23,29 @@ class FakeNotificationsTab {}
 describe('AccountComponent', () => {
   let fixture: ComponentFixture<AccountComponent>;
   let queryParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
-  let navigate: ReturnType<typeof vi.spyOn>;
+  let navigateByUrl: ReturnType<typeof vi.spyOn>;
   let role: 'User' | 'Employer' | 'Admin';
 
   async function create(tab: string | null = null): Promise<void> {
     queryParams = new BehaviorSubject(convertToParamMap(tab ? { tab } : {}));
     TestBed.overrideProvider(ActivatedRoute, { useValue: { queryParamMap: queryParams } });
-    navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    navigateByUrl = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
     fixture = TestBed.createComponent(AccountComponent);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
   }
 
-  function tabLabels(): string[] {
-    return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('[role="tab"]'))
-      .map(tab => tab.textContent?.replace(/\s+/g, ' ').trim().replace(/^\S+ /, '') ?? '');
+  function root(): HTMLElement {
+    return fixture.nativeElement as HTMLElement;
   }
 
-  function activeContent(): string {
-    return (fixture.nativeElement as HTMLElement).querySelector('.mat-mdc-tab-body-active')?.textContent?.trim() ?? '';
+  function links(): HTMLAnchorElement[] {
+    return Array.from(root().querySelectorAll<HTMLAnchorElement>('nav[aria-label="Sekcje konta"] a'));
+  }
+
+  function current(): string | undefined {
+    return links().find(link => link.getAttribute('aria-current') === 'true')?.textContent?.trim();
   }
 
   beforeEach(() => {
@@ -62,44 +65,80 @@ describe('AccountComponent', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it('has a heading and four labelled tabs for a candidate, the profile tab first', async () => {
+  it('renders all sections on one page with headings and a section menu (profile current)', async () => {
     await create();
 
-    expect((fixture.nativeElement as HTMLElement).querySelector('h1')?.textContent).toBe('Moje konto');
-    expect(tabLabels()).toEqual(['Profil', 'Dokumenty', 'Bezpieczeństwo', 'Powiadomienia']);
-    expect((fixture.nativeElement as HTMLElement).querySelector('[role="tablist"]')?.closest('[aria-label]')).not.toBeNull();
-    expect(activeContent()).toBe('profil');
+    expect(root().querySelector('h1')?.textContent).toBe('Moje konto');
+    expect(links().map(link => link.textContent?.trim())).toEqual(['Profil', 'Dokumenty', 'Hasło i bezpieczeństwo', 'Powiadomienia']);
+    expect(Array.from(root().querySelectorAll('section h2')).map(h => h.textContent?.trim()))
+      .toEqual(['Profil', 'Dokumenty', 'Hasło i bezpieczeństwo', 'Powiadomienia']);
+    expect(root().querySelector('#dokumenty')?.textContent).toContain('dokumenty');
+    expect(root().querySelector('#dokumenty')?.getAttribute('aria-labelledby')).toBe('dokumenty-heading');
+    expect(current()).toBe('Profil');
+    // pierwsze wejście bez ?tab= nie przejmuje fokusu
+    expect(document.activeElement).toBe(document.body);
   });
 
-  it.each(['Employer', 'Admin'] as const)('hides the documents tab for %s', async r => {
+  it('keeps the old ?tab= links as real hrefs', async () => {
+    await create();
+
+    expect(links().map(link => link.getAttribute('href')))
+      .toEqual(['/account', '/account?tab=documents', '/account?tab=security', '/account?tab=notifications']);
+  });
+
+  it.each(['Employer', 'Admin'] as const)('hides the documents section for %s', async r => {
     role = r;
     await create();
 
-    expect(tabLabels()).toEqual(['Profil', 'Bezpieczeństwo', 'Powiadomienia']);
+    expect(links().map(link => link.textContent?.trim())).toEqual(['Profil', 'Hasło i bezpieczeństwo', 'Powiadomienia']);
+    expect(root().querySelector('#dokumenty')).toBeNull();
   });
 
-  it('opens the tab from ?tab= (e.g. the link from the apply dialog)', async () => {
+  it('opens the section from ?tab= (e.g. the link from the apply dialog): aria-current and focus on its heading', async () => {
     await create('documents');
 
-    expect(fixture.componentInstance.selectedIndex()).toBe(1);
-    expect(activeContent()).toBe('dokumenty');
+    expect(current()).toBe('Dokumenty');
+    expect(document.activeElement).toBe(root().querySelector('#dokumenty-heading'));
   });
 
-  it('falls back to the profile tab for an unknown or unavailable tab', async () => {
+  it('moves to the section when ?tab= changes while the page is open', async () => {
+    await create();
+
+    queryParams.next(convertToParamMap({ tab: 'notifications' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(current()).toBe('Powiadomienia');
+    expect(document.activeElement).toBe(root().querySelector('#powiadomienia-heading'));
+  });
+
+  it('falls back to the profile for an unknown or unavailable section', async () => {
     role = 'Employer';
     await create('documents');
 
-    expect(fixture.componentInstance.selectedIndex()).toBe(0);
+    expect(current()).toBe('Profil');
   });
 
-  it('stores the chosen tab in the URL without adding history entries', async () => {
+  it('a click in the menu marks the section, focuses its heading and replaces the URL', async () => {
     await create();
 
-    fixture.componentInstance.onTabChange(2);
+    links()[2].click();
+    fixture.detectChanges();
 
-    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { tab: 'security' }, replaceUrl: true }));
+    expect(current()).toBe('Hasło i bezpieczeństwo');
+    expect(document.activeElement).toBe(root().querySelector('#haslo-heading'));
+    expect(navigateByUrl).toHaveBeenCalledWith(
+      expect.objectContaining({ queryParams: { tab: 'security' } }), expect.objectContaining({ replaceUrl: true }));
+  });
 
-    fixture.componentInstance.onTabChange(0);
-    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { tab: null }, replaceUrl: true }));
+  it('leaves the page alone for a ctrl+click (new tab)', async () => {
+    await create();
+
+    // jsdom nie otwiera nowych kart – blokujemy tylko domyślną nawigację przeglądarki
+    links()[1].addEventListener('click', event => event.preventDefault());
+    links()[1].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
+    fixture.detectChanges();
+
+    expect(current()).toBe('Profil');
   });
 });

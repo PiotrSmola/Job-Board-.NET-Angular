@@ -7,12 +7,17 @@
   margin: 0 0 24px;
 
   dt {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-tertiary);
   }
 
   dd {
     margin: 2px 0 0;
     overflow-wrap: anywhere;
   }
+}
+
+// odstęp po polu z podpowiedzią o zmiennej wysokości
+.about {
+  margin-top: 12px;
 }

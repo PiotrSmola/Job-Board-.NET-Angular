@@ -2,15 +2,18 @@
 
 .preferences {
   border: 0;
-  margin: 0 0 8px;
+  margin: 0 0 12px;
   padding: 0;
+  min-width: 0;
 }
 
 .preference + .preference {
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
+// opis pod etykietą checkboxa (wyrównany do tekstu etykiety)
 .description {
   margin: 0 0 0 40px;
-  font-size: 0.85rem;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
 }

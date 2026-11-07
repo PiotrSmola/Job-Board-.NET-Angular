@@ -3,9 +3,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { Subscription } from 'rxjs';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { AccountService } from '../../../services/account.service';
 import { AuthService } from '../../../services/auth.service';
 import { NotificationPreferences } from '../../../models/account.model';
@@ -37,7 +36,7 @@ const EMPLOYER_OPTIONS: PreferenceOption[] = [
   selector: 'app-notifications-tab',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatButtonModule, MatCheckboxModule, MatIconModule, MatProgressSpinnerModule],
+  imports: [ReactiveFormsModule, MatButtonModule, MatCheckboxModule, MatProgressSpinnerModule],
   templateUrl: './notifications-tab.component.html',
   styleUrl: './notifications-tab.component.scss'
 })
@@ -45,7 +44,7 @@ export class NotificationsTabComponent {
   private readonly accountService = inject(AccountService);
   private readonly authService = inject(AuthService);
   private readonly destroyRef = inject(DestroyRef);
-  private saveSubscription: Subscription | null = null;
+  private readonly snackBar = inject(MatSnackBar);
 
   /** Admin nie dostaje powiadomień o aplikacjach ani o firmach – tylko e-maile bezpieczeństwa. */
   readonly options: PreferenceOption[] = this.authService.isAdmin()
@@ -56,7 +55,6 @@ export class NotificationsTabComponent {
   readonly loadError = signal('');
   readonly saving = signal(false);
   readonly saveError = signal('');
-  readonly saveStatus = signal('');
 
   readonly form = inject(FormBuilder).nonNullable.group({
     applicationStatusChanged: true,
@@ -70,7 +68,6 @@ export class NotificationsTabComponent {
     } else {
       this.state.set('loaded');
     }
-    this.destroyRef.onDestroy(() => this.saveSubscription?.unsubscribe());
   }
 
   load(): void {
@@ -91,16 +88,15 @@ export class NotificationsTabComponent {
   save(): void {
     if (this.saving()) return;
     this.saveError.set('');
-    this.saveStatus.set('');
 
     const preferences = this.form.getRawValue();
     this.saving.set(true);
-    this.saveSubscription = this.accountService.updateNotificationPreferences(preferences).subscribe({
+    this.accountService.updateNotificationPreferences(preferences).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: saved => {
         this.saving.set(false);
         // odpowiedź bez treści – zostają wysłane wartości
         this.form.reset(saved ? this.normalize(saved) : preferences);
-        this.saveStatus.set('Zapisano ustawienia powiadomień');
+        this.snackBar.open('Zapisano ustawienia powiadomień', 'OK', { duration: 5000, politeness: 'polite' });
       },
       error: error => {
         console.error('Error saving notification preferences:', error);

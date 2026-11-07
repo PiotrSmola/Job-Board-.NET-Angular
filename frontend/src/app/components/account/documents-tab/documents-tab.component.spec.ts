@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { Subject, of, throwError } from 'rxjs';
 import { DocumentsTabComponent } from './documents-tab.component';
 import { AccountService } from '../../../services/account.service';
@@ -17,6 +18,7 @@ describe('DocumentsTabComponent', () => {
   let uploadDocuments: ReturnType<typeof vi.fn>;
   let deleteDocument: ReturnType<typeof vi.fn>;
   let downloadDocument: ReturnType<typeof vi.fn>;
+  let snackBarOpen: ReturnType<typeof vi.fn>;
 
   function create(documents: ProfileDocument[] = [LETTER, CV]): void {
     getDocuments.mockReturnValue(of(documents));
@@ -44,10 +46,14 @@ describe('DocumentsTabComponent', () => {
     uploadDocuments = vi.fn();
     deleteDocument = vi.fn();
     downloadDocument = vi.fn().mockReturnValue(of(undefined));
+    snackBarOpen = vi.fn();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     TestBed.configureTestingModule({
       imports: [DocumentsTabComponent],
-      providers: [{ provide: AccountService, useValue: { getDocuments, uploadDocuments, deleteDocument, downloadDocument } }]
+      providers: [
+        { provide: AccountService, useValue: { getDocuments, uploadDocuments, deleteDocument, downloadDocument } },
+        { provide: MatSnackBar, useValue: { open: snackBarOpen } }
+      ]
     });
   });
 
@@ -73,12 +79,14 @@ describe('DocumentsTabComponent', () => {
     expect(window.confirm).toHaveBeenCalledWith('Czy na pewno chcesz usunąć dokument „cv.pdf” (CV)?');
     expect(deleteDocument).toHaveBeenCalledWith(1);
     expect(root().querySelectorAll('.download-button').length).toBe(1);
+    expect(snackBarOpen).toHaveBeenCalledWith('Dokument został usunięty', 'OK', { duration: 5000, politeness: 'polite' });
   });
 
   it('shows the empty state', () => {
     create([]);
     expect(root().textContent).toContain('Nie masz jeszcze dokumentów w profilu');
-    expect(uploadButton().disabled).toBe(true);
+    // bez plików przycisk jest nieaktywny, ale zostaje w kolejności fokusu
+    expect(uploadButton().getAttribute('aria-disabled')).toBe('true');
   });
 
   it('uploads the picked files, shows the progress and merges the returned list', () => {
@@ -88,7 +96,7 @@ describe('DocumentsTabComponent', () => {
     const file = new File(['%PDF-'], 'portfolio.pdf');
 
     chooseFiles(file);
-    expect(uploadButton().disabled).toBe(false);
+    expect(uploadButton().getAttribute('aria-disabled')).toBeNull();
     uploadButton().click();
     fixture.detectChanges();
 
@@ -104,7 +112,7 @@ describe('DocumentsTabComponent', () => {
     fixture.detectChanges();
 
     expect(root().querySelectorAll('.download-button').length).toBe(2);
-    expect(root().querySelector('[role="status"].sr-only')?.textContent).toBe('Dokument został dodany');
+    expect(snackBarOpen).toHaveBeenCalledWith('Dokument został dodany', 'OK', { duration: 5000, politeness: 'polite' });
     expect(root().querySelectorAll('app-attachments-picker .file').length).toBe(0);
   });
 

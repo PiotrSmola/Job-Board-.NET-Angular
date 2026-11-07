@@ -1,13 +1,13 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { Subscription } from 'rxjs';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { map } from 'rxjs';
 import { AccountService } from '../../../services/account.service';
 import { Profile, UpdateProfile } from '../../../models/account.model';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
@@ -42,7 +42,6 @@ function optional(value: string): string | null {
     ReactiveFormsModule,
     MatButtonModule,
     MatFormFieldModule,
-    MatIconModule,
     MatInputModule,
     MatProgressSpinnerModule
   ],
@@ -53,7 +52,7 @@ export class ProfileTabComponent {
   private readonly accountService = inject(AccountService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
-  private saveSubscription: Subscription | null = null;
+  private readonly snackBar = inject(MatSnackBar);
 
   readonly limits = PROFILE_LIMITS;
   readonly state = signal<'loading' | 'loaded' | 'error'>('loading');
@@ -61,7 +60,6 @@ export class ProfileTabComponent {
   readonly profile = signal<Profile | null>(null);
   readonly saving = signal(false);
   readonly saveError = signal('');
-  readonly saveStatus = signal('');
 
   readonly form = inject(FormBuilder).nonNullable.group({
     firstName: ['', [Validators.required, Validators.pattern(/\S/), Validators.maxLength(PROFILE_LIMITS.firstName)]],
@@ -73,9 +71,11 @@ export class ProfileTabComponent {
     about: ['', [Validators.maxLength(PROFILE_LIMITS.about)]]
   });
 
+  /** Licznik znaków „O mnie” (podpowiedź pod polem). */
+  readonly aboutLength = toSignal(this.form.controls.about.valueChanges.pipe(map(value => value.length)), { initialValue: 0 });
+
   constructor() {
     this.load();
-    this.destroyRef.onDestroy(() => this.saveSubscription?.unsubscribe());
   }
 
   load(): void {
@@ -95,7 +95,6 @@ export class ProfileTabComponent {
 
   save(): void {
     if (this.saving()) return;
-    this.saveStatus.set('');
     this.saveError.set('');
 
     if (this.form.invalid) {
@@ -117,11 +116,11 @@ export class ProfileTabComponent {
     };
 
     this.saving.set(true);
-    this.saveSubscription = this.accountService.updateProfile(body).subscribe({
+    this.accountService.updateProfile(body).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: profile => {
         this.saving.set(false);
         this.applyProfile(profile);
-        this.saveStatus.set('Zapisano zmiany w profilu');
+        this.snackBar.open('Zapisano zmiany w profilu', 'OK', { duration: 5000, politeness: 'polite' });
       },
       error: error => {
         console.error('Error saving profile:', error);

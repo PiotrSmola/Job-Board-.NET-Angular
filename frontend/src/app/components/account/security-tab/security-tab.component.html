@@ -1,102 +1,103 @@
-<section class="section password-section" aria-labelledby="change-password-heading">
-  <h2 id="change-password-heading">Zmiana hasła</h2>
-  <p class="section-intro">Po zmianie hasła pozostaniesz zalogowany w tej przeglądarce, a inne sesje zostaną wylogowane.</p>
+<h3 class="subheading">Zmiana hasła</h3>
+<p class="section-intro">Po zmianie hasła pozostaniesz zalogowany w tej przeglądarce, a inne sesje zostaną wylogowane.</p>
 
-  <form [formGroup]="passwordForm" (ngSubmit)="changePassword()" novalidate>
-    <!-- menedżer haseł przypisze nowe hasło do właściwego konta -->
-    <input class="sr-only" type="email" name="username" autocomplete="username" [value]="email" readonly tabindex="-1" aria-hidden="true">
+<form class="password-form" [formGroup]="passwordForm" (ngSubmit)="changePassword()" novalidate>
+  <!-- menedżer haseł przypisze nowe hasło do właściwego konta -->
+  <input class="visually-hidden" type="email" name="username" autocomplete="username" [value]="email" readonly
+    tabindex="-1" aria-hidden="true">
 
-    <mat-form-field appearance="outline" class="full-width">
-      <mat-label>Obecne hasło</mat-label>
-      <input matInput [type]="hideCurrent() ? 'password' : 'text'" formControlName="currentPassword"
-        autocomplete="current-password" required [maxlength]="maxLength">
-      <button mat-icon-button matSuffix type="button" (click)="hideCurrent.set(!hideCurrent())"
-        [attr.aria-label]="hideCurrent() ? 'Pokaż obecne hasło' : 'Ukryj obecne hasło'" [attr.aria-pressed]="!hideCurrent()">
-        <mat-icon aria-hidden="true">{{ hideCurrent() ? 'visibility' : 'visibility_off' }}</mat-icon>
-      </button>
-      <mat-error>Podaj obecne hasło</mat-error>
-    </mat-form-field>
+  <mat-form-field appearance="outline">
+    <mat-label>Obecne hasło</mat-label>
+    <input matInput [type]="hideCurrent() ? 'password' : 'text'" formControlName="currentPassword" name="current-password"
+      autocomplete="current-password" required [maxlength]="maxLength">
+    <button mat-icon-button matSuffix type="button" class="password-toggle" (click)="toggleCurrent()"
+      aria-label="Pokaż obecne hasło" [attr.aria-pressed]="!hideCurrent()">
+      <mat-icon aria-hidden="true">{{ hideCurrent() ? 'visibility' : 'visibility_off' }}</mat-icon>
+    </button>
+    <mat-error>Podaj obecne hasło</mat-error>
+  </mat-form-field>
 
-    <mat-form-field appearance="outline" class="full-width">
-      <mat-label>Nowe hasło</mat-label>
-      <input matInput [type]="hideNew() ? 'password' : 'text'" formControlName="newPassword"
-        autocomplete="new-password" required [maxlength]="maxLength" aria-describedby="change-password-strength">
-      <button mat-icon-button matSuffix type="button" (click)="hideNew.set(!hideNew())"
-        [attr.aria-label]="hideNew() ? 'Pokaż nowe hasło' : 'Ukryj nowe hasło'" [attr.aria-pressed]="!hideNew()">
-        <mat-icon aria-hidden="true">{{ hideNew() ? 'visibility' : 'visibility_off' }}</mat-icon>
-      </button>
-      <mat-error>Hasło musi mieć {{ minLength }}–{{ maxLength }} znaków, małą i wielką literę oraz cyfrę</mat-error>
-    </mat-form-field>
-    <app-password-strength id="change-password-strength" [password]="passwordForm.controls.newPassword.value" />
+  <mat-form-field appearance="outline" subscriptSizing="dynamic">
+    <mat-label>Nowe hasło</mat-label>
+    <input matInput [type]="hideNew() ? 'password' : 'text'" formControlName="newPassword" name="new-password"
+      autocomplete="new-password" required [maxlength]="maxLength" aria-describedby="change-password-strength">
+    <button mat-icon-button matSuffix type="button" class="password-toggle" (click)="toggleNew()"
+      aria-label="Pokaż nowe hasło" [attr.aria-pressed]="!hideNew()">
+      <mat-icon aria-hidden="true">{{ hideNew() ? 'visibility' : 'visibility_off' }}</mat-icon>
+    </button>
+    <mat-error>Hasło musi mieć {{ minLength }}–{{ maxLength }} znaków, małą i wielką literę oraz cyfrę</mat-error>
+  </mat-form-field>
+  <app-password-strength id="change-password-strength" [password]="newPassword()" />
 
-    <mat-form-field appearance="outline" class="full-width">
-      <mat-label>Powtórz nowe hasło</mat-label>
-      <input matInput [type]="hideNew() ? 'password' : 'text'" formControlName="confirmPassword"
-        autocomplete="new-password" required [errorStateMatcher]="confirmMatcher">
-      <mat-error>Hasła nie są takie same</mat-error>
-    </mat-form-field>
+  <mat-form-field appearance="outline">
+    <mat-label>Powtórz nowe hasło</mat-label>
+    <input matInput [type]="hideNew() ? 'password' : 'text'" formControlName="confirmPassword" name="confirm-password"
+      autocomplete="new-password" required [errorStateMatcher]="confirmMatcher">
+    <mat-error>Hasła nie są takie same</mat-error>
+  </mat-form-field>
 
-    <div class="actions">
-      <button mat-raised-button color="primary" type="submit" [disabled]="changing()">
-        @if (changing()) {
-          <mat-spinner diameter="20" aria-hidden="true"></mat-spinner>
-          Zmienianie…
-        } @else {
-          Zmień hasło
-        }
-      </button>
-    </div>
-
-    <div class="feedback">
-      <p class="error" role="alert">{{ changeError() }}</p>
-      <p class="success" role="status">{{ changeStatus() }}</p>
-    </div>
-  </form>
-</section>
-
-<section class="section delete-section" aria-labelledby="delete-account-heading">
-  <h2 id="delete-account-heading">Usunięcie konta</h2>
-
-  @if (isAdmin) {
-    <p class="section-intro">Konta administratora nie można usunąć w tym miejscu.</p>
-  } @else {
-    <p class="section-intro">
-      Usunięcie konta jest <strong>nieodwracalne</strong>: usuniemy Twoje dane, aplikacje wraz z załącznikami
-      i dokumenty z profilu.
-    </p>
-
-    <form [formGroup]="deleteForm" (ngSubmit)="deleteAccount()" novalidate>
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Hasło (potwierdzenie)</mat-label>
-        <input matInput type="password" formControlName="password" autocomplete="current-password" required
-          [maxlength]="maxLength">
-        <mat-error>Podaj hasło, aby potwierdzić usunięcie konta</mat-error>
-      </mat-form-field>
-
-      <mat-checkbox formControlName="acknowledge">
-        Rozumiem, że usunięcie konta jest nieodwracalne
-      </mat-checkbox>
-      @if (deleteForm.controls.acknowledge.invalid && deleteForm.controls.acknowledge.touched) {
-        <p class="error checkbox-error">Zaznacz potwierdzenie, aby usunąć konto</p>
+  <div class="actions">
+    <button mat-stroked-button type="submit" [disabled]="changing()" [disabledInteractive]="true">
+      @if (changing()) {
+        <mat-spinner diameter="20" aria-hidden="true"></mat-spinner>
+        Zmienianie…
+      } @else {
+        Zmień hasło
       }
+    </button>
+  </div>
 
-      <div class="actions">
-        <button mat-raised-button color="warn" type="submit" [disabled]="deleting()">
-          @if (deleting()) {
-            <mat-spinner diameter="20" aria-hidden="true"></mat-spinner>
-            Usuwanie…
-          } @else {
-            <ng-container>
-              <mat-icon aria-hidden="true">delete_forever</mat-icon>
-              Usuń konto
-            </ng-container>
-          }
-        </button>
-      </div>
+  <p class="form-error" role="alert">{{ changeError() }}</p>
+</form>
 
-      <div class="feedback">
-        <p class="error" role="alert">{{ deleteError() }}</p>
-      </div>
-    </form>
+<div class="delete-account">
+  <div class="delete-summary">
+    <div class="delete-text">
+      <h3 class="subheading">Usuń konto</h3>
+      @if (isAdmin) {
+        <p class="section-intro">Konta administratora nie można usunąć w tym miejscu.</p>
+      } @else {
+        <p class="section-intro">Usuniemy profil, aplikacje i wszystkie pliki. Tej operacji nie da się cofnąć.</p>
+      }
+    </div>
+    @if (!isAdmin) {
+      <button mat-button color="warn" type="button" class="delete-toggle" (click)="toggleDelete()"
+        [attr.aria-expanded]="deleteOpen()" aria-controls="delete-account-form">
+        Usuń konto
+      </button>
+    }
+  </div>
+
+  @if (!isAdmin) {
+    <div id="delete-account-form">
+      @if (deleteOpen()) {
+        <form class="delete-form" [formGroup]="deleteForm" (ngSubmit)="deleteAccount()" novalidate>
+          <!-- osobny formularz z własnym username – menedżer haseł nie pomyli go ze zmianą hasła -->
+          <input class="visually-hidden" type="email" name="username" autocomplete="username" [value]="email" readonly
+            tabindex="-1" aria-hidden="true">
+
+          <mat-form-field appearance="outline">
+            <mat-label>Hasło (potwierdzenie)</mat-label>
+            <input matInput type="password" formControlName="password" name="delete-password" autocomplete="current-password"
+              required [maxlength]="maxLength">
+            <mat-error>Podaj hasło, aby potwierdzić usunięcie konta</mat-error>
+          </mat-form-field>
+
+          <div class="actions">
+            <button mat-flat-button color="warn" type="submit" [disabled]="deleting()" [disabledInteractive]="true">
+              @if (deleting()) {
+                <mat-spinner diameter="20" aria-hidden="true"></mat-spinner>
+                Usuwanie…
+              } @else {
+                Usuń konto na stałe
+              }
+            </button>
+            <button mat-button type="button" (click)="cancelDelete()">Anuluj</button>
+          </div>
+
+          <p class="form-error" role="alert">{{ deleteError() }}</p>
+        </form>
+      }
+    </div>
   }
-</section>
+</div>

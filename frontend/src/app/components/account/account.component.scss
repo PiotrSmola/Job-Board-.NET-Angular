@@ -1,36 +1,78 @@
-.account-container {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 40px 24px;
-  min-height: calc(100vh - 64px);
-  box-sizing: border-box;
+// Moje konto (makieta Konto.dc.html): boczne menu sekcji + kolumna sekcji
+
+.account-title {
+  margin: 0 0 24px;
 }
 
-.header {
-  margin-bottom: 24px;
+.layout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 24px 32px;
+}
 
-  h1 {
-    font-size: 2.5rem;
-    font-weight: 700;
-    margin: 0 0 8px;
-  }
+.section-nav {
+  flex: 1 1 200px;
+  max-width: 220px;
+  position: sticky;
+  top: 24px;
 
-  .subtitle {
-    color: var(--text-secondary);
+  ul {
+    list-style: none;
     margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 }
 
-.tab-icon {
-  margin-right: 8px;
-}
+.section-link {
+  display: block;
+  padding: 10px 14px;
+  border-radius: var(--radius-input);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  text-decoration: none;
 
-@media (max-width: 600px) {
-  .account-container {
-    padding: 24px 16px;
+  &:hover {
+    color: var(--color-text);
+    background: var(--color-raised);
   }
 
-  .header h1 {
-    font-size: 2rem;
+  &[aria-current='true'] {
+    color: var(--color-text);
+    background: var(--color-selected);
+  }
+}
+
+.sections {
+  flex: 999 1 560px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.account-section .section-title {
+  margin-bottom: 20px;
+}
+
+// cel fokusu po wyborze sekcji (programowy)
+.section-title:focus:not(:focus-visible) {
+  outline: none;
+}
+
+// Wąsko: menu jako zawijany wiersz linków nad sekcjami, bez przyklejania
+@media (max-width: 800px) {
+  .section-nav {
+    flex-basis: 100%;
+    max-width: none;
+    position: static;
+
+    ul {
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
   }
 }

@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { Subject, of, throwError } from 'rxjs';
 import { NotificationsTabComponent } from './notifications-tab.component';
 import { AccountService } from '../../../services/account.service';
@@ -14,6 +15,7 @@ describe('NotificationsTabComponent', () => {
   let fixture: ComponentFixture<NotificationsTabComponent>;
   let getNotificationPreferences: ReturnType<typeof vi.fn>;
   let updateNotificationPreferences: ReturnType<typeof vi.fn>;
+  let snackBarOpen: ReturnType<typeof vi.fn>;
   let role: 'User' | 'Employer' | 'Admin';
 
   function create(): void {
@@ -37,12 +39,14 @@ describe('NotificationsTabComponent', () => {
     role = 'User';
     getNotificationPreferences = vi.fn().mockReturnValue(of(PREFS));
     updateNotificationPreferences = vi.fn();
+    snackBarOpen = vi.fn();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     TestBed.configureTestingModule({
       imports: [NotificationsTabComponent],
       providers: [
         { provide: AccountService, useValue: { getNotificationPreferences, updateNotificationPreferences } },
-        { provide: AuthService, useValue: { isAdmin: () => role === 'Admin', isEmployer: () => role === 'Employer' } }
+        { provide: AuthService, useValue: { isAdmin: () => role === 'Admin', isEmployer: () => role === 'Employer' } },
+        { provide: MatSnackBar, useValue: { open: snackBarOpen } }
       ]
     });
   });
@@ -84,7 +88,7 @@ describe('NotificationsTabComponent', () => {
     fixture.detectChanges();
 
     expect(updateNotificationPreferences).toHaveBeenCalledWith({ applicationStatusChanged: true, newApplication: true, companyReview: true });
-    expect(root().querySelector('.success[role="status"]')?.textContent).toBe('Zapisano ustawienia powiadomień');
+    expect(snackBarOpen).toHaveBeenCalledWith('Zapisano ustawienia powiadomień', 'OK', { duration: 5000, politeness: 'polite' });
   });
 
   it('keeps the sent values when the API returns no body', () => {
@@ -106,7 +110,7 @@ describe('NotificationsTabComponent', () => {
     root().querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit'));
     fixture.detectChanges();
 
-    expect(root().querySelector('.error[role="alert"]')?.textContent).toBe('Brak połączenia z serwerem');
+    expect(root().querySelector('.form-error[role="alert"]')?.textContent).toBe('Brak połączenia z serwerem');
   });
 
   it('announces a loading error and cancels the request when destroyed', () => {
