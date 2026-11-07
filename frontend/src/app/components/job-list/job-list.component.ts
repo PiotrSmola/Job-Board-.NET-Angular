@@ -1,31 +1,40 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { DatePipe, SlicePipe } from '@angular/common';
-import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
+import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { MatSelectModule } from '@angular/material/select';
 import { providePolishPaginatorIntl } from '../../services/polish-paginator-intl';
 import { Observable, Subject, catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
 import { JobService } from '../../services/job.service';
 import { CategoryService } from '../../services/category.service';
 import { JobOffer } from '../../models/job-offer.model';
-import { JobParams } from '../../models/job-params.model';
+import { JobOrderBy, JobParams } from '../../models/job-params.model';
 import { PaginatedResult } from '../../models/pagination.model';
 import { Category, JobFacets } from '../../models/taxonomy.model';
 import { getApiErrorMessage } from '../../utils/http-errors';
 import { getActiveFilters } from '../../utils/active-filters';
 import { PAGE_SIZE_OPTIONS, cloneParams, filtersKey, paramsFromQuery, urlQuery } from '../../utils/job-query';
-import { formatJobSalary, getWorkTypeLabel, offersNoun } from '../../utils/job-labels';
+import { formatJobSalary, offersNoun } from '../../utils/job-labels';
 import { formatExpiresSoon } from '../../utils/status-labels';
-import { JobTaxonomyComponent } from '../shared/job-taxonomy.component';
-import { RemovableChipsComponent } from '../shared/removable-chips.component';
-import { FilterChange, JobFiltersComponent } from './job-filters.component';
+import { JobTaxonomyComponent, formatPosted, isoDate } from '../shared/job-taxonomy.component';
 import { SaveJobButtonComponent } from '../shared/save-job-button.component';
+import { FilterChange, JobFiltersComponent } from './job-filters.component';
+import { JobSearchComponent } from './job-search.component';
 
 /** Liczba szkieletów kart zarezerwowanych na czas pierwszego ładowania (bez przesunięć układu). */
 const SKELETON_COUNT = 6;
+
+/** Klucz stanu nawigacji z filtrami listy – szczegóły oferty wracają przez niego „do wyników”. */
+export const JOBS_QUERY_STATE = 'jobsQuery';
+
+export const SORT_OPTIONS: { value: JobOrderBy; label: string }[] = [
+  { value: 'newest', label: 'Najnowsze' },
+  { value: 'oldest', label: 'Najstarsze' },
+  { value: 'salaryHigh', label: 'Najwyższe wynagrodzenie' },
+  { value: 'salaryLow', label: 'Najniższe wynagrodzenie' }
+];
 
 /**
  * Lista ofert. Źródłem prawdy o filtrach jest adres URL (query params): zmiany w panelu nawigują,
@@ -37,16 +46,14 @@ const SKELETON_COUNT = 6;
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    DatePipe,
-    SlicePipe,
-    MatCardModule,
     MatButtonModule,
-    MatIconModule,
+    MatFormFieldModule,
     MatPaginatorModule,
+    MatSelectModule,
     RouterLink,
     JobFiltersComponent,
+    JobSearchComponent,
     JobTaxonomyComponent,
-    RemovableChipsComponent,
     SaveJobButtonComponent
   ],
   templateUrl: './job-list.component.html',
@@ -59,9 +66,10 @@ export class JobListComponent {
   private route = inject(ActivatedRoute);
 
   readonly pageSizeOptions = PAGE_SIZE_OPTIONS;
+  readonly sortOptions = SORT_OPTIONS;
   readonly skeletons = Array.from({ length: SKELETON_COUNT }, (_, i) => i);
-  readonly getWorkTypeLabel = getWorkTypeLabel;
-  readonly formatSalary = formatJobSalary;
+
+  private readonly resultsTitle = viewChild<ElementRef<HTMLElement>>('resultsTitle');
 
   /** Parametry odczytane z adresu URL. */
   readonly params = signal(new JobParams());
@@ -78,8 +86,24 @@ export class JobListComponent {
   readonly loadError = signal<string | null>(null);
 
   readonly activeFilters = computed(() => getActiveFilters(this.params(), this.categories()));
-  readonly chips = computed(() => this.activeFilters().map(f => ({ key: f.key, label: f.label, removeLabel: f.removeLabel })));
+  /** Aktywne filtry jako zwykły tekst („Senior, B2B, Praca zdalna”) – bez chipów. */
+  readonly activeFiltersText = computed(() => this.activeFilters().map(f => f.label).join(', '));
   readonly resultsNoun = computed(() => offersNoun(this.resultCount() ?? 0));
+  readonly resultsHeading = computed(() => {
+    const count = this.resultCount();
+    return count === null ? 'Wyniki' : `${count} ${this.resultsNoun()}`;
+  });
+  /** Filtry listy przekazywane do szczegółów oferty (link „Wróć do wyników”). */
+  readonly listState = computed(() => ({ [JOBS_QUERY_STATE]: urlQuery(this.params()) }));
+
+  /** Teksty kart liczone raz na wczytanie (nie przy każdej detekcji zmian). */
+  readonly cards = computed(() => this.jobs().map(job => ({
+    job,
+    salary: formatJobSalary(job),
+    posted: formatPosted(job.createdAt),
+    postedIso: isoDate(job.createdAt),
+    expiresSoon: formatExpiresSoon(job.expiresAt)
+  })));
 
   private readonly jobsRequest$ = new Subject<JobParams>();
   private readonly facetsRequest$ = new Subject<JobParams>();
@@ -131,30 +155,28 @@ export class JobListComponent {
     this.navigate({ ...change.patch }, change.replace);
   }
 
-  removeFilter(key: string): void {
-    const filter = this.activeFilters().find(f => f.key === key);
-    if (filter) {
-      this.navigate({ ...filter.remove }, false);
-    }
+  onSort(orderBy: JobOrderBy): void {
+    this.navigate({ orderBy }, false);
   }
 
+  /** Czyści filtry (sortowanie i rozmiar strony zostają); fokus przechodzi na nagłówek wyników, bo przycisk znika. */
   clearFilters(): void {
-    this.target = new JobParams();
-    this.writeUrl(this.target, false);
+    const next = new JobParams();
+    next.orderBy = this.target.orderBy;
+    next.pageSize = this.target.pageSize;
+    this.target = next;
+    this.writeUrl(next, false);
+    this.focusResults();
   }
 
   onPageChange(event: PageEvent): void {
     this.navigate({ pageNumber: event.pageIndex + 1, pageSize: event.pageSize }, false, true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0 });
+    this.focusResults();
   }
 
-  viewJobDetails(id: number): void {
-    this.router.navigate(['/jobs', id]);
-  }
-
-  /** „Wygasa za X dni” dla ofert wygasających w ciągu tygodnia, inaczej null. */
-  expiresSoon(job: JobOffer): string | null {
-    return formatExpiresSoon(job.expiresAt);
+  private focusResults(): void {
+    this.resultsTitle()?.nativeElement.focus({ preventScroll: true });
   }
 
   private navigate(patch: Partial<JobParams>, replace: boolean, keepPage = false): void {

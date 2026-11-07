@@ -1,16 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, input, linkedSignal, output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxChange, MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
-import { MatRadioChange, MatRadioModule } from '@angular/material/radio';
 import { MatSelectModule } from '@angular/material/select';
 import { Subject, debounceTime } from 'rxjs';
 import { Currency } from '../../models/job-offer.model';
-import { JobOrderBy, JobParams } from '../../models/job-params.model';
+import { JobParams } from '../../models/job-params.model';
 import { Category, JobFacets } from '../../models/taxonomy.model';
 import { getActiveFilters } from '../../utils/active-filters';
 import {
@@ -41,26 +38,19 @@ interface FilterSection {
   options: FilterOption[];
 }
 
-const TEXT_DEBOUNCE_MS = 500;
 const SALARY_DEBOUNCE_MS = 800;
 const POPULAR_SKILLS = 8;
 
-/** Panel filtrów listy ofert: stan pochodzi z `params` (adres URL), zmiany wracają przez `filterChange`. */
+/**
+ * Panel filtrów listy ofert (kategoria, poziom, umowa, tryb pracy, umiejętności, wynagrodzenie): stan pochodzi
+ * z `params` (adres URL), zmiany wracają przez `filterChange`. Natywne pola wyboru w fieldsetach z legendą –
+ * licznik opcji jest w nazwie dostępnej, a widoczny licznik ukryty przed czytnikami (bez powtórzeń).
+ */
 @Component({
   selector: 'app-job-filters',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    FormsModule,
-    MatButtonModule,
-    MatCheckboxModule,
-    MatFormFieldModule,
-    MatIconModule,
-    MatInputModule,
-    MatRadioModule,
-    MatSelectModule,
-    SkillsInputComponent
-  ],
+  imports: [MatButtonModule, MatFormFieldModule, MatIconModule, MatInputModule, MatSelectModule, SkillsInputComponent],
   templateUrl: './job-filters.component.html',
   styleUrl: './job-filters.component.scss'
 })
@@ -70,23 +60,13 @@ export class JobFiltersComponent {
   readonly categories = input<Category[]>([]);
 
   readonly filterChange = output<FilterChange>();
-  readonly clear = output<void>();
 
   readonly maxSkills = MAX_FILTER_SKILLS;
   readonly currencyOptions = CURRENCY_OPTIONS;
-  readonly sortOptions: { value: JobOrderBy; label: string }[] = [
-    { value: 'newest', label: 'Najnowsze' },
-    { value: 'oldest', label: 'Najstarsze' },
-    { value: 'salaryHigh', label: 'Najwyższa płaca' },
-    { value: 'salaryLow', label: 'Najniższa płaca' }
-  ];
 
   /** Panel na wąskich ekranach jest zwijany (na szerokich zawsze widoczny – patrz style). */
   readonly open = signal(false);
 
-  // Pola tekstowe pokazują to, co wpisuje użytkownik; zmiana wartości w adresie (np. „wstecz”) nadpisuje je
-  readonly searchInput = linkedSignal(() => this.params().searchTerm);
-  readonly locationInput = linkedSignal(() => this.params().location);
   readonly minInput = linkedSignal<number | null>(() => this.params().minSalary);
   readonly maxInput = linkedSignal<number | null>(() => this.params().maxSalary);
 
@@ -139,15 +119,9 @@ export class JobFiltersComponent {
       .map(s => ({ ...s, ariaLabel: labelWithCount(s.name, s.count) }));
   });
 
-  private readonly search$ = new Subject<string>();
-  private readonly location$ = new Subject<string>();
   private readonly salary$ = new Subject<void>();
 
   constructor() {
-    this.search$.pipe(debounceTime(TEXT_DEBOUNCE_MS), takeUntilDestroyed())
-      .subscribe(searchTerm => this.emit({ searchTerm: searchTerm.trim() }, true));
-    this.location$.pipe(debounceTime(TEXT_DEBOUNCE_MS), takeUntilDestroyed())
-      .subscribe(location => this.emit({ location: location.trim() }, true));
     this.salary$.pipe(debounceTime(SALARY_DEBOUNCE_MS), takeUntilDestroyed()).subscribe(() => {
       // Odwrócone widełki nie są wysyłane – komunikat pokazuje salaryInvalid
       if (!this.salaryInvalid()) {
@@ -156,28 +130,13 @@ export class JobFiltersComponent {
     });
   }
 
-  onSearchInput(value: string): void {
-    this.searchInput.set(value);
-    this.search$.next(value);
-  }
-
-  /** Enter w polu szukania stosuje frazę od razu, bez czekania na debounce. */
-  applySearchNow(): void {
-    this.emit({ searchTerm: this.searchInput().trim() }, false);
-  }
-
-  onLocationInput(value: string): void {
-    this.locationInput.set(value);
-    this.location$.next(value);
-  }
-
-  onMinInput(value: number | null): void {
-    this.minInput.set(value);
+  onMinInput(event: Event): void {
+    this.minInput.set(this.toNumber(event));
     this.salary$.next();
   }
 
-  onMaxInput(value: number | null): void {
-    this.maxInput.set(value);
+  onMaxInput(event: Event): void {
+    this.maxInput.set(this.toNumber(event));
     this.salary$.next();
   }
 
@@ -185,17 +144,13 @@ export class JobFiltersComponent {
     this.emit({ currency: value }, false);
   }
 
-  onSort(value: JobOrderBy): void {
-    this.emit({ orderBy: value }, false);
+  onCategory(slug: string): void {
+    this.emit({ category: slug || null }, false);
   }
 
-  onCategory(event: MatRadioChange): void {
-    this.emit({ category: (event.value as string) || null }, false);
-  }
-
-  toggleOption(group: OptionGroup, value: number, event: MatCheckboxChange): void {
+  toggleOption(group: OptionGroup, value: number, event: Event): void {
     const params = this.params();
-    const on = event.checked;
+    const on = (event.target as HTMLInputElement).checked;
 
     if (group === 'contract') {
       this.emit({ contractTypes: setFlag(params.contractTypes, value, on) }, false);
@@ -211,10 +166,20 @@ export class JobFiltersComponent {
     this.emit({ skills }, false);
   }
 
-  addSkill(name: string, event: MatCheckboxChange): void {
-    if (event.checked && this.params().skills.length < MAX_FILTER_SKILLS) {
+  addSkill(name: string, event: Event): void {
+    const box = event.target as HTMLInputElement;
+    if (box.checked && this.params().skills.length < MAX_FILTER_SKILLS) {
       this.setSkills([...this.params().skills, name]);
+    } else {
+      // limit umiejętności – pole wraca do stanu niezaznaczonego (wiązanie [checked]="false" się nie zmienia)
+      box.checked = false;
     }
+  }
+
+  private toNumber(event: Event): number | null {
+    const raw = (event.target as HTMLInputElement).value;
+    const value = Number(raw);
+    return raw === '' || !Number.isFinite(value) ? null : value;
   }
 
   private emit(patch: Partial<JobParams>, replace: boolean): void {

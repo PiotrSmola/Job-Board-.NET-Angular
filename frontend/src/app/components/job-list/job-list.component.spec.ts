@@ -34,6 +34,8 @@ function jobs(count: number): JobOffer[] {
   return Array.from({ length: count }, (_, i) => makeJob(i + 1));
 }
 
+const squash = (text: string | null | undefined) => (text ?? '').replace(/[\s  ]+/g, ' ').trim();
+
 describe('JobListComponent', () => {
   let fixture: ComponentFixture<JobListComponent>;
   let component: JobListComponent;
@@ -47,6 +49,7 @@ describe('JobListComponent', () => {
   const root = () => fixture.nativeElement as HTMLElement;
   const jobRequests = () => http.match(r => r.url === '/api/jobs');
   const facetRequests = () => http.match(r => r.url === '/api/jobs/facets');
+  const cards = () => Array.from(root().querySelectorAll<HTMLElement>('article.job-card'));
   const lastNavigation = () => {
     const call = navigate.mock.calls[navigate.mock.calls.length - 1];
     return { query: (call[1] as { queryParams: Record<string, string> }).queryParams, replaceUrl: (call[1] as { replaceUrl: boolean }).replaceUrl };
@@ -80,6 +83,11 @@ describe('JobListComponent', () => {
   function clickByLabel(label: string): void {
     root().querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!.click();
     fixture.detectChanges();
+  }
+
+  function type(input: HTMLInputElement, value: string): void {
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
   }
 
   beforeEach(() => {
@@ -134,15 +142,14 @@ describe('JobListComponent', () => {
       create();
 
       expect(root().querySelectorAll('.job-skeleton').length).toBe(6);
-      expect(root().querySelector('.results-info')).not.toBeNull();
-      expect(root().querySelector('.jobs-grid')?.getAttribute('aria-busy')).toBe('true');
-      expect(root().querySelector('.job-card')).toBeNull();
+      expect(root().querySelector('.jobs')?.getAttribute('aria-busy')).toBe('true');
+      expect(cards().length).toBe(0);
 
       flushAll();
 
       expect(root().querySelectorAll('.job-skeleton').length).toBe(0);
-      expect(root().querySelectorAll('.job-card').length).toBe(10);
-      expect(root().querySelector('.jobs-grid')?.getAttribute('aria-busy')).toBe('false');
+      expect(cards().length).toBe(10);
+      expect(root().querySelector('.jobs')?.getAttribute('aria-busy')).toBe('false');
     });
 
     it('keeps the current cards (dimmed, aria-busy) while the next results load instead of replacing them with skeletons', () => {
@@ -153,10 +160,10 @@ describe('JobListComponent', () => {
       fixture.detectChanges();
 
       expect(root().querySelectorAll('.job-skeleton').length).toBe(0);
-      expect(root().querySelectorAll('.job-card').length).toBe(10);
-      const grid = root().querySelector('.jobs-grid')!;
-      expect(grid.classList.contains('stale')).toBe(true);
-      expect(grid.getAttribute('aria-busy')).toBe('true');
+      expect(cards().length).toBe(10);
+      const list = root().querySelector('.jobs')!;
+      expect(list.classList.contains('stale')).toBe(true);
+      expect(list.getAttribute('aria-busy')).toBe('true');
       flushAll();
     });
 
@@ -164,12 +171,22 @@ describe('JobListComponent', () => {
       create();
       flushAll([], 0);
 
-      expect(root().querySelector('.no-results h3')?.textContent).toContain('Brak ofert');
+      expect(root().querySelector('.no-results')?.textContent).toContain('Brak ofert');
       expect(root().querySelector('mat-paginator')).toBeNull();
     });
   });
 
-  describe('accessibility of the results', () => {
+  describe('headings and the result count', () => {
+    it('has one h1, an h2 with the number of results and h3 offer titles', () => {
+      create();
+      flushAll(jobs(3), 35);
+
+      expect(root().querySelectorAll('h1').length).toBe(1);
+      expect(root().querySelector('h1')?.textContent).toBe('Oferty pracy');
+      expect(squash(root().querySelector('#results-title')?.textContent)).toBe('35 ofert');
+      expect(root().querySelectorAll('article.job-card h3').length).toBe(3);
+    });
+
     it('announces the number of results in a polite live region', () => {
       create();
       const info = root().querySelector('.results-info')!;
@@ -179,7 +196,7 @@ describe('JobListComponent', () => {
 
       flushAll(jobs(10), 35);
 
-      expect(info.textContent?.replace(/\s+/g, ' ').trim()).toBe('Znaleziono 35 ofert');
+      expect(squash(info.textContent)).toBe('Znaleziono 35 ofert');
     });
 
     it.each([[1, 'Znaleziono 1 oferta'], [3, 'Znaleziono 3 oferty'], [12, 'Znaleziono 12 ofert']])(
@@ -187,7 +204,7 @@ describe('JobListComponent', () => {
         create();
         flushAll(jobs(1), total);
 
-        expect(root().querySelector('.results-info')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(expected);
+        expect(squash(root().querySelector('.results-info')?.textContent)).toBe(expected);
       });
 
     it('does not clear the announcement while the next results are loading', () => {
@@ -230,16 +247,16 @@ describe('JobListComponent', () => {
       flushAll();
     });
 
-    it('reflects the URL filters in the panel and in the active filter chips', () => {
+    it('reflects the URL filters in the panel and lists the active filters as plain text', () => {
       create('seniority=1&skills=Angular&category=devops-i-chmura');
       flushAll();
 
       expect(root().querySelector<HTMLInputElement>('input[aria-label^="Junior"]')!.checked).toBe(true);
       expect(root().querySelector<HTMLInputElement>('input[aria-label^="Mid"]')!.checked).toBe(false);
-      const chips = Array.from(root().querySelectorAll('app-removable-chips .chip span')).map(s => s.textContent);
-      expect(chips).toContain('Kategoria: DevOps i chmura');
-      expect(chips).toContain('Junior');
-      expect(chips).toContain('Angular');
+      expect(root().querySelector<HTMLInputElement>('input[type=radio][value="devops-i-chmura"]')!.checked).toBe(true);
+      expect(squash(root().querySelector('.active-filters')?.textContent))
+        .toBe('Aktywne filtry: Kategoria: DevOps i chmura, Junior, Angular');
+      expect(root().querySelector('.results app-removable-chips')).toBeNull();
     });
 
     it('ignores invalid values from a hand-edited URL', () => {
@@ -282,15 +299,23 @@ describe('JobListComponent', () => {
       flushAll();
     });
 
+    it('choosing a category radio writes its slug, "Wszystkie" removes it', () => {
+      clickByLabel('Programowanie, 20 ofert');
+      expect(lastNavigation().query).toEqual({ category: 'programowanie' });
+      flushAll();
+
+      root().querySelector<HTMLInputElement>('input[type=radio][value=""]')!.click();
+      expect(lastNavigation().query).toEqual({});
+      flushAll();
+    });
+
     it('typing in the search box is debounced by 500 ms and replaces the history entry', () => {
       vi.useFakeTimers();
       const input = root().querySelector<HTMLInputElement>('input[type=search]')!;
       const before = navigate.mock.calls.length;
 
-      input.value = 'ang';
-      input.dispatchEvent(new Event('input'));
-      input.value = 'angular';
-      input.dispatchEvent(new Event('input'));
+      type(input, 'ang');
+      type(input, 'angular');
       vi.advanceTimersByTime(499);
       expect(navigate.mock.calls.length).toBe(before);
 
@@ -302,16 +327,29 @@ describe('JobListComponent', () => {
       flushAll();
     });
 
-    it('Enter in the search box applies the phrase immediately', () => {
-      const input = root().querySelector<HTMLInputElement>('input[type=search]')!;
-      input.value = 'rust';
-      input.dispatchEvent(new Event('input'));
+    it('"Szukaj" applies the phrase and the location immediately as a new history entry', () => {
+      vi.useFakeTimers();
+      const [phrase, place] = Array.from(root().querySelectorAll<HTMLInputElement>('form[role=search] input'));
+      type(phrase, 'rust');
+      type(place, 'Kraków');
 
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      root().querySelector<HTMLButtonElement>('form[role=search] button[type=submit]')!.click();
 
-      expect(lastNavigation().query).toEqual({ searchTerm: 'rust' });
+      expect(lastNavigation().query).toEqual({ searchTerm: 'rust', location: 'Kraków' });
       expect(lastNavigation().replaceUrl).toBe(false);
+      fixture.detectChanges();
+      const after = navigate.mock.calls.length;
+      // wartości już zastosowane – debounce nie nawiguje drugi raz
+      vi.advanceTimersByTime(600);
+      expect(navigate.mock.calls.length).toBe(after);
       flushAll();
+    });
+
+    it('the search row is a labelled search landmark with labelled inputs', () => {
+      const form = root().querySelector('form[role=search]')!;
+      expect(form.getAttribute('aria-label')).toBe('Szukaj ofert');
+      const labels = Array.from(form.querySelectorAll('input')).map(i => i.getAttribute('aria-label'));
+      expect(labels).toEqual(['Stanowisko, firma lub technologia', 'Lokalizacja']);
     });
 
     it('salary typing is debounced by 800 ms and replaces the history entry', () => {
@@ -319,8 +357,7 @@ describe('JobListComponent', () => {
       const [min] = Array.from(root().querySelectorAll<HTMLInputElement>('input[type=number]'));
       const before = navigate.mock.calls.length;
 
-      min.value = '8000';
-      min.dispatchEvent(new Event('input'));
+      type(min, '8000');
       vi.advanceTimersByTime(799);
       expect(navigate.mock.calls.length).toBe(before);
       vi.advanceTimersByTime(1);
@@ -335,17 +372,15 @@ describe('JobListComponent', () => {
       const [min, max] = Array.from(root().querySelectorAll<HTMLInputElement>('input[type=number]'));
       const before = navigate.mock.calls.length;
 
-      min.value = '9000';
-      min.dispatchEvent(new Event('input'));
-      max.value = '5000';
-      max.dispatchEvent(new Event('input'));
+      type(min, '9000');
+      type(max, '5000');
       vi.advanceTimersByTime(1000);
       fixture.detectChanges();
 
       expect(navigate.mock.calls.length).toBe(before);
       const alert = root().querySelector('#salary-error')!;
       expect(alert.getAttribute('role')).toBe('alert');
-      expect(alert.textContent).toContain('nie może być wyższe');
+      expect(alert.textContent).toContain('nie może być wyższa');
     });
 
     it('the browser Back/Forward (URL change) reloads results and restores the filters in the panel', () => {
@@ -370,84 +405,57 @@ describe('JobListComponent', () => {
       facetRequests().forEach(r => r.flush(FACETS));
       fixture.detectChanges();
       expect(root().querySelector<HTMLInputElement>('input[aria-label^="Junior"]')!.checked).toBe(true);
-      expect(root().querySelectorAll('.job-card').length).toBe(3);
+      expect(cards().length).toBe(3);
     });
 
-    it('overwrites the typed search text with the value from the URL after Back', async () => {
+    it('overwrites the typed search text with the value from the URL after Back', () => {
       setUrl('searchTerm=angular');
       fixture.detectChanges();
       flushAll();
-      await fixture.whenStable();
       const input = root().querySelector<HTMLInputElement>('input[type=search]')!;
       expect(input.value).toBe('angular');
 
       setUrl('');
       fixture.detectChanges();
       flushAll();
-      await fixture.whenStable();
 
       expect(input.value).toBe('');
     });
 
-    it('clearing the filters navigates to a URL without any params', () => {
-      setUrl('seniority=1&skills=Angular&page=2');
+    it('"Wyczyść filtry" drops the filters but keeps the sorting and moves focus to the results heading', () => {
+      setUrl('seniority=1&skills=Angular&page=2&orderBy=oldest');
       flushAll();
 
-      component.clearFilters();
+      root().querySelector<HTMLButtonElement>('button.clear')!.click();
 
-      expect(lastNavigation().query).toEqual({});
+      expect(lastNavigation().query).toEqual({ orderBy: 'oldest' });
       expect(lastNavigation().replaceUrl).toBe(false);
+      expect(document.activeElement).toBe(root().querySelector('#results-title'));
       flushAll();
     });
 
-    it('the "Wyczyść filtry" button is disabled without active filters', () => {
-      const button = root().querySelector<HTMLButtonElement>('button.clear')!;
-      expect(button.disabled).toBe(true);
+    it('shows "Wyczyść filtry" and the active filters only when a filter is set', () => {
+      expect(root().querySelector('button.clear')).toBeNull();
+      expect(root().querySelector('.active-filters')).toBeNull();
 
       setUrl('seniority=1');
       flushAll();
 
-      expect(root().querySelector<HTMLButtonElement>('button.clear')!.disabled).toBe(false);
+      expect(root().querySelector('button.clear')).not.toBeNull();
     });
   });
 
-  describe('active filter chips', () => {
-    it('removing a chip drops only that filter value from the URL', () => {
-      create('seniority=1,2&skills=Angular');
-      flushAll();
-
-      root().querySelector<HTMLButtonElement>('button[aria-label="Usuń filtr: Junior"]')!.click();
-
-      expect(lastNavigation().query).toEqual({ seniority: '2', skills: 'Angular' });
-      flushAll();
-    });
-
-    it('moves focus to a neighbouring chip when one is removed', () => {
-      create('seniority=1,2');
-      flushAll();
-      const buttons = root().querySelectorAll<HTMLButtonElement>('app-removable-chips button');
-
-      buttons[0].click();
-
-      expect(document.activeElement).toBe(buttons[1]);
-      flushAll();
-    });
-
-    it('moves focus to the results region when the last chip is removed', () => {
+  describe('sorting', () => {
+    it('is labelled next to the result count and writes the order to the URL', () => {
       create('seniority=1');
       flushAll();
+      const select = root().querySelector('.results-header mat-select')!;
+      expect(select.getAttribute('aria-labelledby')).toContain('sort-label');
 
-      root().querySelector<HTMLButtonElement>('app-removable-chips button')!.click();
+      component.onSort('salaryHigh');
 
-      expect(document.activeElement).toBe(root().querySelector('.results-info'));
+      expect(lastNavigation().query).toEqual({ seniority: '1', orderBy: 'salaryHigh' });
       flushAll();
-    });
-
-    it('shows no chip list without filters', () => {
-      create();
-      flushAll();
-
-      expect(root().querySelector('app-removable-chips ul')).toBeNull();
     });
   });
 
@@ -478,15 +486,21 @@ describe('JobListComponent', () => {
       expect(Array.from(counts).every(c => c.getAttribute('aria-hidden') === 'true')).toBe(true);
     });
 
-    it('collapses on narrow screens behind a toggle button that exposes its state', () => {
-      const toggle = root().querySelector<HTMLButtonElement>('button.toggle')!;
-      expect(toggle.getAttribute('aria-expanded')).toBe('false');
-      expect(toggle.getAttribute('aria-controls')).toBe('filters-body');
+    it('wraps every option in its label (the whole row is clickable)', () => {
+      const inputs = Array.from(root().querySelectorAll<HTMLInputElement>('app-job-filters input[type=checkbox], app-job-filters input[type=radio]'));
+      expect(inputs.length).toBeGreaterThan(0);
+      expect(inputs.every(i => i.closest('label.check') !== null)).toBe(true);
+    });
 
-      toggle.click();
+    it('collapses on narrow screens behind a toggle button that exposes its state', () => {
+      const toggleButton = root().querySelector<HTMLButtonElement>('button.toggle')!;
+      expect(toggleButton.getAttribute('aria-expanded')).toBe('false');
+      expect(toggleButton.getAttribute('aria-controls')).toBe('filters-body');
+
+      toggleButton.click();
       fixture.detectChanges();
 
-      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(toggleButton.getAttribute('aria-expanded')).toBe('true');
       expect(root().querySelector('#filters-body')?.classList.contains('open')).toBe(true);
     });
 
@@ -532,7 +546,7 @@ describe('JobListComponent', () => {
       jobRequests().forEach(r => r.flush(jobs(10), { headers: { Pagination: pagination(35) } }));
       fixture.detectChanges();
 
-      expect(root().querySelectorAll('.job-card').length).toBe(10);
+      expect(cards().length).toBe(10);
       expect(root().querySelector('.load-error')).toBeNull();
       expect(root().querySelector('input[aria-label="Junior"]')).not.toBeNull();
     });
@@ -552,8 +566,8 @@ describe('JobListComponent', () => {
       facetRequests().filter(r => !r.cancelled).forEach(r => r.flush(FACETS));
       respond(second, [makeJob(99, { title: 'Nowsza' })], 1);
 
-      expect(root().querySelectorAll('.job-card').length).toBe(1);
-      expect(root().querySelector('mat-card-title')?.textContent).toContain('Nowsza');
+      expect(cards().length).toBe(1);
+      expect(root().querySelector('.job-link')?.textContent).toContain('Nowsza');
     });
 
     it('cancels pending facet requests when the filters change', () => {
@@ -588,7 +602,7 @@ describe('JobListComponent', () => {
       create();
       failJobs(500);
 
-      expect(root().querySelector('.load-error h3')?.textContent).toContain('Nie udało się wczytać ofert');
+      expect(root().querySelector('.load-error')?.textContent).toContain('Nie udało się wczytać ofert');
       expect(root().querySelector('.load-error button')?.textContent).toContain('Spróbuj ponownie');
       expect(root().querySelector('.load-error')?.getAttribute('role')).toBe('alert');
       expect(root().querySelector('.no-results')).toBeNull();
@@ -599,7 +613,7 @@ describe('JobListComponent', () => {
       create();
       failJobs(0);
 
-      expect(root().querySelector('.load-error h3')?.textContent).toContain('Brak połączenia z serwerem');
+      expect(root().querySelector('.load-error')?.textContent).toContain('Brak połączenia z serwerem');
     });
 
     it('retry reloads the same params and clears the error on success', () => {
@@ -613,7 +627,7 @@ describe('JobListComponent', () => {
       fixture.detectChanges();
 
       expect(root().querySelector('.load-error')).toBeNull();
-      expect(root().querySelectorAll('.job-card').length).toBe(10);
+      expect(cards().length).toBe(10);
     });
   });
 
@@ -623,11 +637,12 @@ describe('JobListComponent', () => {
       flushAll();
     });
 
-    it('onPageChange writes a 1-based page and page size to the URL as a new history entry', () => {
-      component.onPageChange({ pageIndex: 2, pageSize: 25, length: 35, previousPageIndex: 0 });
+    it('onPageChange writes a 1-based page and page size to the URL and moves focus to the results heading', () => {
+      component.onPageChange({ pageIndex: 2, pageSize: 20, length: 35, previousPageIndex: 0 });
 
-      expect(lastNavigation().query).toEqual({ page: '3', pageSize: '25' });
+      expect(lastNavigation().query).toEqual({ page: '3', pageSize: '20' });
       expect(lastNavigation().replaceUrl).toBe(false);
+      expect(document.activeElement).toBe(root().querySelector('#results-title'));
       flushAll();
     });
 
@@ -653,37 +668,41 @@ describe('JobListComponent', () => {
   });
 
   describe('cards', () => {
-    it('show category, level, contract types, salary with currency and period, and up to 5 skills with "+N"', () => {
+    it('show company · city, the meta line, skills as text, the salary and the posting date', () => {
       create();
       flushAll([
         makeJob(1, {
-          categoryId: 1, categoryName: 'Programowanie', categorySlug: 'programowanie',
-          seniority: SeniorityLevel.Senior, contractTypes: ContractTypes.EmploymentContract | ContractTypes.B2B,
+          company: 'Alfa', location: 'Kraków',
+          seniority: SeniorityLevel.Senior, contractTypes: ContractTypes.B2B, workType: WorkType.Remote,
           salaryMin: 15000, salaryMax: 20000, salaryCurrency: Currency.PLN, salaryPeriod: SalaryPeriod.Month,
-          skills: ['Angular', 'TypeScript', 'RxJS', 'Jest', 'Docker', 'Git', 'SQL']
+          skills: ['Angular', 'TypeScript', 'RxJS', 'Jest', 'Docker', 'Git', 'SQL'], createdAt: new Date(2020, 0, 2)
         }),
         makeJob(2, { salaryMin: 120, salaryMax: 150, salaryPeriod: SalaryPeriod.Hour })
       ], 2);
 
-      const [first, second] = Array.from(root().querySelectorAll('.job-card'));
-      const tags = Array.from(first.querySelectorAll('.tags li')).map(li => li.textContent?.trim());
-      expect(tags).toEqual(['Programowanie', 'Senior', 'Umowa o pracę', 'B2B']);
-      expect(first.querySelector('.salary-badge')?.textContent?.replace(/[\s  ]+/g, ' ').trim()).toBe('payments 15 000–20 000 PLN / mies.');
-      const skills = Array.from(first.querySelectorAll('.skills li')).map(li => li.textContent?.trim());
-      expect(skills).toEqual(['Angular', 'TypeScript', 'RxJS', 'Jest', 'Docker', '+2']);
-      expect(second.querySelector('.salary-badge')?.textContent?.replace(/[\s  ]+/g, ' ')).toContain('120–150 PLN / h');
-      expect(second.querySelector('.tags')).toBeNull();
+      const [first, second] = cards();
+      expect(squash(first.querySelector('.company')?.textContent)).toBe('Alfa · Kraków');
+      expect(first.querySelector('.meta')?.textContent?.trim()).toBe('Senior · B2B · Zdalnie');
+      expect(squash(first.querySelector('.skills')?.textContent)).toBe('Umiejętności: Angular, TypeScript, RxJS, Jest, Docker i 2 więcej');
+      expect(squash(first.querySelector('.salary')?.textContent)).toBe('15 000–20 000 PLN / mies.');
+      expect(squash(first.querySelector('.posted')?.textContent)).toBe('Dodano 2 stycznia 2020');
+      expect(first.querySelector('time')?.getAttribute('datetime')).toBe(new Date(2020, 0, 2).toISOString());
+      expect(squash(second.querySelector('.salary')?.textContent)).toContain('120–150 PLN / h');
       expect(second.querySelector('.skills')).toBeNull();
+      expect(first.querySelector('ul')).toBeNull();
     });
 
-    it('viewJobDetails navigates to the job page', () => {
-      create();
-      flushAll();
-      navigate.mockResolvedValue(true);
+    it('link the title to the offer and pass the list filters for "Wróć do wyników"', () => {
+      create('seniority=1');
+      flushAll(jobs(1), 1);
+      const navigateByUrl = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
 
-      component.viewJobDetails(7);
+      const link = root().querySelector<HTMLAnchorElement>('h3 a.job-link')!;
+      expect(link.getAttribute('href')).toBe('/jobs/1');
+      link.click();
 
-      expect(navigate).toHaveBeenLastCalledWith(['/jobs', 7]);
+      expect(navigateByUrl).toHaveBeenCalledTimes(1);
+      expect(navigateByUrl.mock.calls[0][1]).toMatchObject({ state: { jobsQuery: { seniority: '1' } } });
     });
   });
 
@@ -700,7 +719,7 @@ describe('JobListComponent', () => {
     }
 
     function hints(): (string | undefined)[] {
-      return Array.from(root().querySelectorAll('.job-card')).map(card => card.querySelector('.expires-soon')?.textContent?.trim());
+      return cards().map(card => card.querySelector('.expires-soon')?.textContent?.trim());
     }
 
     it.each([
@@ -711,7 +730,6 @@ describe('JobListComponent', () => {
     ])('shows "%s" -> %s', (expiresAt, expected) => {
       createWithExpirations([expiresAt]);
 
-      expect(component.expiresSoon(component.jobs()[0])).toBe(expected);
       expect(hints()).toEqual([expected]);
     });
 
@@ -735,35 +753,23 @@ describe('JobListComponent', () => {
     });
 
     it('shows the company name on each card as a link to the company profile', () => {
-      const links = Array.from(root().querySelectorAll<HTMLAnchorElement>('mat-card-subtitle a.company-link'));
+      const links = Array.from(root().querySelectorAll<HTMLAnchorElement>('a.company-link'));
       expect(links.map(l => l.textContent?.trim())).toEqual(['Alfa', 'Beta']);
       expect(links.map(l => l.getAttribute('href'))).toEqual(['/companies/7', '/companies/9']);
     });
 
-    it('clicking the company link does not open the offer details', () => {
-      const router = TestBed.inject(Router);
-      // routerLink nawiguje przez navigateByUrl - test nie rejestruje trasy profilu firmy
+    it('clicking the company link opens only the company profile', () => {
       const navigateByUrl = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
-      const viewDetails = vi.spyOn(component, 'viewJobDetails');
 
       root().querySelector<HTMLAnchorElement>('a.company-link')!.click();
 
-      expect(viewDetails).not.toHaveBeenCalled();
       expect(navigateByUrl).toHaveBeenCalledTimes(1);
       expect(router.serializeUrl(navigateByUrl.mock.calls[0][0] as UrlTree)).toBe('/companies/7');
-    });
-
-    it('clicking elsewhere on the card still opens the offer details', () => {
-      const viewDetails = vi.spyOn(component, 'viewJobDetails').mockImplementation(() => undefined);
-
-      root().querySelector<HTMLElement>('mat-card-title')!.click();
-
-      expect(viewDetails).toHaveBeenCalledWith(1);
     });
   });
 
   describe('saving offers', () => {
-    it('shows a heart toggle per card for a candidate, with the offer title in the label and the saved state', () => {
+    it('shows a save toggle per card for a candidate, with the offer title in the label and the saved state', () => {
       savedJobsEnabled = true;
       create();
       flushAll(jobs(2), 2);
@@ -777,15 +783,15 @@ describe('JobListComponent', () => {
       savedJobsEnabled = true;
       create();
       flushAll(jobs(1), 1);
-      const viewDetails = vi.spyOn(component, 'viewJobDetails').mockImplementation(() => undefined);
+      const navigateByUrl = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
 
       root().querySelector<HTMLButtonElement>('app-save-job-button button')!.click();
 
       expect(toggle).toHaveBeenCalledWith(1);
-      expect(viewDetails).not.toHaveBeenCalled();
+      expect(navigateByUrl).not.toHaveBeenCalled();
     });
 
-    it('shows no hearts for visitors who cannot save offers', () => {
+    it('shows no save toggles for visitors who cannot save offers', () => {
       create();
       flushAll(jobs(2), 2);
       expect(root().querySelector('app-save-job-button button')).toBeNull();
