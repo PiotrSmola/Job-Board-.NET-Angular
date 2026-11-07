@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { Observable, Subject, of, throwError } from 'rxjs';
-import { CompanyListComponent } from './company-list.component';
+import { CompanyListComponent, companiesNoun } from './company-list.component';
 import { CompanyService } from '../../services/company.service';
 import { Company } from '../../models/company.model';
 import { CompanyParams } from '../../models/company-params.model';
@@ -63,11 +63,11 @@ describe('CompanyListComponent', () => {
       expect(component.totalItems()).toBe(30);
     });
 
-    it('shows a spinner while loading the first page', () => {
+    it('reserves the grid with skeleton cards while loading the first page', () => {
       create(new Subject<PaginatedResult<Company>>());
 
       expect(component.loading()).toBe(true);
-      expect(root().querySelector('mat-spinner')).not.toBeNull();
+      expect(root().querySelectorAll('.company-skeleton').length).toBe(6);
       expect(root().querySelector('.company-card')).toBeNull();
     });
 
@@ -83,24 +83,27 @@ describe('CompanyListComponent', () => {
       expect(cards[1].getAttribute('href')).toBe('/companies/9');
       expect(cards[0].textContent).toContain('Alfa');
       expect(cards[0].textContent).toContain('Kraków');
-      expect(cards[1].querySelector('mat-card-subtitle')).toBeNull();
+      expect(cards[1].querySelector('.location')).toBeNull();
+      expect(cards[0].querySelector('.name')?.textContent).toBe('Alfa');
     });
 
-    it('shows the total count', () => {
+    it('announces the total count with the Polish plural in a status region', () => {
       create(of(companyPage(3, 3)));
 
-      expect(root().querySelector('.results-info')?.textContent).toContain('Znaleziono: 3 firm');
+      const info = root().querySelector('.results-info')!;
+      expect(info.getAttribute('role')).toBe('status');
+      expect(info.textContent?.trim()).toBe('Znaleziono 3 firmy');
     });
 
-    it('truncates long descriptions to 160 characters with an ellipsis', () => {
-      create(of({ ...companyPage(0, 2), result: [
-        makeCompany(1, { description: 'x'.repeat(200) }),
-        makeCompany(2, { description: 'krótki opis' })
-      ] }));
+    it('shows cards without descriptions, borders or chips (name, city and offers only)', () => {
+      create(of({ ...companyPage(0, 1), result: [makeCompany(1, { description: 'Długi opis firmy' })] }));
 
-      const descriptions = Array.from(root().querySelectorAll('.description')).map(d => d.textContent?.trim());
-      expect(descriptions[0]).toBe('x'.repeat(160) + '…');
-      expect(descriptions[1]).toBe('krótki opis');
+      expect(root().querySelector('.company-card')?.textContent).not.toContain('Długi opis firmy');
+      expect(root().querySelector('mat-card')).toBeNull();
+    });
+
+    it.each([[1, 'firmę'], [3, 'firmy'], [5, 'firm'], [12, 'firm'], [22, 'firmy']])('companiesNoun(%i) = %s', (count, noun) => {
+      expect(companiesNoun(count)).toBe(noun);
     });
 
     it('shows the empty state when there are no companies', () => {
@@ -260,7 +263,7 @@ describe('CompanyListComponent', () => {
 
       expect(lastParams().pageNumber).toBe(2);
       expect(lastParams().pageSize).toBe(24);
-      expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
+      expect(window.scrollTo).toHaveBeenCalledWith({ top: 0 });
     });
 
     it('clicking the paginator "next" button requests page 2', async () => {

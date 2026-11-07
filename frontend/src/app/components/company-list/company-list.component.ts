@@ -1,16 +1,12 @@
-import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { SlicePipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { providePolishPaginatorIntl } from '../../services/polish-paginator-intl';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSelectModule } from '@angular/material/select';
 import { Subject, catchError, debounceTime, filter, map, of, switchMap, tap } from 'rxjs';
 import { Company } from '../../models/company.model';
@@ -19,26 +15,30 @@ import { PaginatedResult } from '../../models/pagination.model';
 import { CompanyService } from '../../services/company.service';
 import { getApiErrorMessage } from '../../utils/http-errors';
 
-/** Publiczna lista zatwierdzonych firm z wyszukiwaniem, sortowaniem i paginacją. */
+/** „firma / firmy / firm” po liczbie (biernik: „Znaleziono 3 firmy”). */
+export function companiesNoun(count: number): string {
+  if (count === 1) return 'firmę';
+  const last = count % 10;
+  const lastTwo = count % 100;
+  return last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14) ? 'firmy' : 'firm';
+}
+
+/** Publiczna lista zatwierdzonych firm z wyszukiwaniem, sortowaniem i paginacją (makieta Firmy). */
 @Component({
   selector: 'app-company-list',
   providers: [providePolishPaginatorIntl()],
   standalone: true,
   imports: [
-    SlicePipe,
-    FormsModule,
     RouterLink,
     MatButtonModule,
-    MatCardModule,
     MatFormFieldModule,
     MatIconModule,
     MatInputModule,
     MatPaginatorModule,
-    MatProgressSpinnerModule,
     MatSelectModule
   ],
   templateUrl: './company-list.component.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './company-list.component.scss'
 })
 export class CompanyListComponent {
@@ -55,6 +55,13 @@ export class CompanyListComponent {
   readonly totalItems = signal(0);
   readonly loading = signal(false);
   readonly loadError = signal<string | null>(null);
+  /** Czy zakończyło się pierwsze ładowanie (do tego czasu szkielety kart o docelowej wysokości). */
+  readonly loaded = signal(false);
+  readonly skeletons = Array.from({ length: 6 }, (_, i) => i);
+  /** Liczba wyników ogłaszana w regionie role="status" („Znaleziono 3 firmy”). */
+  readonly resultsText = computed(() => this.loaded() && !this.loadError()
+    ? `Znaleziono ${this.totalItems()} ${companiesNoun(this.totalItems())}`
+    : '');
 
   readonly searchInput = signal('');
   readonly orderBy = signal<CompanyOrderBy>('nameAsc');
@@ -107,6 +114,10 @@ export class CompanyListComponent {
     this.search$.next(term);
   }
 
+  onSearchEvent(event: Event): void {
+    this.onSearchInput((event.target as HTMLInputElement).value);
+  }
+
   clearSearch(): void {
     this.searchInput.set('');
     this.search$.next('');
@@ -123,7 +134,7 @@ export class CompanyListComponent {
     this.pageIndex.set(event.pageIndex);
     this.pageSize.set(event.pageSize);
     this.reload();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0 });
   }
 
   jobsLabel(count: number): string {
@@ -158,5 +169,6 @@ export class CompanyListComponent {
       this.totalItems.set(TotalItems);
     }
     this.loading.set(false);
+    this.loaded.set(true);
   }
 }
