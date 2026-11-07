@@ -22,12 +22,10 @@ import { JobTaxonomyComponent, formatPosted, isoDate } from '../shared/job-taxon
 import { SaveJobButtonComponent } from '../shared/save-job-button.component';
 import { FilterChange, JobFiltersComponent } from './job-filters.component';
 import { JobSearchComponent } from './job-search.component';
+import { JOBS_QUERY_STATE } from './jobs-query-state';
 
 /** Liczba szkieletów kart zarezerwowanych na czas pierwszego ładowania (bez przesunięć układu). */
 const SKELETON_COUNT = 6;
-
-/** Klucz stanu nawigacji z filtrami listy – szczegóły oferty wracają przez niego „do wyników”. */
-export const JOBS_QUERY_STATE = 'jobsQuery';
 
 export const SORT_OPTIONS: { value: JobOrderBy; label: string }[] = [
   { value: 'newest', label: 'Najnowsze' },

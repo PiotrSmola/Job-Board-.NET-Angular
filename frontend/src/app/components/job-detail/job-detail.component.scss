@@ -1,243 +1,236 @@
-// Klasy są unikalne w szablonie, więc selektory są płaskie (krótszy CSS po enkapsulacji Angulara)
-.job-detail-container {
-  max-width: 900px;
+// Nagłówek: tło firmy (obraz + maska z przyciemnieniem z ustawień firmy) albo jednolite tło paska
+.hero {
+  background-color: var(--color-topbar);
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+// Jedyny dozwolony gradient (maska tła oferty): przyciemnienie → mocniej → kolor strony
+.has-image .hero-mask {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-bg) var(--hero-dim, 75%), transparent) 0%,
+    color-mix(in srgb, var(--color-bg) var(--hero-dim-mid, 85%), transparent) 55%,
+    var(--color-bg) 100%
+  );
+}
+
+.hero-inner,
+.offer-body {
+  max-width: 960px;
   margin: 0 auto;
-  padding: 40px 24px;
-  background-color: var(--bg-color);
-  min-height: calc(100vh - 64px);
+  padding: 24px var(--page-gutter) 56px;
 }
 
-.loading-container {
-  display: flex;
-  justify-content: center;
+.hero-skeleton {
+  min-height: 300px;
+}
+
+.offer-body {
+  padding-top: 0;
+  padding-bottom: 64px;
+}
+
+.back {
+  display: inline-flex;
   align-items: center;
-  min-height: 400px;
-}
-
-.back-button-container {
-  margin-bottom: 24px;
-
-  button {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--text-secondary);
-    transition: color 0.2s;
-
-    &:hover {
-      color: var(--primary-color);
-    }
-  }
-}
-
-.job-detail-card {
-  background-color: var(--surface-color) !important;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  padding: 32px;
-  position: relative;
-  overflow: hidden;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 4px;
-    background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
-  }
-
-  mat-card-header {
-    margin-bottom: 32px;
-    padding: 0;
-  }
-
-  mat-card-title {
-    font-size: 2.5rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 12px;
-    line-height: 1.2;
-  }
-
-  mat-card-subtitle {
-    font-size: 1.5rem;
-    color: var(--primary-color);
-    font-weight: 500;
-  }
-
-  mat-card-content {
-    padding: 0;
-  }
-
-  mat-card-actions {
-    margin-top: 40px;
-    padding: 24px 0 0 0;
-    border-top: 1px solid var(--border-color);
-    display: flex;
-    justify-content: flex-end;
-    gap: 16px;
-
-    button {
-      padding: 8px 32px;
-      font-size: 1.1rem;
-      height: 48px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-  }
-}
-
-.job-meta {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 24px;
-  margin-bottom: 32px;
-  padding: 24px;
-  background-color: rgba(255, 255, 255, 0.03);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.meta-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
+  gap: 6px;
+  font-weight: 500;
+  text-decoration: none;
 
   mat-icon {
-    color: var(--secondary-color);
-    font-size: 28px;
-    width: 28px;
-    height: 28px;
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
   }
 }
 
-.meta-content {
+.hero-head {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 24px;
+  margin: 72px 0 28px;
 }
 
-.meta-label {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 1px;
+.hero-title {
+  flex: 1 1 420px;
+  min-width: 0;
 }
 
-.meta-value {
-  font-size: 1.1rem;
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.divider {
-  margin: 32px 0;
-  background-color: var(--border-color);
-}
-
-.description-section h3 {
-  font-size: 1.8rem;
-  color: var(--text-primary);
-  margin: 0 0 24px 0;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-
-  &::before {
-    content: '';
-    display: block;
-    width: 4px;
-    height: 24px;
-    background-color: var(--primary-color);
-    border-radius: 2px;
-  }
-}
-
-.description {
-  font-size: 1.1rem;
-  line-height: 1.8;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
+h1 {
   margin: 0;
+  font-size: 32px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
-// status aplikacji użytkownika (po lewej stronie przycisków akcji) i baner oferty zamkniętej / wygasłej / szkicu
-.application-status,
-.offer-banner {
-  display: flex;
-  align-items: center;
+.hero-meta {
+  margin: 8px 0 0;
+  font-size: var(--font-size-lg);
 }
 
-.application-status {
-  gap: 8px;
-  margin-right: auto;
-  color: var(--text-secondary);
-}
-
-.offer-banner {
-  gap: 12px;
-  margin-bottom: 24px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 183, 77, 0.4);
-  background-color: rgba(255, 183, 77, 0.1);
-  color: #ffb74d;
+.company-link,
+.profile-link,
+.category-link {
   font-weight: 500;
 }
 
-@media (max-width: 600px) {
-  .job-detail-container {
-    padding: 16px;
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+// Fakty nachodzą na dół nagłówka
+.facts {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 48px;
+  margin: -40px 0 0;
+  padding: 24px 28px;
+  border-radius: var(--radius-block);
+  background: var(--color-surface);
+
+  dt {
+    color: var(--color-text-secondary);
   }
 
-  .job-detail-card {
+  dd {
+    margin: 4px 0 0;
+    font-size: 20px;
+    font-weight: 500;
+  }
+}
+
+.facts-skeleton {
+  min-height: 180px;
+}
+
+.salary {
+  flex: 1 1 100%;
+
+  dd {
+    font-size: var(--font-size-h1);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.period {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-lg);
+  font-weight: 400;
+}
+
+.offer-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+
+  mat-icon {
+    flex: none;
+    color: var(--color-warning-icon);
+  }
+}
+
+.sections {
+  margin-top: 32px;
+}
+
+// Sekcje jako wiersze: tytuł po lewej, treść po prawej, cienka linia między wierszami
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+  gap: 8px 40px;
+  padding: 28px 0;
+  box-shadow: inset 0 1px 0 var(--color-hairline);
+
+  h2 {
+    margin: 0;
+    font-size: var(--font-size-lg);
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+.prose {
+  color: var(--color-text-prose);
+  overflow-wrap: anywhere;
+}
+
+// Opis jest zwykłym tekstem – zachowujemy akapity i wypunktowania z podziałów wierszy
+.description {
+  white-space: pre-line;
+}
+
+.row .about {
+  margin-bottom: 8px;
+}
+
+.similar {
+  margin-top: 48px;
+
+  h2 {
+    margin: 0 0 4px;
+  }
+
+  ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 16px;
+    padding: 12px 0;
+    box-shadow: inset 0 -1px 0 var(--color-hairline);
+  }
+}
+
+.similar-title {
+  flex: 1 1 260px;
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.similar .muted {
+  flex: 0 1 220px;
+}
+
+.unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+
+  h1,
+  p {
+    margin: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hero-head {
+    margin-top: 40px;
+  }
+
+  h1 {
+    font-size: var(--font-size-h1);
+  }
+
+  .facts {
     padding: 20px;
-
-    mat-card-title {
-      font-size: 1.8rem;
-    }
-
-    mat-card-actions {
-      flex-direction: column;
-
-      button {
-        width: 100%;
-      }
-    }
-  }
-
-  .job-meta {
-    grid-template-columns: 1fr;
-  }
-}
-
-// ukryte wizualnie, ogłaszane przez czytniki ekranu
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
-
-.category-link {
-  color: var(--primary-color);
-  text-decoration: underline;
-}
-
-.skills-section {
-  margin-top: 24px;
-
-  h3 {
-    margin: 0 0 12px;
-    font-size: 1.2rem;
+    gap: 16px 32px;
   }
 }

@@ -1,50 +1,88 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { MAT_DIALOG_DATA, MatDialog, MatDialogRef } from '@angular/material/dialog';
-import { Observable, Subject, of, throwError } from 'rxjs';
-import { APPLY_DIALOG_CONFIG, ApplyDialogComponent, ApplyDialogData, ATTACHMENTS_UPLOAD_FAILED_MESSAGE, JobDetailComponent } from './job-detail.component';
+import { Observable, of, throwError } from 'rxjs';
+import { JobDetailComponent, heroStyle, isSafeApiUrl } from './job-detail.component';
+import { JobApplyComponent } from './job-apply.component';
 import { JobService } from '../../services/job.service';
+import { CompanyService } from '../../services/company.service';
 import { JobApplicationService } from '../../services/job-application.service';
 import { AuthService } from '../../services/auth.service';
-import { ContractTypes, Currency, JobOffer, JobOfferStatus, SalaryPeriod, SeniorityLevel, WorkType } from '../../models/job-offer.model';
-import { ApplicationAttachment, ApplicationStatus, AttachmentKind, AttachmentUploadEvent, AttachmentUploadItem } from '../../models/job-application.model';
-import { SavedJobsService } from '../../services/saved-jobs.service';
 import { AccountService } from '../../services/account.service';
-import { ProfileDocument } from '../../models/account.model';
+import { SavedJobsService } from '../../services/saved-jobs.service';
 import { PageTitleService } from '../../services/page-title.service';
-
-const JOB: JobOffer = {
-  id: 5, title: 'Angular Developer', company: 'Acme', companyId: 1, description: 'Opis', salaryMin: 1000, salaryMax: 2000,
-  location: 'Rzeszów', workType: WorkType.Remote, createdAt: new Date('2026-01-01'),
-  status: JobOfferStatus.Active, expiresAt: null, isExpired: false,
-  categoryId: null, categoryName: null, categorySlug: null, seniority: null, contractTypes: 0,
-  salaryCurrency: Currency.PLN, salaryPeriod: SalaryPeriod.Month, skills: []
-};
-
-const SAVED_CV: ApplicationAttachment = {
-  id: 11, kind: AttachmentKind.Cv, fileName: 'cv.pdf', size: 4 * 1024 * 1024, uploadedAt: '2026-02-01T10:00:00Z'
-};
+import { ContractTypes, Currency, JobOffer, JobOfferStatus, SalaryPeriod, SeniorityLevel, WorkType } from '../../models/job-offer.model';
+import { BackgroundFocus } from '../../models/company-media.model';
+import { makeJob, jobPage } from '../../../testing/job-fixtures';
+import { makeCompany } from '../../../testing/company-fixtures';
 
 // Pierwszy test pliku kompiluje szablon komponentu Material – przy zimnym starcie i obciążeniu bywa wolniejszy niż domyślne 5 s
 vi.setConfig({ testTimeout: 20000 });
+
+const JOB: JobOffer = makeJob(5, {
+  title: 'Angular Developer', company: 'Acme', companyId: 1, description: 'Opis\n- punkt', location: 'Rzeszów',
+  salaryMin: 18000, salaryMax: 24000, salaryCurrency: Currency.PLN, salaryPeriod: SalaryPeriod.Month,
+  createdAt: new Date(2026, 10, 4)
+});
+
+const squash = (text: string | null | undefined) => (text ?? '').replace(/[\s  ]+/g, ' ').trim();
+
+describe('heroStyle', () => {
+  it('uses the API image with the focal point and the dim of the company', () => {
+    expect(heroStyle({ url: '/api/companies/1/offer-background/file?v=abc123', dim: 70, focus: BackgroundFocus.Top })).toEqual({
+      image: 'url("/api/companies/1/offer-background/file?v=abc123")', position: 'center top', dim: '70%', dimMid: '82%'
+    });
+    expect(heroStyle({ url: '/api/x', dim: 75, focus: BackgroundFocus.Bottom })?.position).toBe('center bottom');
+    expect(heroStyle({ url: '/api/x', dim: 75, focus: BackgroundFocus.Center })?.position).toBe('center');
+  });
+
+  it('keeps the dim between 55 and 95 %', () => {
+    expect(heroStyle({ url: '/api/x', dim: 10, focus: BackgroundFocus.Center })?.dim).toBe('55%');
+    expect(heroStyle({ url: '/api/x', dim: 120, focus: BackgroundFocus.Center })?.dim).toBe('95%');
+  });
+
+  it('falls back to the plain hero without a background or for a URL outside /api/', () => {
+    expect(heroStyle(null)).toBeNull();
+    expect(heroStyle(undefined)).toBeNull();
+    expect(heroStyle({ url: 'https://evil.example/x.png', dim: 70, focus: BackgroundFocus.Center })).toBeNull();
+  });
+
+  it.each([
+    '/api/x") , url("https://evil.example/a.png',
+    '/api/x\'',
+    '/api/x)',
+    '/api/x y',
+    '/api/../../etc',
+    '//evil.example/api/x',
+    'javascript:alert(1)',
+    '/api/x\\'
+  ])('rejects the unsafe URL %s', url => {
+    expect(isSafeApiUrl(url)).toBe(false);
+  });
+});
 
 describe('JobDetailComponent', () => {
   let fixture: ComponentFixture<JobDetailComponent>;
   let component: JobDetailComponent;
   let getJob: ReturnType<typeof vi.fn>;
+  let getJobs: ReturnType<typeof vi.fn>;
+  let getCompany: ReturnType<typeof vi.fn>;
   let checkIfApplied: ReturnType<typeof vi.fn>;
-  let applyToJob: ReturnType<typeof vi.fn>;
-  let uploadAttachments: ReturnType<typeof vi.fn>;
-  let attachFromProfile: ReturnType<typeof vi.fn>;
+  let setTitle: ReturnType<typeof vi.fn>;
   let savedJobsEnabled: boolean;
-  let getApplication: ReturnType<typeof vi.fn>;
-  let snackBarOpen: ReturnType<typeof vi.fn>;
-  let alertSpy: ReturnType<typeof vi.spyOn>;
   let authenticated: boolean;
   let admin: boolean;
   let employer: boolean;
+
+  const root = () => fixture.nativeElement as HTMLElement;
+  const text = () => {
+    fixture.detectChanges();
+    return squash(root().textContent);
+  };
+  const hero = () => root().querySelector<HTMLElement>('section.hero')!;
+  const facts = () => Array.from(root().querySelectorAll('.facts .fact'))
+    .map(f => squash(`${f.querySelector('dt')?.textContent} ${f.querySelector('dd')?.textContent}`));
 
   function create(job: Observable<JobOffer> = of(JOB)): void {
     getJob.mockReturnValue(job);
@@ -59,17 +97,14 @@ describe('JobDetailComponent', () => {
 
   beforeEach(async () => {
     getJob = vi.fn();
+    getJobs = vi.fn().mockReturnValue(of(jobPage(0, 0)));
+    getCompany = vi.fn().mockReturnValue(of(makeCompany(1, { name: 'Acme', description: 'Software house', activeJobsCount: 3 })));
+    checkIfApplied = vi.fn().mockReturnValue(of({ hasApplied: false }));
+    setTitle = vi.fn();
+    savedJobsEnabled = false;
     authenticated = true;
     admin = false;
     employer = false;
-    checkIfApplied = vi.fn().mockReturnValue(of({ hasApplied: false }));
-    applyToJob = vi.fn();
-    uploadAttachments = vi.fn();
-    attachFromProfile = vi.fn();
-    savedJobsEnabled = false;
-    getApplication = vi.fn().mockReturnValue(of({ id: 3, attachments: [] }));
-    snackBarOpen = vi.fn();
-    alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
@@ -77,862 +112,287 @@ describe('JobDetailComponent', () => {
       providers: [
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: '5' })) } },
-        { provide: JobService, useValue: { getJob } },
-        { provide: JobApplicationService, useValue: { checkIfApplied, applyToJob, uploadAttachments, attachFromProfile, getApplication } },
+        { provide: JobService, useValue: { getJob, getJobs } },
+        { provide: CompanyService, useValue: { getCompany } },
+        { provide: JobApplicationService, useValue: { checkIfApplied, applyToJob: vi.fn(), getApplication: vi.fn() } },
+        { provide: AccountService, useValue: { getDocuments: () => of([]) } },
         {
           provide: SavedJobsService,
-          useValue: {
-            enabled: () => savedJobsEnabled,
-            isSaved: (id: number) => id === 5,
-            isPending: () => false,
-            ensureLoaded: vi.fn(),
-            toggle: vi.fn()
-          }
+          useValue: { enabled: () => savedJobsEnabled, isSaved: (id: number) => id === 5, isPending: () => false, ensureLoaded: vi.fn(), toggle: vi.fn() }
         },
         { provide: AuthService, useValue: { isAuthenticated: () => authenticated, isAdmin: () => admin, isEmployer: () => employer } },
-        { provide: MatSnackBar, useValue: { open: snackBarOpen } }
+        { provide: PageTitleService, useValue: { set: setTitle } },
+        { provide: MatSnackBar, useValue: { open: vi.fn() } }
       ]
     }).compileComponents();
   });
 
   afterEach(() => vi.restoreAllMocks());
 
-  it('loads the job and the application status', () => {
+  it('loads the job, sets the page title and renders the inline application section (no dialog)', () => {
     create();
 
     expect(getJob).toHaveBeenCalledWith(5);
+    expect(setTitle).toHaveBeenCalledWith('Angular Developer');
+    expect(root().querySelector('h1')?.textContent).toBe('Angular Developer');
+    expect(root().querySelector('app-job-apply section#apply')).not.toBeNull();
     expect(checkIfApplied).toHaveBeenCalledWith(5);
-    expect(component.job).toEqual(JOB);
-    expect(component.hasApplied).toBe(false);
   });
 
-  describe('taxonomy', () => {
-    const TAXONOMY_JOB: JobOffer = {
-      ...JOB,
-      categoryId: 2, categoryName: 'DevOps i chmura', categorySlug: 'devops-i-chmura',
-      seniority: SeniorityLevel.Senior, contractTypes: ContractTypes.B2B | ContractTypes.MandateContract,
-      salaryMin: 120, salaryMax: 150, salaryCurrency: Currency.EUR, salaryPeriod: SalaryPeriod.Hour,
-      skills: ['Angular', 'Docker', 'Kubernetes', 'Terraform', 'Ansible', 'Git', 'Linux']
-    };
-    const root = () => fixture.nativeElement as HTMLElement;
+  describe('hero', () => {
+    it('shows the company background behind a mask with the dim and focal point from the company settings', () => {
+      create(of({ ...JOB, companyBackground: { url: '/api/companies/1/offer-background/file?v=ff00', dim: 80, focus: BackgroundFocus.Bottom } }));
 
-    it('shows the category as a link to the filtered list, the level and the contract types', () => {
-      create(of(TAXONOMY_JOB));
-
-      const link = root().querySelector<HTMLAnchorElement>('a.category-link')!;
-      expect(link.textContent?.trim()).toBe('DevOps i chmura');
-      expect(link.getAttribute('href')).toBe('/jobs?category=devops-i-chmura');
-      const text = root().textContent ?? '';
-      expect(text).toContain('Senior');
-      expect(text).toContain('B2B, Umowa zlecenie');
+      const section = hero();
+      expect(section.classList.contains('has-image')).toBe(true);
+      expect(section.style.backgroundImage).toContain('/api/companies/1/offer-background/file?v=ff00');
+      expect(section.style.backgroundPosition).toBe('center bottom');
+      expect(section.style.getPropertyValue('--hero-dim')).toBe('80%');
+      expect(section.style.getPropertyValue('--hero-dim-mid')).toBe('88%');
     });
 
-    it('shows the salary with currency and period and the full list of skills', () => {
-      create(of(TAXONOMY_JOB));
-
-      expect(component.formatSalary()).toBe('120–150 EUR / h');
-      const skills = Array.from(root().querySelectorAll('.skills li')).map(li => li.textContent?.trim());
-      expect(skills).toEqual(['Angular', 'Docker', 'Kubernetes', 'Terraform', 'Ansible', 'Git', 'Linux']);
-    });
-
-    it('hides the taxonomy rows for an offer without category, level, contracts and skills', () => {
+    it('is plain (no image, no mask) without a company background', () => {
       create();
 
-      expect(root().querySelector('a.category-link')).toBeNull();
-      expect(root().querySelector('.skills-section')).toBeNull();
-      expect(root().textContent).not.toContain('Poziom');
-      expect(root().textContent).not.toContain('Typ umowy');
+      expect(hero().classList.contains('has-image')).toBe(false);
+      expect(hero().style.backgroundImage).toBe('');
     });
-  });
 
-  describe('page title', () => {
-    it('uses the offer title once the offer is loaded', () => {
-      const set = vi.spyOn(TestBed.inject(PageTitleService), 'set').mockImplementation(() => undefined);
+    it('ignores a background URL that does not point to the API', () => {
+      create(of({ ...JOB, companyBackground: { url: 'https://evil.example/x.png', dim: 80, focus: BackgroundFocus.Center } }));
+
+      expect(hero().classList.contains('has-image')).toBe(false);
+      expect(hero().style.backgroundImage).toBe('');
+    });
+
+    it('shows the company link, the city and the posting date', () => {
       create();
 
-      expect(set).toHaveBeenCalledExactlyOnceWith(JOB.title);
+      const link = root().querySelector<HTMLAnchorElement>('.hero a.company-link')!;
+      expect(link.textContent?.trim()).toBe('Acme');
+      expect(link.getAttribute('href')).toBe('/companies/1');
+      expect(squash(root().querySelector('.hero-meta')?.textContent)).toBe('Acme · Rzeszów · dodano 4 listopada');
     });
 
-    it('reports an unavailable offer when loading fails', () => {
-      const set = vi.spyOn(TestBed.inject(PageTitleService), 'set').mockImplementation(() => undefined);
-      create(throwError(() => httpError(404, { message: 'Job offer not found' })));
+    it('links back to the list with the filters the user came from', () => {
+      const router = TestBed.inject(Router);
+      vi.spyOn(router, 'currentNavigation').mockReturnValue({
+        extras: { state: { jobsQuery: { seniority: '1', page: '2', bogus: 'x', orderBy: 'hax' } } }
+      } as never);
+      create();
 
-      expect(set).toHaveBeenCalledExactlyOnceWith('Oferta niedostępna');
+      expect(root().querySelector('a.back')?.getAttribute('href')).toBe('/jobs?seniority=1&page=2');
+      expect(root().querySelector('a.back')?.textContent).toContain('Wróć do wyników');
+    });
+
+    it('links back to the plain list without navigation state', () => {
+      create();
+
+      expect(root().querySelector('a.back')?.getAttribute('href')).toBe('/jobs');
     });
   });
 
-  describe('loadJob errors', () => {
-    it('shows the translated message when the job does not exist', () => {
+  describe('facts', () => {
+    it('shows the salary in a full row with the period, then contract, level, work mode, category and expiry', () => {
+      create(of({
+        ...JOB, contractTypes: ContractTypes.B2B, seniority: SeniorityLevel.Senior, workType: WorkType.Remote,
+        categoryId: 1, categoryName: 'Programowanie', categorySlug: 'programowanie', expiresAt: new Date(2026, 10, 30, 12).toISOString()
+      }));
+
+      expect(facts()).toEqual([
+        'Wynagrodzenie 18 000–24 000 PLN miesięcznie',
+        'Umowa B2B',
+        'Poziom Senior',
+        'Tryb pracy Zdalnie',
+        'Kategoria Programowanie',
+        'Aktualna do 30 listopada'
+      ]);
+      expect(root().querySelector('.facts .salary')).not.toBeNull();
+      const category = root().querySelector<HTMLAnchorElement>('.category-link')!;
+      expect(category.getAttribute('href')).toBe('/jobs?category=programowanie');
+    });
+
+    it('shows "Nieokreślona" without a period and skips missing facts', () => {
+      create(of({ ...JOB, salaryMin: null, salaryMax: null, workType: WorkType.Onsite }));
+
+      expect(facts()).toEqual(['Wynagrodzenie Nieokreślona', 'Tryb pracy Stacjonarnie']);
+    });
+  });
+
+  describe('sections', () => {
+    it('renders the sections as rows with h2 titles and the description as plain text', () => {
+      create(of({ ...JOB, skills: ['Angular', 'RxJS'] }));
+
+      const titles = Array.from(root().querySelectorAll('.row h2')).map(h => h.textContent?.trim());
+      expect(titles).toEqual(['Opis stanowiska', 'Technologie', 'O firmie', 'Twoja aplikacja']);
+      expect(root().querySelector('.description')?.textContent).toBe('Opis\n- punkt');
+      expect(root().querySelector('.skills')?.textContent).toBe('Angular, RxJS');
+      expect(root().querySelectorAll('h1').length).toBe(1);
+    });
+
+    it('describes the company and links to its profile with the number of offers', () => {
+      create();
+
+      expect(getCompany).toHaveBeenCalledWith(1);
+      expect(root().querySelector('.about')?.textContent).toBe('Software house');
+      const link = root().querySelector<HTMLAnchorElement>('.profile-link')!;
+      expect(link.textContent?.trim()).toBe('Profil firmy i 3 oferty');
+      expect(link.getAttribute('href')).toBe('/companies/1');
+    });
+
+    it('still links to the company profile when the company cannot be loaded', () => {
+      getCompany.mockReturnValue(throwError(() => httpError(500)));
+      create();
+
+      expect(root().querySelector('.about')).toBeNull();
+      expect(root().querySelector('.profile-link')?.textContent?.trim()).toBe('Profil firmy Acme');
+    });
+  });
+
+  describe('similar offers', () => {
+    it('lists up to 3 other offers from the same category', () => {
+      getJobs.mockReturnValue(of({
+        result: [makeJob(5), makeJob(6, { title: 'Inna 6' }), makeJob(7, { title: 'Inna 7' }), makeJob(8, { title: 'Inna 8' })],
+        pagination: { CurrentPage: 1, ItemsPerPage: 4, TotalItems: 10, TotalPages: 3 }
+      }));
+      create(of({ ...JOB, categorySlug: 'programowanie', categoryName: 'Programowanie', categoryId: 1 }));
+
+      const params = getJobs.mock.calls[0][0];
+      expect(params.category).toBe('programowanie');
+      expect(params.pageSize).toBe(4);
+      const links = Array.from(root().querySelectorAll<HTMLAnchorElement>('.similar a'));
+      expect(links.map(l => l.textContent?.trim())).toEqual(['Inna 6', 'Inna 7', 'Inna 8']);
+      expect(links[0].getAttribute('href')).toBe('/jobs/6');
+      expect(root().querySelector('.similar h2')?.textContent).toBe('Podobne oferty');
+    });
+
+    it('is not requested or shown for an offer without a category', () => {
+      create();
+
+      expect(getJobs).not.toHaveBeenCalled();
+      expect(root().querySelector('.similar')).toBeNull();
+    });
+
+    it('is hidden when loading fails', () => {
+      getJobs.mockReturnValue(throwError(() => httpError(500)));
+      create(of({ ...JOB, categorySlug: 'programowanie' }));
+
+      expect(root().querySelector('.similar')).toBeNull();
+    });
+  });
+
+  describe('offer lifecycle', () => {
+    it.each([
+      [{ status: JobOfferStatus.Closed, isExpired: false }, 'Rekrutacja na to stanowisko została zakończona'],
+      [{ status: JobOfferStatus.Active, isExpired: true }, 'Ta oferta wygasła'],
+      [{ status: JobOfferStatus.Draft, isExpired: false }, 'Szkic – oferta nie jest widoczna publicznie']
+    ])('shows a banner and no apply button for %o', (state, bannerText) => {
+      create(of({ ...JOB, ...state }));
+
+      const banner = root().querySelector('.offer-banner')!;
+      expect(banner.getAttribute('role')).toBe('status');
+      expect(banner.textContent).toContain(bannerText);
+      expect(component.acceptsApplications()).toBe(false);
+      expect(root().querySelector('.hero-actions button')).toBeNull();
+    });
+
+    it('shows no banner for an active offer', () => {
+      create();
+
+      expect(root().querySelector('.offer-banner')).toBeNull();
+    });
+
+    it('reloads the offer without the skeleton when the application section reports it stale', () => {
+      create();
+      getJob.mockReturnValue(of({ ...JOB, status: JobOfferStatus.Closed }));
+
+      fixture.debugElement.query(el => el.componentInstance instanceof JobApplyComponent)
+        .componentInstance.jobStale.emit();
+      fixture.detectChanges();
+
+      expect(getJob).toHaveBeenCalledTimes(2);
+      expect(root().querySelector('.offer-banner')?.textContent).toContain('Rekrutacja na to stanowisko została zakończona');
+    });
+  });
+
+  describe('"Aplikuj" in the hero', () => {
+    function applyButton(): HTMLButtonElement | null {
+      fixture.detectChanges();
+      return root().querySelector<HTMLButtonElement>('.hero-actions button[mat-flat-button]');
+    }
+
+    it('moves to the inline application section and focuses its heading', () => {
+      create();
+      document.body.appendChild(root());
+
+      applyButton()!.click();
+
+      expect(document.activeElement).toBe(root().querySelector('#apply-title'));
+      root().remove();
+    });
+
+    it('is shown to a logged-out visitor (the section asks to log in)', () => {
+      authenticated = false;
+      create();
+
+      expect(applyButton()?.textContent?.trim()).toBe('Aplikuj');
+      expect(text()).toContain('Zaloguj się, aby aplikować');
+    });
+
+    it('becomes "Twoja aplikacja" after applying', () => {
+      checkIfApplied.mockReturnValue(of({ hasApplied: true, applicationId: 3, status: 0 }));
+      create();
+
+      expect(applyButton()?.textContent?.trim()).toBe('Twoja aplikacja');
+    });
+
+    it.each([['admin', () => admin = true], ['employer', () => employer = true]])('is hidden for an %s', (_role, setRole) => {
+      setRole();
+      create();
+
+      expect(applyButton()).toBeNull();
+    });
+  });
+
+  describe('loading and errors', () => {
+    it('reserves the hero and facts space while loading', () => {
+      create(new Observable<JobOffer>());
+
+      expect(root().querySelector('.hero-skeleton')).not.toBeNull();
+      expect(root().querySelector('.facts-skeleton')).not.toBeNull();
+      expect(root().querySelector('h1')).toBeNull();
+    });
+
+    it('shows the translated message for a missing offer and reports an unavailable page title', () => {
       create(throwError(() => httpError(404, { message: 'Job offer not found' })));
 
-      expect(component.loading).toBe(false);
-      expect(snackBarOpen).toHaveBeenCalledTimes(1);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Oferta nie została znaleziona');
+      expect(root().querySelector('h1')?.textContent).toBe('Oferta niedostępna');
+      expect(root().querySelector('[role="alert"]')?.textContent?.trim()).toBeTruthy();
+      expect(setTitle).toHaveBeenCalledWith('Oferta niedostępna');
+      expect(root().querySelector('a[href="/jobs"]')).not.toBeNull();
     });
 
     it('shows a generic message for server errors', () => {
       create(throwError(() => httpError(500)));
 
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Nie udało się wczytać oferty');
-    });
-  });
-
-  it('stays silent when checking the application status fails with 401', () => {
-    checkIfApplied.mockReturnValue(throwError(() => httpError(401)));
-    create();
-
-    expect(component.hasApplied).toBe(false);
-    expect(component.checkingApplication).toBe(false);
-    expect(snackBarOpen).not.toHaveBeenCalled();
-    expect(alertSpy).not.toHaveBeenCalled();
-  });
-
-  describe('offer lifecycle and application status', () => {
-    function text(): string {
-      fixture.detectChanges();
-      return (fixture.nativeElement as HTMLElement).textContent ?? '';
-    }
-
-    it.each([
-      [{ status: JobOfferStatus.Closed, isExpired: false }, 'Rekrutacja na to stanowisko została zakończona'],
-      [{ status: JobOfferStatus.Active, isExpired: true }, 'Ta oferta wygasła']
-    ])('shows a banner and blocks applying for %o', (state, bannerText) => {
-      create(of({ ...JOB, ...state }));
-
-      expect(component.acceptsApplications).toBe(false);
-      expect(text()).toContain(bannerText);
-      expect(text()).toContain('Aplikowanie zamknięte');
-      expect(text()).not.toContain('Aplikuj na to stanowisko');
-    });
-
-    it('shows no banner and the expiration date for an active offer', () => {
-      create(of({ ...JOB, expiresAt: '2026-12-31T22:59:59Z' }));
-
-      expect(component.banner).toBeNull();
-      expect(text()).toContain('Aktualna do');
-      expect(text()).toContain('Aplikuj na to stanowisko');
-    });
-
-    it('shows the current status of an existing application', () => {
-      checkIfApplied.mockReturnValue(of({ hasApplied: true, applicationId: 3, status: ApplicationStatus.Interview }));
-      create();
-
-      expect(component.applicationStatus).toBe(ApplicationStatus.Interview);
-      expect(text()).toContain('Rozmowa');
-      expect(text()).toContain('Już aplikowałeś');
-    });
-
-    it('offers applying again after withdrawal and reports the reactivation', () => {
-      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
-      create();
-
-      expect(component.hasWithdrawn).toBe(true);
-      expect(text()).toContain('Aplikuj ponownie');
-
-      applyToJob.mockReturnValue(of({ id: 3, status: ApplicationStatus.Submitted }));
-      component.applyToJob('Znowu');
-
-      expect(component.hasApplied).toBe(true);
-      expect(component.applicationStatus).toBe(ApplicationStatus.Submitted);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja została złożona ponownie!');
-    });
-
-    it('shows the draft banner and blocks applying for a draft offer', () => {
-      create(of({ ...JOB, status: JobOfferStatus.Draft }));
-
-      expect(component.acceptsApplications).toBe(false);
-      expect(text()).toContain('Szkic – oferta nie jest widoczna publicznie');
-      expect(text()).toContain('Aplikowanie zamknięte');
-    });
-
-    it('does not offer applying for an offer that expires in the past even when the status is Active', () => {
-      create(of({ ...JOB, expiresAt: '2020-01-01T00:00:00Z', isExpired: true }));
-
-      expect(component.acceptsApplications).toBe(false);
-      expect(text()).toContain('Aktualna do');
-      expect(text()).toContain('Ta oferta wygasła');
-    });
-
-    it('does not show "Aktualna do" for an open-ended offer', () => {
-      create();
-
-      expect(text()).not.toContain('Aktualna do');
-    });
-
-    it('shows the "Withdrawn" chip next to "Aplikuj ponownie" after withdrawal', () => {
-      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
-      create();
-
-      expect((fixture.nativeElement as HTMLElement).querySelector('.application-status app-status-chip')?.textContent?.trim())
-        .toBe('Wycofana');
-      expect(text()).toContain('Aplikuj ponownie');
-      expect(text()).not.toContain('Już aplikowałeś');
-    });
-
-    it('does not offer applying again for a closed offer even after withdrawal', () => {
-      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
-      create(of({ ...JOB, status: JobOfferStatus.Closed }));
-
-      expect(text()).toContain('Aplikowanie zamknięte');
-      expect(text()).not.toContain('Aplikuj ponownie');
-    });
-
-    it('shows no application status chip when the user has not applied', () => {
-      create();
-
-      expect((fixture.nativeElement as HTMLElement).querySelector('.application-status')).toBeNull();
-      expect(component.applicationStatusPresentation).toBeNull();
-    });
-
-    it('lets a logged-out visitor log in to apply for an active offer', () => {
-      authenticated = false;
-      create();
-
-      expect(text()).toContain('Zaloguj się, aby aplikować');
-      expect(checkIfApplied).not.toHaveBeenCalled();
-    });
-
-    it('shows a logged-out visitor no login button for a closed offer', () => {
-      authenticated = false;
-      create(of({ ...JOB, status: JobOfferStatus.Closed }));
-
-      expect(text()).not.toContain('Zaloguj się, aby aplikować');
-      expect(text()).toContain('Rekrutacja na to stanowisko została zakończona');
-    });
-
-    it('shows an admin neither the apply button nor the application status', () => {
-      admin = true;
-      create();
-
-      expect(text()).not.toContain('Aplikuj na to stanowisko');
-      expect(text()).not.toContain('Aplikowanie zamknięte');
-    });
-
-    it('shows an employer no apply button and does not check the application status', () => {
-      employer = true;
-      create();
-
-      expect(text()).not.toContain('Aplikuj na to stanowisko');
-      expect(text()).not.toContain('Zaloguj się, aby aplikować');
-      expect(checkIfApplied).not.toHaveBeenCalled();
-    });
-
-    it('links the company name to the company profile', () => {
-      create();
-
-      const link = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('a.company-link');
-      expect(link?.textContent?.trim()).toBe('Acme');
-      expect(link?.getAttribute('href')).toBe('/companies/1');
-    });
-
-    it('reloads the offer when the API reports that it no longer accepts applications', () => {
-      create();
-      getJob.mockReturnValue(of({ ...JOB, status: JobOfferStatus.Closed }));
-      applyToJob.mockReturnValue(throwError(() => httpError(400, { message: 'This job offer is not accepting applications' })));
-
-      component.applyToJob('');
-
-      expect(getJob).toHaveBeenCalledTimes(2);
-      expect(component.acceptsApplications).toBe(false);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Ta oferta nie przyjmuje już aplikacji');
+      expect(root().querySelector('[role="alert"]')?.textContent).toBeTruthy();
+      expect(root().querySelector('app-job-apply')).toBeNull();
     });
   });
 
   describe('saving the offer', () => {
-    it('shows the heart toggle in the header for a candidate', () => {
+    it('shows the save toggle in the hero for a candidate', () => {
       savedJobsEnabled = true;
       create();
 
-      const button = (fixture.nativeElement as HTMLElement).querySelector('mat-card-header app-save-job-button button');
+      const button = root().querySelector('.hero-actions app-save-job-button button');
       expect(button?.getAttribute('aria-label')).toBe('Usuń z zapisanych: Angular Developer');
       expect(button?.getAttribute('aria-pressed')).toBe('true');
     });
 
     it('does not show it when saving is not available (e.g. employer)', () => {
       create();
-      expect((fixture.nativeElement as HTMLElement).querySelector('app-save-job-button button')).toBeNull();
-    });
-  });
-
-  describe('applyToJob', () => {
-    it('sends the application and shows a success snackbar', () => {
-      create();
-      applyToJob.mockReturnValue(of({}));
-
-      component.applyToJob('Notatka');
-
-      expect(applyToJob).toHaveBeenCalledWith({ jobOfferId: 5, note: 'Notatka' });
-      expect(component.hasApplied).toBe(true);
-      expect(component.applying).toBe(false);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja wysłana pomyślnie!');
-      expect(alertSpy).not.toHaveBeenCalled();
-    });
-
-    it('sends null instead of an empty note', () => {
-      create();
-      applyToJob.mockReturnValue(of({}));
-
-      component.applyToJob('');
-
-      expect(applyToJob).toHaveBeenCalledWith({ jobOfferId: 5, note: null });
-    });
-
-    it('translates "already applied" and marks the job as applied', () => {
-      create();
-      applyToJob.mockReturnValue(throwError(() => httpError(400, { message: 'You have already applied to this job' })));
-
-      component.applyToJob('');
-
-      expect(component.applying).toBe(false);
-      expect(component.hasApplied).toBe(true);
-      expect(snackBarOpen).toHaveBeenCalledTimes(1);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Już aplikowałeś na tę ofertę');
-      expect(alertSpy).not.toHaveBeenCalled();
-    });
-
-    it('shows a generic message for server errors', () => {
-      create();
-      applyToJob.mockReturnValue(throwError(() => httpError(500)));
-
-      component.applyToJob('');
-
-      expect(component.hasApplied).toBe(false);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Błąd podczas aplikowania');
-    });
-
-    it.each([401, 403])('does not duplicate the interceptor notice for %i', status => {
-      create();
-      applyToJob.mockReturnValue(throwError(() => httpError(status)));
-
-      component.applyToJob('');
-
-      expect(component.applying).toBe(false);
-      expect(snackBarOpen).not.toHaveBeenCalled();
-      expect(alertSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('applying with attachments', () => {
-    const CV: AttachmentUploadItem = { file: new File(['%PDF-'], 'cv.pdf', { type: 'application/pdf' }), kind: AttachmentKind.Cv };
-    const LETTER: AttachmentUploadItem = { file: new File(['PK'], 'list.docx'), kind: AttachmentKind.CoverLetter };
-    const ITEMS = [CV, LETTER];
-
-    function text(): string {
-      fixture.detectChanges();
-      return (fixture.nativeElement as HTMLElement).textContent ?? '';
-    }
-
-    function liveStatus(): string {
-      fixture.detectChanges();
-      return (fixture.nativeElement as HTMLElement).querySelector('[role="status"].sr-only')?.textContent ?? '';
-    }
-
-    it('submits the application first and then uploads all attachments in one request to the returned application', () => {
-      create();
-      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-      uploadAttachments.mockReturnValue(of<AttachmentUploadEvent>({ type: 'done', application: { id: 42 } as never }));
-
-      component.applyToJob('Notatka', ITEMS);
-
-      expect(applyToJob).toHaveBeenCalledWith({ jobOfferId: 5, note: 'Notatka' });
-      expect(uploadAttachments).toHaveBeenCalledTimes(1);
-      expect(uploadAttachments).toHaveBeenCalledWith(42, ITEMS);
-      expect(applyToJob.mock.invocationCallOrder[0]).toBeLessThan(uploadAttachments.mock.invocationCallOrder[0]);
-      expect(component.applying).toBe(false);
-      expect(component.attachmentsUploadProgress).toBeNull();
-      expect(snackBarOpen).toHaveBeenCalledTimes(1);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja wysłana pomyślnie! Załączniki zostały dołączone.');
-      expect(liveStatus()).toBe('Załączniki przesłane');
-    });
-
-    it('does not upload anything without attachments', () => {
-      create();
-      applyToJob.mockReturnValue(of({ id: 42 }));
-
-      component.applyToJob('', []);
-
-      expect(uploadAttachments).not.toHaveBeenCalled();
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja wysłana pomyślnie!');
-    });
-
-    it('shows the upload progress on the button and announces the phase once', () => {
-      create();
-      const events = new Subject<AttachmentUploadEvent>();
-      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-      uploadAttachments.mockReturnValue(events);
-
-      component.applyToJob('', ITEMS);
-      expect(component.applying).toBe(true);
-      expect(component.hasApplied).toBe(true);
-      expect(text()).toContain('Wysyłanie załączników… 0%');
-      expect(liveStatus()).toBe('Wysyłanie załączników…');
-
-      events.next({ type: 'progress', percent: 60 });
-      expect(component.attachmentsUploadProgress).toBe(60);
-      expect(text()).toContain('Wysyłanie załączników… 60%');
-      expect(liveStatus()).toBe('Wysyłanie załączników…');
-
-      events.next({ type: 'progress', percent: 100 });
-      expect(text()).toContain('Przetwarzanie załączników…');
-      expect(snackBarOpen).not.toHaveBeenCalled();
-
-      events.next({ type: 'done', application: { id: 42 } as never });
-      events.complete();
-      expect(text()).toContain('Już aplikowałeś');
-      expect(text()).not.toContain('Wysyłanie załączników');
-    });
-
-    it('has a single, visually hidden status region on the page', () => {
-      create();
-
-      const regions = (fixture.nativeElement as HTMLElement).querySelectorAll('.sr-only[role="status"]');
-      expect(regions.length).toBe(1);
-    });
-
-    it('cancels a pending upload and explains how to add the attachments later when the page is left', () => {
-      create();
-      const events = new Subject<AttachmentUploadEvent>();
-      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-      uploadAttachments.mockReturnValue(events);
-
-      component.applyToJob('', ITEMS);
-      expect(events.observed).toBe(true);
-
-      fixture.destroy();
-
-      expect(events.observed).toBe(false);
-      expect(snackBarOpen).toHaveBeenCalledTimes(1);
-      expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
-      expect(snackBarOpen.mock.calls[0][2]).toEqual({ duration: 8000 });
-    });
-
-    it('does not show the "left the page" message when the page is left after the upload finished', () => {
-      create();
-      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-      uploadAttachments.mockReturnValue(of<AttachmentUploadEvent>({ type: 'done', application: { id: 42 } as never }));
-      component.applyToJob('', ITEMS);
-      snackBarOpen.mockClear();
-
-      fixture.destroy();
-
-      expect(snackBarOpen).not.toHaveBeenCalled();
-    });
-
-    it('does not start the upload but informs the user when the page was left before the application was submitted', () => {
-      create();
-      const submitted = new Subject<{ id: number; status: ApplicationStatus }>();
-      applyToJob.mockReturnValue(submitted);
-
-      component.applyToJob('', ITEMS);
-      fixture.destroy();
-      submitted.next({ id: 42, status: ApplicationStatus.Submitted });
-      submitted.complete();
-
-      expect(uploadAttachments).not.toHaveBeenCalled();
-      expect(snackBarOpen).toHaveBeenCalledTimes(1);
-      expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
-    });
-
-    it('keeps the submitted application and explains how to add the attachments later when the upload fails', () => {
-      create();
-      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-      uploadAttachments.mockReturnValue(throwError(() => httpError(400, { message: 'Total size of attachments cannot exceed 25 MB' })));
-
-      component.applyToJob('', ITEMS);
-
-      expect(component.hasApplied).toBe(true);
-      expect(component.applicationStatus).toBe(ApplicationStatus.Submitted);
-      expect(component.applying).toBe(false);
-      expect(component.attachmentsUploadProgress).toBeNull();
-      expect(snackBarOpen).toHaveBeenCalledTimes(1);
-      expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
-      expect(ATTACHMENTS_UPLOAD_FAILED_MESSAGE)
-        .toBe('Aplikacja złożona, ale nie udało się dołączyć załączników – możesz dodać je w Moich aplikacjach');
-      expect(liveStatus()).toBe('Przerwano wysyłanie');
-      expect(text()).toContain('Już aplikowałeś');
-    });
-
-    it.each([401, 403, 429, 500])('reports the partial success also for a %i upload error', status => {
-      create();
-      applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-      uploadAttachments.mockReturnValue(throwError(() => httpError(status)));
-
-      component.applyToJob('', ITEMS);
-
-      expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
-    });
-
-    it('reports the partial success also when the API does not return the application id', () => {
-      create();
-      applyToJob.mockReturnValue(of(null));
-
-      component.applyToJob('', ITEMS);
-
-      expect(uploadAttachments).not.toHaveBeenCalled();
-      expect(component.hasApplied).toBe(true);
-      expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
-    });
-
-    it('does not upload the attachments when the application itself is rejected', () => {
-      create();
-      applyToJob.mockReturnValue(throwError(() => httpError(400, { message: 'You have already applied to this job' })));
-
-      component.applyToJob('', ITEMS);
-
-      expect(uploadAttachments).not.toHaveBeenCalled();
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Już aplikowałeś na tę ofertę');
-    });
-
-    it('mentions the reactivation and the attachments after applying again', () => {
-      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
-      create();
-      applyToJob.mockReturnValue(of({ id: 3, status: ApplicationStatus.Submitted }));
-      uploadAttachments.mockReturnValue(of<AttachmentUploadEvent>({ type: 'done', application: { id: 3 } as never }));
-
-      component.applyToJob('', [CV]);
-
-      expect(uploadAttachments).toHaveBeenCalledWith(3, [CV]);
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja została złożona ponownie! Załączniki zostały dołączone.');
-    });
-
-    describe('documents from the profile', () => {
-      it('copies the profile documents first and then uploads the new files', () => {
-        create();
-        applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-        attachFromProfile.mockReturnValue(of({ id: 42 }));
-        uploadAttachments.mockReturnValue(of<AttachmentUploadEvent>({ type: 'done', application: { id: 42 } as never }));
-
-        component.applyToJob('', ITEMS, [7, 8]);
-
-        expect(attachFromProfile).toHaveBeenCalledWith(42, [7, 8]);
-        expect(uploadAttachments).toHaveBeenCalledWith(42, ITEMS);
-        expect(attachFromProfile.mock.invocationCallOrder[0]).toBeLessThan(uploadAttachments.mock.invocationCallOrder[0]);
-        expect(snackBarOpen).toHaveBeenCalledTimes(1);
-        expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja wysłana pomyślnie! Załączniki zostały dołączone.');
-        expect(liveStatus()).toBe('Załączniki przesłane');
-      });
-
-      it('only copies the profile documents when no new files were chosen', () => {
-        create();
-        applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-        attachFromProfile.mockReturnValue(of({ id: 42 }));
-
-        component.applyToJob('', [], [7]);
-
-        expect(uploadAttachments).not.toHaveBeenCalled();
-        expect(component.applying).toBe(false);
-        expect(component.attachmentsUploadProgress).toBeNull();
-        expect(snackBarOpen.mock.calls[0][0]).toBe('Aplikacja wysłana pomyślnie! Załączniki zostały dołączone.');
-      });
-
-      it('shows the processing state and announces the phase while the documents are copied', () => {
-        create();
-        applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-        attachFromProfile.mockReturnValue(new Subject());
-
-        component.applyToJob('', [], [7]);
-
-        expect(text()).toContain('Przetwarzanie załączników…');
-        expect(liveStatus()).toBe('Dołączanie dokumentów z profilu…');
-      });
-
-      it('keeps the application, skips the upload and explains what to do when copying fails', () => {
-        create();
-        applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-        attachFromProfile.mockReturnValue(throwError(() => httpError(400, { message: 'An application can have at most 10 attachments' })));
-
-        component.applyToJob('', ITEMS, [7]);
-
-        expect(uploadAttachments).not.toHaveBeenCalled();
-        expect(component.hasApplied).toBe(true);
-        expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
-        expect(liveStatus()).toBe('Przerwano wysyłanie');
-      });
-
-      it('cancels copying when the page is left', () => {
-        create();
-        const copied = new Subject<unknown>();
-        applyToJob.mockReturnValue(of({ id: 42, status: ApplicationStatus.Submitted }));
-        attachFromProfile.mockReturnValue(copied);
-
-        component.applyToJob('', [], [7]);
-        fixture.destroy();
-
-        expect(copied.observed).toBe(false);
-        expect(snackBarOpen.mock.calls[0][0]).toBe(ATTACHMENTS_UPLOAD_FAILED_MESSAGE);
-      });
-    });
-
-    it('opens the apply dialog as an ARIA modal and passes the note and the attachments to applyToJob', () => {
-      create();
-      const dialog = (component as unknown as { dialog: MatDialog }).dialog;
-      const open = vi.spyOn(dialog, 'open').mockReturnValue({
-        afterClosed: () => of({ confirmed: true, note: 'Cześć', attachments: ITEMS, profileDocumentIds: [] })
-      } as never);
-      const apply = vi.spyOn(component, 'applyToJob').mockImplementation(() => undefined);
-
-      component.openApplyDialog();
-
-      expect(open).toHaveBeenCalledWith(ApplyDialogComponent, { ...APPLY_DIALOG_CONFIG, data: { existing: [] } });
-      expect(APPLY_DIALOG_CONFIG.ariaModal).toBe(true);
-      expect(apply).toHaveBeenCalledWith('Cześć', ITEMS, []);
-    });
-
-    it('passes the documents chosen from the profile to applyToJob', () => {
-      create();
-      const dialog = (component as unknown as { dialog: MatDialog }).dialog;
-      vi.spyOn(dialog, 'open').mockReturnValue({
-        afterClosed: () => of({ confirmed: true, note: '', attachments: [], profileDocumentIds: [7, 8] })
-      } as never);
-      const apply = vi.spyOn(component, 'applyToJob').mockImplementation(() => undefined);
-
-      component.openApplyDialog();
-
-      expect(apply).toHaveBeenCalledWith('', [], [7, 8]);
-    });
-
-    it('does not apply when the dialog is cancelled', () => {
-      create();
-      const dialog = (component as unknown as { dialog: MatDialog }).dialog;
-      vi.spyOn(dialog, 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
-      const apply = vi.spyOn(component, 'applyToJob');
-
-      component.openApplyDialog();
-
-      expect(apply).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('applying again with the attachments of the withdrawn application', () => {
-    function openDialogSpy(): ReturnType<typeof vi.fn> {
-      const dialog = (component as unknown as { dialog: MatDialog }).dialog;
-      return vi.spyOn(dialog, 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never) as never;
-    }
-
-    function applyButton(): HTMLButtonElement {
-      return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button'))
-        .find(b => b.textContent?.includes('Aplikuj'))!;
-    }
-
-    it('loads the kept attachments and passes them to the dialog as existing', () => {
-      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
-      getApplication.mockReturnValue(of({ id: 3, status: ApplicationStatus.Withdrawn, attachments: [SAVED_CV] }));
-      create();
-      const open = openDialogSpy();
-
-      component.openApplyDialog();
-
-      expect(getApplication).toHaveBeenCalledWith(3);
-      const data = open.mock.calls[0][1].data as ApplyDialogData;
-      expect(data.existing).toEqual([SAVED_CV]);
-      expect(open.mock.calls[0][1]).toMatchObject(APPLY_DIALOG_CONFIG);
-    });
-
-    it('keeps "Aplikuj ponownie" disabled until the kept attachments are loaded', () => {
-      const application = new Subject<unknown>();
-      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
-      getApplication.mockReturnValue(application);
-      create();
-
-      expect(component.checkingApplication).toBe(true);
-      expect(applyButton().disabled).toBe(true);
-
-      application.next({ id: 3, attachments: [SAVED_CV] });
-      application.complete();
-      fixture.detectChanges();
-
-      expect(component.checkingApplication).toBe(false);
-      expect(applyButton().disabled).toBe(false);
-      expect(applyButton().textContent).toContain('Aplikuj ponownie');
-    });
-
-    it('opens the dialog without existing attachments when they cannot be loaded (the server still checks the limits)', () => {
-      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
-      getApplication.mockReturnValue(throwError(() => httpError(500)));
-      create();
-      const open = openDialogSpy();
-
-      expect(component.checkingApplication).toBe(false);
-      component.openApplyDialog();
-
-      expect((open.mock.calls[0][1].data as ApplyDialogData).existing).toEqual([]);
-    });
-
-    it('does not load an application for a first-time applicant', () => {
-      create();
-      const open = openDialogSpy();
-
-      component.openApplyDialog();
-
-      expect(getApplication).not.toHaveBeenCalled();
-      expect((open.mock.calls[0][1].data as ApplyDialogData).existing).toEqual([]);
-    });
-
-    it('cancels loading the kept attachments when the page is left', () => {
-      const application = new Subject<unknown>();
-      checkIfApplied.mockReturnValue(of({ hasApplied: false, applicationId: 3, status: ApplicationStatus.Withdrawn }));
-      getApplication.mockReturnValue(application);
-      create();
-
-      fixture.destroy();
-
-      expect(application.observed).toBe(false);
-    });
-  });
-});
-
-describe('ApplyDialogComponent', () => {
-  let profileDocuments: ProfileDocument[];
-
-  beforeEach(async () => {
-    profileDocuments = [];
-    await TestBed.configureTestingModule({
-      imports: [ApplyDialogComponent],
-      providers: [
-        provideRouter([]),
-        { provide: MatDialogRef, useValue: { close: vi.fn() } },
-        { provide: MAT_DIALOG_DATA, useValue: null },
-        { provide: AccountService, useValue: { getDocuments: () => of(profileDocuments) } }
-      ]
-    }).compileComponents();
-  });
-
-  it('offers an optional attachments picker next to the note', () => {
-    const fixture = TestBed.createComponent(ApplyDialogComponent);
-    fixture.detectChanges();
-    const root = fixture.nativeElement as HTMLElement;
-
-    expect(root.querySelector('textarea')).not.toBeNull();
-    expect(root.querySelector('app-attachments-picker input[type="file"][multiple]')).not.toBeNull();
-    expect(root.textContent).toContain('Dołącz CV, list motywacyjny lub inne pliki (opcjonalnie)');
-  });
-
-  it('returns the note and the chosen attachments (or none) as the dialog result', () => {
-    const fixture = TestBed.createComponent(ApplyDialogComponent);
-    const dialog = fixture.componentInstance;
-
-    expect(dialog.result()).toEqual({ confirmed: true, note: '', attachments: [], profileDocumentIds: [] });
-
-    const items = [{ file: new File(['x'], 'cv.docx'), kind: AttachmentKind.Cv }];
-    dialog.note = 'Hej';
-    dialog.attachments = items;
-    expect(dialog.result()).toEqual({ confirmed: true, note: 'Hej', attachments: items, profileDocumentIds: [] });
-  });
-
-  it('collects the files chosen in the picker with their kinds', () => {
-    const fixture = TestBed.createComponent(ApplyDialogComponent);
-    fixture.detectChanges();
-    const root = fixture.nativeElement as HTMLElement;
-    const input = root.querySelector<HTMLInputElement>('input[type="file"]')!;
-    const cv = new File(['%PDF-'], 'cv.pdf');
-    const portfolio = new File(['x'], 'portfolio.png');
-
-    Object.defineProperty(input, 'files', { value: [cv, portfolio], configurable: true });
-    input.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
-
-    expect(fixture.componentInstance.result().attachments).toEqual([
-      { file: cv, kind: AttachmentKind.Cv }, { file: portfolio, kind: AttachmentKind.Other }
-    ]);
-    expect(root.querySelectorAll('.file-name').length).toBe(2);
-  });
-
-  it('offers the profile documents and counts them into the limits of the picker', () => {
-    profileDocuments = [
-      { id: 7, kind: AttachmentKind.Cv, fileName: 'cv-profil.pdf', size: 2 * 1024 * 1024, uploadedAt: '2026-01-01T10:00:00Z' }
-    ];
-    const fixture = TestBed.createComponent(ApplyDialogComponent);
-    fixture.detectChanges();
-    const root = fixture.nativeElement as HTMLElement;
-
-    expect(root.querySelector('app-profile-documents-picker legend')?.textContent).toContain('Dołącz z profilu');
-    root.querySelector<HTMLInputElement>('app-profile-documents-picker input[type="checkbox"]')!.click();
-    fixture.detectChanges();
-
-    expect(fixture.componentInstance.result().profileDocumentIds).toEqual([7]);
-    // suma limitów liczona łącznie: dokument z profilu wlicza się do licznika pickera nowych plików
-    expect(root.querySelector('app-attachments-picker .usage')?.textContent).toContain('plików: 1 z 10');
-    expect(root.querySelector('app-attachments-picker .usage')?.textContent).toContain('Wykorzystano 2 MB z 25 MB');
-  });
-
-  describe('with the attachments kept from the withdrawn application', () => {
-    function createWith(existing: ApplicationAttachment[]) {
-      TestBed.overrideProvider(MAT_DIALOG_DATA, { useValue: { existing } satisfies ApplyDialogData });
-      const fixture = TestBed.createComponent(ApplyDialogComponent);
-      fixture.detectChanges();
-      return fixture;
-    }
-
-    function choose(fixture: ReturnType<typeof createWith>, files: File[]): void {
-      const input = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('input[type="file"]')!;
-      Object.defineProperty(input, 'files', { value: files, configurable: true });
-      input.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-    }
-
-    it('does not default new files to CV when the application already has one', () => {
-      const fixture = createWith([SAVED_CV]);
-      const letter = new File(['%PDF-'], 'list.pdf');
-      const photo = new File(['x'], 'zdjecie.png');
-
-      choose(fixture, [letter, photo]);
-
-      expect(fixture.componentInstance.result().attachments).toEqual([
-        { file: letter, kind: AttachmentKind.Other }, { file: photo, kind: AttachmentKind.Other }
-      ]);
-    });
-
-    it('counts the kept attachments towards the 25 MB and 10 files limits', () => {
-      const kept = Array.from({ length: 9 }, (_, i): ApplicationAttachment => ({ ...SAVED_CV, id: 20 + i, fileName: `plik${i}.pdf`, size: 1024 * 1024 }));
-      const fixture = createWith(kept);
-      const root = fixture.nativeElement as HTMLElement;
-
-      expect(root.querySelector('.usage')?.textContent).toContain('plików: 9 z 10');
-
-      const accepted = new File(['%PDF-'], 'a.pdf');
-      choose(fixture, [accepted, new File(['%PDF-'], 'b.pdf')]);
-
-      expect(fixture.componentInstance.result().attachments.map(item => item.file)).toEqual([accepted]);
-      expect(root.querySelector('.error-line')?.textContent).toContain('b.pdf');
-    });
-
-    it('counts the kept attachments and the chosen profile documents together', () => {
-      profileDocuments = [
-        { id: 7, kind: AttachmentKind.Other, fileName: 'portfolio.pdf', size: 2 * 1024 * 1024, uploadedAt: '2026-01-01T10:00:00Z' }
-      ];
-      const fixture = createWith([SAVED_CV]);
-      const root = fixture.nativeElement as HTMLElement;
-
-      root.querySelector<HTMLInputElement>('app-profile-documents-picker input[type="checkbox"]')!.click();
-      fixture.detectChanges();
-
-      const usage = root.querySelector('app-attachments-picker .usage')?.textContent;
-      expect(usage).toContain('plików: 2 z 10');
-      expect(usage).toContain('Wykorzystano 6 MB z 25 MB');
-    });
-
-    it('blocks a profile document that would exceed the limits together with the kept attachments', () => {
-      profileDocuments = [
-        { id: 7, kind: AttachmentKind.Other, fileName: 'portfolio.pdf', size: 1024, uploadedAt: '2026-01-01T10:00:00Z' }
-      ];
-      const kept = Array.from({ length: 10 }, (_, i): ApplicationAttachment => ({ ...SAVED_CV, id: 40 + i, fileName: `plik${i}.pdf`, size: 1024 }));
-      const fixture = createWith(kept);
-
-      // picker dokumentów profilu też liczy zachowane załączniki – jedenasty plik się nie zmieści
-      const checkbox = (fixture.nativeElement as HTMLElement)
-        .querySelector<HTMLInputElement>('app-profile-documents-picker input[type="checkbox"]')!;
-      expect(checkbox.disabled).toBe(true);
-    });
-
-    it('rejects a file that would exceed 25 MB together with the kept attachments', () => {
-      const kept = Array.from({ length: 6 }, (_, i): ApplicationAttachment => ({ ...SAVED_CV, id: 30 + i, fileName: `plik${i}.pdf` }));
-      const fixture = createWith(kept);
-      const big = new File([new Uint8Array(2 * 1024 * 1024)], 'duzy.pdf');
-
-      choose(fixture, [big]);
-
-      expect(fixture.componentInstance.result().attachments).toEqual([]);
-      expect((fixture.nativeElement as HTMLElement).querySelector('.error-line')?.textContent).toContain('duzy.pdf');
+      expect(root().querySelector('app-save-job-button button')).toBeNull();
     });
   });
 });

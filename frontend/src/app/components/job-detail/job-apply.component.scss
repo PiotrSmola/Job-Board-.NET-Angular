@@ -1,0 +1,87 @@
+:host {
+  display: block;
+}
+
+// Wiersz sekcji jak na stronie oferty: tytuł po lewej (200 px), treść po prawej
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+  gap: 8px 40px;
+  padding: 28px 0 8px;
+  box-shadow: inset 0 1px 0 var(--color-hairline);
+  scroll-margin-top: 16px;
+}
+
+h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+p {
+  margin: 0;
+}
+
+.hint {
+  margin-top: 4px;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+// Rezerwacja wysokości na czas sprawdzania statusu (bez przesunięć układu)
+.placeholder {
+  min-height: 120px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.status-line,
+.withdrawn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.withdrawn {
+  color: var(--color-text-prose);
+}
+
+app-profile-documents-picker {
+  margin-bottom: 0;
+}
+
+.error {
+  min-height: 20px;
+  margin-top: -8px;
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.submit mat-spinner {
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+@media (max-width: 720px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panel {
+    padding: 20px 16px;
+  }
+}

@@ -1,175 +1,126 @@
-<div class="job-detail-container">
-  @if (loading) {
-    <div class="loading-container">
-      <mat-spinner></mat-spinner>
-    </div>
-  }
+@if (loading()) {
+  <!-- szkielet o wysokości nagłówka i faktów – wczytanie oferty nie przesuwa układu -->
+  <div class="hero" aria-hidden="true"><div class="hero-inner hero-skeleton"></div></div>
+  <div class="offer-body" aria-busy="true">
+    <div class="facts facts-skeleton"></div>
+    <p class="visually-hidden">Wczytywanie oferty…</p>
+  </div>
+} @else if (job(); as job) {
+  @let text = view()!;
+  <article class="offer" aria-labelledby="offer-title">
+    <section
+      class="hero"
+      aria-label="Nagłówek oferty"
+      [class.has-image]="hero()"
+      [style.background-image]="hero()?.image ?? null"
+      [style.background-position]="hero()?.position ?? null"
+      [style.--hero-dim]="hero()?.dim ?? null"
+      [style.--hero-dim-mid]="hero()?.dimMid ?? null">
+      <div class="hero-mask">
+        <div class="hero-inner">
+          <a class="back" routerLink="/jobs" [queryParams]="backQuery">
+            <mat-icon aria-hidden="true">arrow_back</mat-icon>
+            Wróć do wyników
+          </a>
 
-  @if (!loading && job) {
-    <div class="back-button-container">
-      <button mat-button (click)="goBack()">
-        <mat-icon>arrow_back</mat-icon>
-        Powrót do listy
-      </button>
-    </div>
-
-    <mat-card class="job-detail-card">
-      <mat-card-header>
-        <mat-card-title>{{ job.title }}</mat-card-title>
-        <mat-card-subtitle>
-          <a class="company-link" [routerLink]="['/companies', job.companyId]">{{ job.company }}</a>
-        </mat-card-subtitle>
-        <app-save-job-button class="push-end" [jobId]="job.id" [jobTitle]="job.title" />
-      </mat-card-header>
-
-      <mat-card-content>
-        @if (banner; as info) {
-          <div class="offer-banner" role="status">
-            <mat-icon>{{ info.icon }}</mat-icon>
-            <span>{{ info.text }}</span>
-          </div>
-        }
-
-        <div class="job-meta">
-          <div class="meta-item">
-            <mat-icon>location_on</mat-icon>
-            <div class="meta-content">
-              <span class="meta-label">Lokalizacja</span>
-              <span class="meta-value">{{ job.location }}</span>
+          <div class="hero-head">
+            <div class="hero-title">
+              <h1 id="offer-title">{{ job.title }}</h1>
+              <p class="hero-meta">
+                <a class="company-link" [routerLink]="['/companies', job.companyId]">{{ job.company }}</a>
+                <span> · {{ job.location }} · dodano <time [attr.datetime]="text.postedIso">{{ text.posted }}</time></span>
+              </p>
             </div>
-          </div>
-
-          <div class="meta-item">
-            <mat-icon>work</mat-icon>
-            <div class="meta-content">
-              <span class="meta-label">Typ pracy</span>
-              <span class="meta-value">{{ getWorkTypeLabel() }}</span>
-            </div>
-          </div>
-
-          @if (job.categoryName && job.categorySlug) {
-            <div class="meta-item">
-              <mat-icon>category</mat-icon>
-              <div class="meta-content">
-                <span class="meta-label">Kategoria</span>
-                <a class="meta-value category-link" routerLink="/jobs" [queryParams]="{ category: job.categorySlug }">{{ job.categoryName }}</a>
-              </div>
-            </div>
-          }
-
-          @if (seniorityLabel; as seniority) {
-            <div class="meta-item">
-              <mat-icon>trending_up</mat-icon>
-              <div class="meta-content">
-                <span class="meta-label">Poziom</span>
-                <span class="meta-value">{{ seniority }}</span>
-              </div>
-            </div>
-          }
-
-          @if (contractLabels.length > 0) {
-            <div class="meta-item">
-              <mat-icon>description</mat-icon>
-              <div class="meta-content">
-                <span class="meta-label">Typ umowy</span>
-                <span class="meta-value">{{ contractLabels.join(', ') }}</span>
-              </div>
-            </div>
-          }
-
-          <div class="meta-item">
-            <mat-icon>payments</mat-icon>
-            <div class="meta-content">
-              <span class="meta-label">Wynagrodzenie</span>
-              <span class="meta-value">{{ formatSalary() }}</span>
-            </div>
-          </div>
-
-          <div class="meta-item">
-            <mat-icon>schedule</mat-icon>
-            <div class="meta-content">
-              <span class="meta-label">Data dodania</span>
-              <span class="meta-value">{{ job.createdAt | date: 'dd.MM.yyyy' }}</span>
-            </div>
-          </div>
-
-          @if (job.expiresAt) {
-            <div class="meta-item">
-              <mat-icon>event</mat-icon>
-              <div class="meta-content">
-                <span class="meta-label">Aktualna do</span>
-                <span class="meta-value">{{ job.expiresAt | date: 'dd.MM.yyyy' }}</span>
-              </div>
-            </div>
-          }
-        </div>
-
-        @if (job.skills.length > 0) {
-          <div class="skills-section">
-            <h3>Umiejętności</h3>
-            <app-job-taxonomy [job]="job" [showMeta]="false" [skillsLimit]="null" />
-          </div>
-        }
-
-        <mat-divider class="divider"></mat-divider>
-
-        <div class="description-section">
-          <h3>Opis stanowiska</h3>
-          <p class="description">{{ job.description }}</p>
-        </div>
-      </mat-card-content>
-
-      <mat-card-actions>
-        @if (canApplyAsCandidate) {
-          @if (applicationStatusPresentation; as status) {
-            <div class="application-status">
-              <span>Twoja aplikacja:</span>
-              <app-status-chip [label]="status.label" [tone]="status.tone" />
-              <a mat-button routerLink="/my-applications">Szczegóły</a>
-            </div>
-          }
-
-          @if (hasApplied && attachmentsUploadProgress !== null) {
-            <!-- aplikacja złożona, trwa dołączanie załączników (procenty tylko wizualnie – etap ogłasza region status) -->
-            <button mat-raised-button color="accent" disabled class="attachments-upload-progress">
-              <mat-spinner diameter="20" aria-hidden="true"></mat-spinner>
-              {{ attachmentsUploadProgress >= 100 ? 'Przetwarzanie załączników…' : 'Wysyłanie załączników… ' + attachmentsUploadProgress + '%' }}
-            </button>
-          } @else if (hasApplied) {
-            <button mat-raised-button color="accent" disabled>
-              <mat-icon>check_circle</mat-icon>
-              Już aplikowałeś
-            </button>
-          } @else if (!acceptsApplications) {
-            <button mat-raised-button disabled>
-              <mat-icon>block</mat-icon>
-              Aplikowanie zamknięte
-            </button>
-          } @else {
-            <button mat-raised-button color="primary" (click)="openApplyDialog()" [disabled]="applying || checkingApplication">
-              @if (applying) {
-                <mat-spinner diameter="20"></mat-spinner>
-              } @else {
-                <ng-container>
-                  <mat-icon>{{ hasWithdrawn ? 'replay' : 'send' }}</mat-icon>
-                  {{ hasWithdrawn ? 'Aplikuj ponownie' : 'Aplikuj na to stanowisko' }}
-                </ng-container>
+            <div class="hero-actions">
+              <app-save-job-button [jobId]="job.id" [jobTitle]="job.title" />
+              @if (showApplyButton()) {
+                <button mat-flat-button type="button" (click)="goToApply()">{{ applied() ? 'Twoja aplikacja' : 'Aplikuj' }}</button>
               }
-            </button>
-          }
-        } @else if (!authService.isAuthenticated() && acceptsApplications) {
-          <button mat-raised-button color="primary" [routerLink]="['/login']" [queryParams]="{ returnUrl: '/jobs/' + job.id }">
-            <mat-icon>login</mat-icon>
-            Zaloguj się, aby aplikować
-          </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="offer-body">
+      <dl class="facts">
+        <div class="fact salary">
+          <dt>Wynagrodzenie</dt>
+          <dd>{{ text.salaryAmount }}@if (text.salaryPeriod) {<span class="period"> {{ text.salaryPeriod }}</span>}</dd>
+        </div>
+        @if (text.contracts) {
+          <div class="fact"><dt>Umowa</dt><dd>{{ text.contracts }}</dd></div>
+        }
+        @if (text.seniority) {
+          <div class="fact"><dt>Poziom</dt><dd>{{ text.seniority }}</dd></div>
+        }
+        @if (text.workMode) {
+          <div class="fact"><dt>Tryb pracy</dt><dd>{{ text.workMode }}</dd></div>
+        }
+        @if (job.categoryName && job.categorySlug) {
+          <div class="fact">
+            <dt>Kategoria</dt>
+            <dd><a class="category-link" routerLink="/jobs" [queryParams]="{ category: job.categorySlug }">{{ job.categoryName }}</a></dd>
+          </div>
+        }
+        @if (text.expires) {
+          <div class="fact"><dt>Aktualna do</dt><dd><time [attr.datetime]="text.expiresIso">{{ text.expires }}</time></dd></div>
+        }
+      </dl>
+
+      @if (banner(); as info) {
+        <div class="offer-banner warning-strip" role="status">
+          <mat-icon aria-hidden="true">{{ info.icon }}</mat-icon>
+          <span>{{ info.text }}</span>
+        </div>
+      }
+
+      <div class="sections">
+        <section class="row" aria-labelledby="description-title">
+          <h2 id="description-title">Opis stanowiska</h2>
+          <p class="prose description">{{ job.description }}</p>
+        </section>
+
+        @if (text.skills) {
+          <section class="row" aria-labelledby="skills-title">
+            <h2 id="skills-title">Technologie</h2>
+            <p class="prose skills">{{ text.skills }}</p>
+          </section>
         }
 
-        <button mat-button (click)="goBack()">
-          <mat-icon>cancel</mat-icon>
-          Anuluj
-        </button>
-        <p class="sr-only" role="status">{{ uploadAnnouncement }}</p>
-      </mat-card-actions>
-    </mat-card>
-  }
-</div>
+        <section class="row" aria-labelledby="company-title">
+          <h2 id="company-title">O firmie</h2>
+          <div>
+            @if (company()?.description; as about) {
+              <p class="prose about">{{ about }}</p>
+            }
+            <p><a class="profile-link" [routerLink]="['/companies', job.companyId]">{{ companyLinkText() }}</a></p>
+          </div>
+        </section>
+
+        <app-job-apply [job]="job" (jobStale)="reloadJob()" (appliedChange)="applied.set($event)" />
+      </div>
+
+      @if (similarCards().length > 0) {
+        <section class="similar" aria-labelledby="similar-title">
+          <h2 id="similar-title">Podobne oferty</h2>
+          <ul>
+            @for (card of similarCards(); track card.job.id) {
+              <li>
+                <a class="similar-title" [routerLink]="['/jobs', card.job.id]">{{ card.job.title }}</a>
+                <span class="muted">{{ card.job.company }} · {{ card.job.location }}</span>
+                <span class="num">{{ card.salary }}</span>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+    </div>
+  </article>
+} @else {
+  <div class="page unavailable">
+    <h1>Oferta niedostępna</h1>
+    <p class="muted" role="alert">{{ loadError() }}</p>
+    <a mat-stroked-button routerLink="/jobs">Przejdź do listy ofert</a>
+  </div>
+}
