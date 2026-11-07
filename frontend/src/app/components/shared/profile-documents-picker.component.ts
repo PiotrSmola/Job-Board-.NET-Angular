@@ -2,7 +2,6 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output, si
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatDialogModule } from '@angular/material/dialog';
 import { AccountService } from '../../services/account.service';
 import { ProfileDocument } from '../../models/account.model';
 import { ApplicationAttachment, AttachmentUploadItem } from '../../models/job-application.model';
@@ -14,7 +13,7 @@ import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-err
 let nextId = 0;
 
 /**
- * „Dołącz z profilu” – checkboxy dokumentów z profilu kandydata (np. domyślne CV) w dialogu aplikowania.
+ * „Dołącz z profilu” – checkboxy dokumentów z profilu kandydata (np. domyślne CV) w sekcji aplikowania na stronie oferty.
  * Limity aplikacji (10 plików, 25 MB) liczone są łącznie z plikami wybranymi w pickerze (`pendingItems`)
  * i załącznikami już dołączonymi (`existing`). Dokument, który by je przekroczył, jest zablokowany z wyjaśnieniem.
  * Dokumenty wczytuje sam przy utworzeniu; zniszczenie przerywa żądanie.
@@ -23,7 +22,7 @@ let nextId = 0;
   selector: 'app-profile-documents-picker',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatCheckboxModule, MatDialogModule, RouterLink],
+  imports: [MatCheckboxModule, RouterLink],
   template: `
     <fieldset class="profile-documents" [attr.aria-describedby]="hintId">
       <legend>Dołącz z profilu</legend>
@@ -54,7 +53,8 @@ let nextId = 0;
             } @else {
               <p class="hint">
                 Nie masz jeszcze dokumentów w profilu. Możesz je dodać w
-                <a routerLink="/account" [queryParams]="{ tab: 'documents' }" mat-dialog-close>Moim koncie</a>.
+                <!-- nowa karta – przejście na konto nie porzuca wypełnianej aplikacji -->
+                <a routerLink="/account" [queryParams]="{ tab: 'documents' }" target="_blank" rel="noopener">Moim koncie<span class="visually-hidden"> (otwiera się w nowej karcie)</span></a>.
               </p>
             }
           }

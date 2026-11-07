@@ -122,6 +122,10 @@ describe('ProfileDocumentsPickerComponent', () => {
 
     const link = root().querySelector<HTMLAnchorElement>('a[href]');
     expect(link?.getAttribute('href')).toBe('/account?tab=documents');
+    // nowa karta – wypełniana aplikacja na stronie oferty zostaje
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener');
+    expect(link?.textContent).toContain('(otwiera się w nowej karcie)');
     expect(root().textContent).toContain('Nie masz jeszcze dokumentów w profilu');
   });
 
