@@ -1,136 +1,676 @@
+@use 'sass:map';
 @use '@angular/material' as mat;
 
-$dark-theme: mat.define-theme((
-  color: (
-    theme-type: dark,
-    primary: mat.$cyan-palette,
-    tertiary: mat.$violet-palette,
-  ),
-  density: (
-    scale: 0
-  )
-));
+// Globalne style aplikacji: fonty lokalne, tokeny projektu, motyw Angular Material i klasy pomocnicze.
+// Opis użycia: docs/CONTINUE-ui-refresh.md, sekcja „Foundation – how to use”.
 
-html {
-  @include mat.all-component-themes($dark-theme);
+// ---------------------------------------------------------------------------------------------------
+// Fonty – pliki woff2 w public/fonts (bez CDN). Roboto 400/500/700 w podzbiorach latin + latin-ext.
+// ---------------------------------------------------------------------------------------------------
+
+$latin-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+  U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+$latin-ext-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+  U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+
+@each $weight in (400, 500, 700) {
+  @each $subset, $range in (latin-ext: $latin-ext-range, latin: $latin-range) {
+    @font-face {
+      font-family: 'Roboto';
+      font-style: normal;
+      font-weight: $weight;
+      font-display: swap;
+      src: url('/fonts/roboto-#{$subset}-#{$weight}-normal.woff2') format('woff2');
+      unicode-range: $range;
+    }
+  }
 }
+
+// Ikony: ligatury Material Icons (domyślny zestaw MatIcon). `block` zamiast `swap` – przed wczytaniem fontu
+// nie pokazujemy nazw ligatur („favorite_border”) jako tekstu.
+@font-face {
+  font-family: 'Material Icons';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/material-icons.woff2') format('woff2');
+}
+
+.material-icons {
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'liga';
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Tokeny projektu (jedyne źródło kolorów, kształtów i rozmiarów – komponenty używają var(--…))
+// ---------------------------------------------------------------------------------------------------
 
 :root {
-  --bg-color: #0a0a0a;
-  --surface-color: #161616;
-  --surface-hover: #1f1f1f;
-  --primary-color: #00e5ff;
-  --primary-glow: rgba(0, 229, 255, 0.3);
-  --secondary-color: #e040fb;
-  --secondary-glow: rgba(224, 64, 251, 0.3);
-  --text-primary: #ffffff;
-  --text-secondary: #b0b0b0;
-  --border-color: #333333;
-  --success-color: #00e676;
-  --error-color: #ff1744;
+  // powierzchnie
+  --color-bg: #121417;
+  --color-topbar: #16191d;
+  --color-surface: #1b1e23;
+  --color-raised: #20242a;
+  --color-selected: #262a30;
+  --color-input-bg: #16191d;
+  // ramka pól formularzy: makieta ma #3d434b, ale WCAG 1.4.11 wymaga ≥ 3:1 względem tła – #6b727b ma 3.2–3.8:1
+  --color-input-border: #6b727b;
+  --color-outline-button: #4a5058;
+  --color-hairline: #22262b;
+  --color-avatar: #2b3036;
+
+  // tekst (kontrast ≥ 4.5:1 na wszystkich powierzchniach, także #262a30)
+  --color-text: #e9ebee;
+  --color-text-prose: #d4d8dd;
+  --color-text-secondary: #a7adb5;
+  --color-text-tertiary: #8b929b;
+
+  // jeden akcent
+  --color-accent: #5fd4e6;
+  --color-accent-hover: #8fe3ef;
+  --color-on-accent: #0d1b1e;
+
+  // statusy (zawsze kropka + etykieta, nigdy sam kolor)
+  --status-submitted: #8fb3ff;
+  --status-review: #e3b15a;
+  --status-interview: #5fd4e6;
+  --status-offered: #8fd18f;
+  --status-hired: #6fcf97;
+  --status-rejected: #f28b82;
+  --status-neutral: #8b929b;
+
+  --color-danger: #f2a39c;
+  --color-danger-strong: #f28b82;
+  --color-on-danger: #2a0f0d;
+  --color-warning-bg: #2a2417;
+  --color-warning-text: #f3dfb5;
+  --color-warning-icon: #e3b15a;
+  --color-success: #8fd18f;
+
+  // typografia
+  --font-family: Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-size-sm: 13px;
+  --font-size-body: 14px;
+  --font-size-lg: 16px;
+  --font-size-h1: 28px;
+  --font-size-h2: 18px;
+  --line-height-body: 1.5;
+
+  // kształty i odstępy
+  --radius-card: 12px;
+  --radius-block: 16px;
+  --radius-dialog: 20px;
+  --radius-input: 8px;
+  --radius-button: 20px;
+  --page-max-width: 1120px;
+  --page-gutter: 24px;
+  --header-height: 72px;
+  --focus-ring: 2px solid var(--color-accent);
+
+  // Stare nazwy (sprzed odświeżenia) – aliasy do nowych tokenów, żeby nieprzebudowane widoki miały jeden akcent
+  // i nowe kolory. DEPRECATED: przy przebudowie widoku zamień na tokeny powyżej; usunąć, gdy nic ich nie używa.
+  --bg-color: var(--color-bg);
+  --surface-color: var(--color-surface);
+  --surface-hover: var(--color-raised);
+  --primary-color: var(--color-accent);
+  --primary-glow: transparent;
+  --secondary-color: var(--color-accent);
+  --secondary-glow: transparent;
+  --text-primary: var(--color-text);
+  --text-secondary: var(--color-text-secondary);
+  --border-color: var(--color-hairline);
+  --success-color: var(--color-success);
+  --error-color: var(--color-danger);
+
+  @media (max-width: 600px) {
+    --page-gutter: 16px;
+  }
 }
 
-body {
-  background-color: var(--bg-color);
-  color: var(--text-primary);
-  font-family: 'Roboto', sans-serif;
-  margin: 0;
-  min-height: 100vh;
+// ---------------------------------------------------------------------------------------------------
+// Motyw Angular Material: tylko tokeny systemowe (--mat-sys-*) + nadpisania komponentów.
+// Komponenty mają w swoich stylach wartości awaryjne z --mat-sys-*, więc all-component-themes jest zbędne.
+// ---------------------------------------------------------------------------------------------------
+
+// litery bez rozstrzelenia we wszystkich stylach typograficznych M3
+$no-tracking: ();
+@each $scale in (display, headline, title, body, label) {
+  @each $size in (large, medium, small) {
+    $no-tracking: map.set($no-tracking, '#{$scale}-#{$size}-tracking', 0);
+  }
 }
 
-.mat-mdc-card {
-  background-color: var(--surface-color) !important;
-  border: 1px solid var(--border-color);
-  border-radius: 12px !important;
+html {
+  color-scheme: dark;
+
+  @include mat.theme((
+    color: (
+      theme-type: dark,
+      primary: mat.$cyan-palette,
+      tertiary: mat.$cyan-palette,
+    ),
+    typography: (
+      plain-family: (Roboto, system-ui, sans-serif),
+      brand-family: (Roboto, system-ui, sans-serif),
+      bold-weight: 700,
+      medium-weight: 500,
+      regular-weight: 400,
+    ),
+    density: 0,
+  ));
+
+  @include mat.theme-overrides(map.merge($no-tracking, (
+    primary: var(--color-accent),
+    on-primary: var(--color-on-accent),
+    primary-container: var(--color-selected),
+    on-primary-container: var(--color-text),
+    secondary: var(--color-text-secondary),
+    on-secondary: var(--color-bg),
+    secondary-container: var(--color-selected),
+    on-secondary-container: var(--color-text),
+    tertiary: var(--color-accent),
+    on-tertiary: var(--color-on-accent),
+    tertiary-container: var(--color-selected),
+    on-tertiary-container: var(--color-text),
+    background: var(--color-bg),
+    on-background: var(--color-text),
+    surface: var(--color-bg),
+    surface-dim: var(--color-bg),
+    surface-bright: var(--color-selected),
+    on-surface: var(--color-text),
+    on-surface-variant: var(--color-text-secondary),
+    surface-variant: var(--color-selected),
+    surface-container-lowest: var(--color-bg),
+    surface-container-low: var(--color-topbar),
+    surface-container: var(--color-surface),
+    surface-container-high: var(--color-raised),
+    surface-container-highest: var(--color-selected),
+    outline: var(--color-input-border),
+    outline-variant: var(--color-hairline),
+    error: var(--color-danger),
+    on-error: var(--color-on-danger),
+    error-container: #3a1d1b,
+    on-error-container: var(--color-danger),
+    inverse-surface: var(--color-text),
+    inverse-on-surface: var(--color-bg),
+    inverse-primary: #00687a,
+  )));
+
+  // przyciski: wypełniony = akcent bez cienia, obrysowany = cienka ramka, tekstowy = akcent; wysokość 40, promień 20
+  @include mat.button-overrides((
+    filled-container-color: var(--color-accent),
+    filled-label-text-color: var(--color-on-accent),
+    filled-horizontal-padding: 20px,
+    protected-container-color: var(--color-accent),
+    protected-label-text-color: var(--color-on-accent),
+    protected-container-elevation-shadow: none,
+    protected-hover-container-elevation-shadow: none,
+    protected-focus-container-elevation-shadow: none,
+    protected-pressed-container-elevation-shadow: none,
+    protected-disabled-container-elevation-shadow: none,
+    protected-horizontal-padding: 20px,
+    outlined-outline-color: var(--color-outline-button),
+    outlined-label-text-color: var(--color-text),
+    outlined-horizontal-padding: 20px,
+    text-label-text-color: var(--color-accent),
+    text-horizontal-padding: 12px,
+    tonal-container-color: var(--color-selected),
+    tonal-label-text-color: var(--color-text),
+  ));
+
+  @include mat.icon-button-overrides((
+    icon-color: var(--color-text-secondary),
+  ));
+
+  // pola: wysokość 44, promień 8, tło --color-input-bg (patrz niżej), fokus = akcent
+  @include mat.form-field-overrides((
+    container-height: 44px,
+    container-vertical-padding: 10px,
+    outlined-container-shape: var(--radius-input),
+    outlined-outline-color: var(--color-input-border),
+    outlined-hover-outline-color: var(--color-text-secondary),
+    outlined-focus-outline-color: var(--color-accent),
+    outlined-label-text-color: var(--color-text-secondary),
+    outlined-hover-label-text-color: var(--color-text),
+    outlined-focus-label-text-color: var(--color-accent),
+    outlined-input-text-color: var(--color-text),
+    outlined-input-text-placeholder-color: var(--color-text-tertiary),
+    error-text-color: var(--color-danger),
+  ));
+
+  // karty: samo wypełnienie, bez ramek i cieni
+  @include mat.card-overrides((
+    elevated-container-color: var(--color-surface),
+    elevated-container-elevation: none,
+    elevated-container-shape: var(--radius-card),
+    outlined-container-color: var(--color-surface),
+    outlined-outline-width: 0,
+    outlined-container-shape: var(--radius-card),
+    filled-container-color: var(--color-surface),
+    filled-container-shape: var(--radius-card),
+    subtitle-text-color: var(--color-text-secondary),
+  ));
+
+  @include mat.tabs-overrides((
+    container-height: 48px,
+    divider-color: #2a2e34,
+    divider-height: 1px,
+    active-indicator-color: var(--color-accent),
+    active-indicator-height: 2px,
+    active-label-text-color: var(--color-text),
+    active-hover-label-text-color: var(--color-text),
+    active-focus-label-text-color: var(--color-text),
+    active-hover-indicator-color: var(--color-accent),
+    active-focus-indicator-color: var(--color-accent),
+    inactive-label-text-color: var(--color-text-secondary),
+    inactive-hover-label-text-color: var(--color-text),
+    inactive-focus-label-text-color: var(--color-text),
+    label-text-weight: 500,
+  ));
+
+  // tabele: przezroczyste (leżą na karcie/tle), nagłówek w kolorze trzeciorzędnym, wiersze oddzielone linią włosową
+  @include mat.table-overrides((
+    background-color: transparent,
+    header-headline-color: var(--color-text-tertiary),
+    header-headline-size: var(--font-size-sm),
+    header-headline-weight: 500,
+    row-item-label-text-color: var(--color-text),
+    row-item-outline-color: var(--color-hairline),
+  ));
+
+  @include mat.dialog-overrides((
+    container-color: var(--color-raised),
+    container-shape: var(--radius-dialog),
+    container-elevation-shadow: none,
+    subhead-color: var(--color-text),
+    supporting-text-color: var(--color-text-prose),
+  ));
+
+  @include mat.menu-overrides((
+    container-color: var(--color-raised),
+    container-shape: var(--radius-input),
+    item-label-text-color: var(--color-text),
+    item-icon-color: var(--color-text-secondary),
+    divider-color: var(--color-hairline),
+  ));
+
+  @include mat.select-overrides((
+    panel-background-color: var(--color-raised),
+    enabled-trigger-text-color: var(--color-text),
+    placeholder-text-color: var(--color-text-tertiary),
+    enabled-arrow-color: var(--color-text-secondary),
+  ));
+
+  @include mat.autocomplete-overrides((
+    background-color: var(--color-raised),
+  ));
+
+  @include mat.snack-bar-overrides((
+    container-color: var(--color-selected),
+    supporting-text-color: var(--color-text),
+    button-color: var(--color-accent),
+    container-shape: var(--radius-input),
+  ));
+
+  @include mat.tooltip-overrides((
+    container-color: var(--color-selected),
+    supporting-text-color: var(--color-text),
+  ));
+
+  @include mat.paginator-overrides((
+    container-background-color: transparent,
+    container-text-color: var(--color-text-secondary),
+    enabled-icon-color: var(--color-text-secondary),
+  ));
+
+  // chipy (np. umiejętności w formularzach): płaskie wypełnienie zamiast obrysowanej „pigułki”
+  @include mat.chips-overrides((
+    container-shape-radius: var(--radius-input),
+    outline-width: 0,
+    elevated-container-color: var(--color-selected),
+    label-text-color: var(--color-text),
+    with-trailing-icon-trailing-icon-color: var(--color-text-secondary),
+  ));
+
+  @include mat.datepicker-overrides((
+    calendar-container-background-color: var(--color-raised),
+    calendar-container-shape: var(--radius-block),
+    calendar-container-elevation-shadow: none,
+    calendar-date-selected-state-background-color: var(--color-accent),
+    calendar-date-selected-state-text-color: var(--color-on-accent),
+    calendar-date-today-outline-color: var(--color-accent),
+    calendar-date-in-range-state-background-color: var(--color-selected),
+  ));
+
+  @include mat.button-toggle-overrides((
+    shape: var(--radius-button),
+    selected-state-background-color: #2e343b,
+    selected-state-text-color: var(--color-text),
+    text-color: var(--color-text-secondary),
+    background-color: var(--color-input-bg),
+    divider-color: transparent,
+  ));
 }
 
-.mat-mdc-button.mat-primary {
-  --mdc-text-button-label-text-color: var(--primary-color);
+// Kolor „warn” (akcje niszczące) – w M3 atrybut color nie zmienia koloru, więc mapujemy klasę .mat-warn.
+// `color="accent"` celowo wygląda jak primary (jeden akcent).
+.mat-mdc-button-base.mat-warn {
+  --mat-button-text-label-text-color: var(--color-danger);
+  --mat-button-outlined-label-text-color: var(--color-danger);
+  --mat-button-protected-container-color: var(--color-danger-strong);
+  --mat-button-protected-label-text-color: var(--color-on-danger);
+  --mat-button-filled-container-color: var(--color-danger-strong);
+  --mat-button-filled-label-text-color: var(--color-on-danger);
+  --mat-icon-button-icon-color: var(--color-danger);
 }
 
-.mat-mdc-raised-button.mat-primary {
-  --mdc-protected-button-container-color: var(--primary-color);
-  --mdc-protected-button-label-text-color: #000;
-  font-weight: bold;
-  box-shadow: 0 0 15px var(--primary-glow);
+// Tło pól (makieta: #16191d) – token Material istnieje tylko dla wariantu filled
+.mat-mdc-form-field.mat-form-field-appearance-outline .mat-mdc-text-field-wrapper {
+  background-color: var(--color-input-bg);
+  border-radius: var(--radius-input);
 }
 
-.mdc-button__label{
+// Ikona i tekst obok siebie w etykiecie przycisku (np. spinner + tekst)
+.mdc-button__label {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.mat-mdc-raised-button.mat-accent {
-  --mdc-protected-button-container-color: var(--secondary-color);
-  --mdc-protected-button-label-text-color: #fff;
-  font-weight: bold;
-  box-shadow: 0 0 15px var(--secondary-glow);
-}
-
-.mat-mdc-dialog-content{
+// Pierwsze pole w dialogu – miejsce na unoszącą się etykietę
+.mat-mdc-dialog-content {
   padding-top: 10px !important;
 }
 
-h1, h2, h3, h4, h5, h6 {
+// ---------------------------------------------------------------------------------------------------
+// Elementy bazowe
+// ---------------------------------------------------------------------------------------------------
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   margin: 0;
   font-weight: 500;
-  color: var(--text-primary);
+  line-height: 1.3;
+  color: var(--color-text);
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+}
+
+h3 {
+  font-size: var(--font-size-lg);
+}
+
+p {
+  margin: 0;
 }
 
 a {
-  color: var(--primary-color);
+  color: var(--color-accent);
   text-decoration: none;
-  transition: color 0.2s;
 
   &:hover {
-    color: var(--secondary-color);
+    color: var(--color-accent-hover);
   }
 }
 
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
+img,
+svg,
+video {
+  max-width: 100%;
+}
+
+// Widoczny fokus z klawiatury dla wszystkiego (niska specyficzność – komponenty mogą doprecyzować)
+:where(:focus-visible) {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+// Pole formularza Material sygnalizuje fokus własną, grubszą ramką – bez podwójnego obrysu
+:where(.mat-mdc-form-field-infix) :focus-visible,
+:where(.mat-mdc-form-field-infix) .mat-mdc-select:focus-visible {
+  outline: none;
+}
+
+// Cel fokusu po nawigacji / „Przejdź do treści” – kontener, nie kontrolka
+:where(main[tabindex='-1']):focus {
+  outline: none;
+}
+
+::selection {
+  background: rgba(95, 212, 230, 0.35);
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-color);
+  background: var(--color-bg);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 4px;
+  background: #3a4048;
+  border-radius: 5px;
 
   &:hover {
-    background: #444;
+    background: #4a5058;
   }
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+// Ograniczenie ruchu – bez animacji i przejść (wskaźniki postępu zostają, bo informują o trwającej akcji)
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *:not(.mat-mdc-progress-spinner *, .mat-mdc-progress-bar *),
+  *:not(.mat-mdc-progress-spinner *, .mat-mdc-progress-bar *)::before,
+  *:not(.mat-mdc-progress-spinner *, .mat-mdc-progress-bar *)::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
-.fade-in {
-  animation: fadeIn 0.4s ease-out forwards;
+// ---------------------------------------------------------------------------------------------------
+// Klasy pomocnicze (minimalny zestaw – opis w docs/CONTINUE-ui-refresh.md)
+// ---------------------------------------------------------------------------------------------------
+
+// Ukryte wizualnie, dostępne dla czytników ekranu (zamiast display:none dla etykiet)
+.visually-hidden,
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+// Link „Przejdź do treści” – widoczny dopiero po fokusie z klawiatury
+.skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1100;
+  padding: 10px 16px;
+  border-radius: var(--radius-input);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: 500;
+  transform: translateY(-200%);
+
+  &:focus,
+  &:focus-visible {
+    transform: none;
+    color: var(--color-on-accent);
+    outline-color: var(--color-text);
+  }
+}
+
+// Kontener strony: szerokość 1120 px, marginesy boczne, odstęp od paska
+.page {
+  width: 100%;
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: 40px var(--page-gutter) 64px;
+}
+
+// Nagłówek strony: h1 + opcjonalny podtytuł (.page-subtitle) i akcje (.page-actions) po prawej
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 24px;
+  margin-bottom: 24px;
+
+  > :first-child {
+    flex: 1 1 320px;
+    min-width: 0;
+  }
+}
+
+.page-subtitle {
+  margin: 6px 0 0;
+  color: var(--color-text-secondary);
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+// Karta / sekcja: samo wypełnienie (bez ramki), promień 12; .block – większy blok (promień 16)
+.surface {
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  padding: 20px 24px;
+}
+
+.block {
+  background: var(--color-surface);
+  border-radius: var(--radius-block);
+  padding: 28px;
+
+  @media (max-width: 600px) {
+    padding: 20px;
+  }
+}
+
+// Karta-link (cała karta klikalna, np. oferta na liście) – podświetlenie po najechaniu
+.surface-interactive:hover,
+.surface-interactive:focus-within {
+  background: var(--color-raised);
+}
+
+// Tytuł sekcji wewnątrz strony/karty
+.section-title {
+  margin: 0 0 12px;
+  font-size: var(--font-size-h2);
+  font-weight: 500;
+}
+
+// Kolory tekstu
+.muted {
+  color: var(--color-text-secondary);
+}
+
+.tertiary {
+  color: var(--color-text-tertiary);
+}
+
+.small {
+  font-size: var(--font-size-sm);
+}
+
+.danger-text {
+  color: var(--color-danger);
+}
+
+// Liczby w tabelach i kafelkach – cyfry o stałej szerokości (w komórce tabeli także do prawej)
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+td.num,
+th.num {
+  text-align: right;
+}
+
+// Link w tekście ciągłym – podkreślony (sam kolor nie odróżnia go od tekstu, WCAG 1.4.1)
+.text-link {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+// Pasek ostrzeżenia (spokojny, bez ramki), np. niepotwierdzony e-mail
+.warning-strip {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  border-radius: var(--radius-card);
+  padding: 12px 16px;
+}
+
+// Starsze pomocnicze (używane w widokach)
+.container {
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: 24px var(--page-gutter);
 }
 
 .full-width {
   width: 100%;
 }
-
-.text-center {
-  text-align: center;
-}
-
-.mt-1 { margin-top: 8px; }
-.mt-2 { margin-top: 16px; }
-.mt-3 { margin-top: 24px; }
-.mb-1 { margin-bottom: 8px; }
-.mb-2 { margin-bottom: 16px; }
-.mb-3 { margin-bottom: 24px; }
