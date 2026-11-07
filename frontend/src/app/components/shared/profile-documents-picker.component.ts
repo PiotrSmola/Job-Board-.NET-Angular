@@ -65,14 +65,15 @@ let nextId = 0;
   `,
   styles: [`
     :host { display: block; margin-bottom: 12px; }
-    .profile-documents { border: 1px solid var(--border-color, #333); border-radius: 8px; padding: 8px 12px; margin: 0; }
-    legend { padding: 0 4px; font-weight: 500; }
+    /* fieldset bez ramki – grupę wyznacza legenda (jak filtry w makiecie) */
+    .profile-documents { border: 0; padding: 0; margin: 0; min-width: 0; }
+    legend { padding: 0; margin-bottom: 6px; font-weight: 500; }
     .body { min-height: 40px; }
     .documents { list-style: none; margin: 0; padding: 0; }
-    .meta, .hint { color: var(--text-secondary, #b0b0b0); font-size: 0.85rem; }
+    .meta, .hint { color: var(--color-text-tertiary, #8b929b); font-size: var(--font-size-sm, 13px); }
     .hint { margin: 4px 0; }
-    .hint a { color: var(--primary-color, #00e5ff); }
-    .error { color: #ff8a80; font-size: 0.85rem; margin: 4px 0; }
+    .hint a { color: var(--color-accent, #5fd4e6); text-decoration: underline; text-underline-offset: 2px; }
+    .error { color: var(--color-danger, #f2a39c); font-size: var(--font-size-sm, 13px); margin: 4px 0; }
   `]
 })
 export class ProfileDocumentsPickerComponent {

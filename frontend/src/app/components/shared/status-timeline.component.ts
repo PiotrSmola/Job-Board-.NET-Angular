@@ -4,7 +4,10 @@ import { ApplicationStatusHistoryEntry } from '../../models/job-application.mode
 import { getApplicationStatusPresentation } from '../../utils/status-labels';
 import { StatusChipComponent } from './status-chip.component';
 
-/** Oś czasu historii aplikacji (chronologicznie, najstarszy wpis na górze). */
+/**
+ * Oś czasu historii aplikacji (chronologicznie, najstarszy wpis na górze): data w lewej kolumnie,
+ * po prawej status (kropka + etykieta), komentarz i autor zmiany.
+ */
 @Component({
   selector: 'app-status-timeline',
   standalone: true,
@@ -16,76 +19,78 @@ import { StatusChipComponent } from './status-chip.component';
       <ol class="timeline">
         @for (entry of entries(); track $index) {
           <li class="entry">
-            <div class="header">
-              <app-status-chip [label]="entry.presentation.label" [tone]="entry.presentation.tone" />
-              <time class="date">{{ entry.changedAt | date: 'dd.MM.yyyy HH:mm' }}</time>
-              @if (entry.isNote) {
-                <span class="kind">notatka</span>
+            <time class="date" [attr.datetime]="entry.changedAt">{{ entry.changedAt | date: 'dd.MM.yyyy HH:mm' }}</time>
+            <div class="body">
+              <div class="header">
+                <app-status-chip [label]="entry.presentation.label" [tone]="entry.presentation.tone" />
+                @if (entry.isNote) {
+                  <span class="kind">notatka</span>
+                }
+              </div>
+              @if (entry.comment) {
+                <p class="comment">{{ entry.comment }}</p>
+              }
+              @if (entry.changedBy) {
+                <p class="author">{{ entry.changedBy }}</p>
               }
             </div>
-            @if (entry.comment) {
-              <p class="comment">{{ entry.comment }}</p>
-            }
-            @if (entry.changedBy) {
-              <p class="author">{{ entry.changedBy }}</p>
-            }
           </li>
         }
       </ol>
     }
   `,
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [`
     .timeline {
       list-style: none;
       margin: 0;
-      padding: 0 0 0 16px;
-      border-left: 2px solid var(--border-color, #333);
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
     }
 
     .entry {
-      position: relative;
-      padding: 0 0 16px 16px;
+      display: grid;
+      grid-template-columns: minmax(0, 120px) minmax(0, 1fr);
+      gap: 4px 12px;
+    }
 
-      &::before {
-        content: '';
-        position: absolute;
-        left: -23px;
-        top: 6px;
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background-color: var(--primary-color, #00e5ff);
-      }
-
-      &:last-child { padding-bottom: 0; }
+    .date {
+      color: var(--color-text-tertiary, #8b929b);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.4;
     }
 
     .header {
       display: flex;
       align-items: center;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 4px 8px;
     }
 
-    .date, .kind, .author {
-      color: var(--text-secondary, #b0b0b0);
-      font-size: 0.85rem;
+    .kind, .author {
+      color: var(--color-text-tertiary, #8b929b);
+      font-size: var(--font-size-sm, 13px);
     }
-
-    .kind { font-style: italic; }
 
     .comment {
-      margin: 6px 0 0;
+      margin: 4px 0 0;
       white-space: pre-wrap;
-      color: var(--text-primary, #fff);
+      overflow-wrap: anywhere;
+      color: var(--color-text-prose, #d4d8dd);
     }
 
-    .author { margin: 4px 0 0; }
+    .author { margin: 2px 0 0; }
 
     .empty {
       margin: 0;
-      color: var(--text-secondary, #b0b0b0);
+      color: var(--color-text-secondary, #a7adb5);
+    }
+
+    /* wąsko: data nad wpisem */
+    @media (max-width: 480px) {
+      .entry { grid-template-columns: minmax(0, 1fr); }
     }
   `]
 })

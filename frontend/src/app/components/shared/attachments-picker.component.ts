@@ -102,32 +102,35 @@ let nextId = 0;
   styles: [`
     :host { display: block; }
     .files { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-    .file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 4px 4px 4px 12px;
-      border: 1px solid var(--border-color, #333); border-radius: 8px; }
-    .file > mat-icon { color: var(--primary-color, #00e5ff); flex-shrink: 0; }
+    /* pozycja = wypełnienie bez ramki (tło o stopień jaśniejsze niż karta/dialog) */
+    .file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 6px 4px 6px 12px;
+      background: var(--color-selected, #262a30); border-radius: var(--radius-input, 8px); }
+    .file > mat-icon { color: var(--color-text-secondary, #a7adb5); flex-shrink: 0; }
     .info { display: flex; flex-direction: column; min-width: 0; flex: 1 1 160px; }
     .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .file-size, .hint, .progress-text, .usage, .kind label { color: var(--text-secondary, #b0b0b0); font-size: 0.85rem; }
+    .file-size, .hint, .progress-text, .usage, .kind label { color: var(--color-text-secondary, #a7adb5); font-size: var(--font-size-sm, 13px); }
     .kind { display: flex; align-items: center; gap: 6px; }
-    /* ramka #8a8a8a – kontrast ≥ 3:1 z tłem dialogu (WCAG 1.4.11) */
-    .kind-select { color-scheme: dark; background: #1e1e1e; color: inherit; font: inherit; padding: 6px 8px;
-      border: 1px solid #8a8a8a; border-radius: 4px; min-height: 36px; }
-    .kind-select:focus-visible { outline: 3px solid var(--primary-color, #00e5ff); outline-offset: 1px; }
+    /* ramka --color-input-border – kontrast ≥ 3:1 z tłem (WCAG 1.4.11) */
+    .kind-select { color-scheme: dark; background: var(--color-input-bg, #16191d); color: inherit; font: inherit; padding: 6px 8px;
+      border: 1px solid var(--color-input-border, #6b727b); border-radius: var(--radius-input, 8px); min-height: 36px; }
+    .kind-select:focus-visible { outline: 2px solid var(--color-accent, #5fd4e6); outline-offset: 2px; }
 
     /* ukryte wizualnie, ale fokusowalne i ogłaszane przez czytniki ekranu */
     .file-input, .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
       clip-path: inset(50%); white-space: nowrap; border: 0; }
-    .choose-button { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 20px; cursor: pointer;
-      border: 1px solid var(--primary-color, #00e5ff); color: var(--primary-color, #00e5ff); font-weight: 500; }
-    .choose-button:hover { background-color: rgba(0, 229, 255, 0.08); }
-    .file-input:focus-visible + .choose-button { outline: 3px solid var(--primary-color, #00e5ff); outline-offset: 2px; }
+    /* wygląd przycisku obrysowanego (mat-stroked-button): wysokość 40, promień 20, cienka ramka */
+    .choose-button { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 20px;
+      border-radius: var(--radius-button, 20px); cursor: pointer; box-shadow: inset 0 0 0 1px var(--color-outline-button, #4a5058);
+      color: var(--color-text, #e9ebee); font-weight: 500; }
+    .choose-button mat-icon { color: var(--color-text-secondary, #a7adb5); }
+    .choose-button:hover { background-color: var(--color-selected, #262a30); }
+    .file-input:focus-visible + .choose-button { outline: 2px solid var(--color-accent, #5fd4e6); outline-offset: 2px; }
     .choose-button.disabled { opacity: 0.5; cursor: default; pointer-events: none; }
 
     .usage { margin: 6px 0 0; }
     .status { min-height: 44px; margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
     .hint { margin: 0; }
-    /* jaśniejszy czerwony niż --error-color – kontrast ≥ 4.5:1 na ciemnym tle */
-    .error { display: flex; align-items: flex-start; gap: 6px; color: #ff8a80; font-size: 0.85rem; }
+    .error { display: flex; align-items: flex-start; gap: 6px; color: var(--color-danger, #f2a39c); font-size: var(--font-size-sm, 13px); }
     .error mat-icon { font-size: 18px; width: 18px; height: 18px; flex-shrink: 0; }
     .error-line { display: block; overflow-wrap: anywhere; }
   `]

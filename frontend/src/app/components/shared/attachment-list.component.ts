@@ -88,10 +88,13 @@ const ALREADY_DELETED_MESSAGES = ['Attachment not found', 'Document not found'];
     .download-button { max-width: 100%; justify-content: flex-start; }
     .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .delete-button { grid-column: 2; grid-row: 1 / span 2; }
-    /* #b0b0b0 na #1e1e1e – kontrast ok. 9:1 (WCAG AA) */
-    .meta, .empty { color: var(--text-secondary, #b0b0b0); font-size: 0.8rem; }
+    /* nazwa pliku w kolorze tekstu, ikona pobierania jako wskazówka akcji */
+    .download-button { --mat-button-text-label-text-color: var(--color-text, #e9ebee); }
+    .download-button mat-icon { color: var(--color-text-secondary, #a7adb5); }
+    /* #8b929b – kontrast ≥ 4.5:1 na wszystkich powierzchniach (także dialog #20242a) */
+    .meta, .empty { color: var(--color-text-tertiary, #8b929b); font-size: var(--font-size-sm, 13px); }
     .meta { padding-left: 12px; }
-    .error { color: #ff8a80; font-size: 0.85rem; margin: 4px 0 0; overflow-wrap: anywhere; }
+    .error { color: var(--color-danger, #f2a39c); font-size: var(--font-size-sm, 13px); margin: 4px 0 0; overflow-wrap: anywhere; }
   `]
 })
 export class AttachmentListComponent implements AfterViewChecked {
