@@ -306,7 +306,7 @@ The project runs locally only, but the backend and nginx are hardened as if the 
 - **View statistics are a popularity metric, not an audit log** - anonymous visitors that share an IP and a User-Agent count as one visitor per day, and a client that varies its User-Agent can inflate the counter.
 - **`423` with the correct password** reveals the lockout to whoever knows the password. Account enumeration is gone, but during the lockout the response still tells a correct password from a wrong one, so guessing the password of a locked account is limited by the per-IP limit (10 attempts per minute), not by the lockout itself.
 - **No `limit_req` in nginx** - the backend enforces the per-IP limits with a uniform JSON `429` and `Retry-After`; a second limit in nginx would answer with an HTML page without `Retry-After`.
-- **Google Fonts** - the browser downloads fonts from `fonts.gstatic.com` (the build inlines the font CSS into `index.html`), so the CSP allows `fonts.googleapis.com` and `fonts.gstatic.com`. A later clean-up will bundle the fonts and drop these sources.
+- **Self-hosted fonts** - Roboto (400/500/700, Latin and Latin Extended subsets) and Material Icons are served from the app's own origin (`frontend/public/fonts`, WOFF2; `font-display: swap` for Roboto, `block` for the icon font so ligature names never flash as text), and only the two most common Roboto weights are preloaded. The icon font is the complete set (about 125 kB, cached by the browser) - subsetting it would need a build step outside the Angular CLI. The frontend no longer needs the `fonts.googleapis.com` and `fonts.gstatic.com` sources in the CSP.
 - **`ALLOW_SEED_REFRESH=true` by default in Docker** - a convenient demo reset. Whoever takes over an admin account (e.g. the old `Admin123!` password in a database created before `ADMIN_PASSWORD`, a stolen token, an XSS flaw) can delete all users, companies, offers, applications and files with a single `POST /api/admin/refresh-seed`, after which the demo accounts with public passwords exist again. With your own data set `ALLOW_SEED_REFRESH=false` and `SEED_DEMO_ACCOUNTS=false`.
 - **MySQL as `root`** - a separate application user (`MYSQL_USER`) is created only when an empty volume is initialized, and existing `db-data` volumes do not have one; introducing it would need a manual data migration. The database port is published on `127.0.0.1` only and `DB_PASSWORD` sets the root password.
 - **Demo accounts and old admin passwords** - the demo accounts have publicly known passwords (turned off with `SEED_DEMO_ACCOUNTS=false`), and admin accounts created before `ADMIN_PASSWORD` keep `Admin123!` until a demo data reset or removal of the volume.
@@ -398,10 +398,16 @@ npx ng build                # production build
 - **Out-of-order migrations** - `AddJobViewStatistics` (stage 6) is dated a few minutes before `AddJobTaxonomy` (stage 5) because both stages were developed in parallel. EF Core applies whichever is missing, so updating any existing database works, but rolling back to a migration between the two also rolls back the other.
 - **Abandoned `AddApplicationCv` migration** - an earlier "one CV per application" model never reached `main` and was replaced by `AddApplicationAttachments`. Development databases where it was applied have empty `Cv*` columns in `JobApplications` and an entry in `__EFMigrationsHistory` (harmless, can be removed by hand).
 - **Requests without `Content-Length`** are rejected only after 26 MB have been received; Kestrel then drops the connection and the browser may not get the JSON error, which is why the frontend validates file sizes first.
-- **Fonts from Google Fonts** - not bundled yet (see the CSP trade-off).
-- **The initial bundle exceeds the 500 kB budget** (about 600 kB, a build warning) - the new screens are lazy-loaded, but the shared shell still needs trimming.
+- **The initial bundle exceeds the 500 kB budget** (about 577 kB raw / 142 kB compressed, a build warning) - the screens are lazy-loaded and the Material theme emits only system tokens, but the shell still pulls in Angular core, the router and the CDK overlay (the snack bar used by the auth service).
 - **.NET 9, not .NET 10** - waits for a stable Pomelo provider for EF Core 10.
 - **Polish-only interface** - the UI is in Polish; API messages are in English and translated in the frontend.
+
+## Third-party fonts
+
+The fonts are bundled in `frontend/public/fonts` together with their licenses:
+
+- **Roboto** (from `@fontsource/roboto` 5.3.0) - SIL Open Font License 1.1, `LICENSE-Roboto-OFL.txt`.
+- **Material Icons** (from `material-icons` 1.13.14) - Apache License 2.0, `LICENSE-MaterialIcons-Apache.txt`.
 
 ## Screenshots
 
