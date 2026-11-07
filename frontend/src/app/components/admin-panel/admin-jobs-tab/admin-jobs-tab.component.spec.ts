@@ -8,6 +8,7 @@ import { AdminJobsTabComponent } from './admin-jobs-tab.component';
 import { JobService } from '../../../services/job.service';
 import { CompanyService } from '../../../services/company.service';
 import { AdminService } from '../../../services/admin.service';
+import { ConfirmService } from '../../../services/confirm.service';
 import { Currency, JobOffer, JobOfferStatus, SalaryPeriod, WorkType } from '../../../models/job-offer.model';
 import { ManageJobParams } from '../../../models/job-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
@@ -65,8 +66,7 @@ describe('AdminJobsTabComponent', () => {
   let deleteJob: ReturnType<typeof vi.fn>;
   let updateJobStatus: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
-  let alertSpy: ReturnType<typeof vi.spyOn>;
-  let confirmSpy: ReturnType<typeof vi.spyOn>;
+  let confirmSpy: ReturnType<typeof vi.fn>;
 
   function lastParams(): ManageJobParams {
     return getManagedJobs.mock.calls[getManagedJobs.mock.calls.length - 1][0] as ManageJobParams;
@@ -84,8 +84,7 @@ describe('AdminJobsTabComponent', () => {
     deleteJob = vi.fn().mockReturnValue(of(undefined));
     updateJobStatus = vi.fn().mockImplementation((id: number, status: JobOfferStatus) => of({ ...makeJob(id), status }));
     snackBarOpen = vi.fn();
-    alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
-    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    confirmSpy = vi.fn().mockReturnValue(of(true));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
@@ -95,7 +94,8 @@ describe('AdminJobsTabComponent', () => {
         { provide: CompanyService, useValue: { getCompanies: vi.fn() } },
         { provide: AdminService, useValue: { getCompanies: vi.fn() } },
         { provide: MatDialog, useValue: { open: vi.fn() } },
-        { provide: MatSnackBar, useValue: { open: snackBarOpen } }
+        { provide: MatSnackBar, useValue: { open: snackBarOpen } },
+        { provide: ConfirmService, useValue: { confirm: confirmSpy } }
       ]
     }).compileComponents();
   });
@@ -295,7 +295,7 @@ describe('AdminJobsTabComponent', () => {
     it('does nothing when the user cancels the confirmation', () => {
       create();
 
-      confirmSpy.mockReturnValue(false);
+      confirmSpy.mockReturnValue(of(false));
       component.deleteJob(1);
 
       expect(deleteJob).not.toHaveBeenCalled();
@@ -311,7 +311,7 @@ describe('AdminJobsTabComponent', () => {
       expect(deleteJob).toHaveBeenCalledWith(3);
       expect(lastParams().pageNumber).toBe(2);
       expect(component.pageIndex()).toBe(1);
-      expect(alertSpy).toHaveBeenCalledWith('Oferta została usunięta');
+      expect(snackBarOpen).toHaveBeenCalledWith('Oferta została usunięta', 'OK', expect.anything());
       expect(component.deletingId()).toBeNull();
     });
 
@@ -346,7 +346,7 @@ describe('AdminJobsTabComponent', () => {
 
       component.deleteJob(1);
 
-      expect(alertSpy).toHaveBeenCalledWith('Błąd podczas usuwania oferty');
+      expect(snackBarOpen).toHaveBeenCalledWith('Błąd podczas usuwania oferty', 'OK', expect.anything());
       expect(component.deletingId()).toBeNull();
       expect(getManagedJobs).toHaveBeenCalledTimes(1);
     });
@@ -356,8 +356,7 @@ describe('AdminJobsTabComponent', () => {
 
       component.deleteJob(1);
 
-      expect(confirmSpy).toHaveBeenCalledWith(
-        'Czy na pewno chcesz usunąć tę ofertę? Wszystkie aplikacje na to stanowisko również zostaną usunięte.');
+      expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({ message: 'Czy na pewno chcesz usunąć tę ofertę? Wszystkie aplikacje na to stanowisko również zostaną usunięte.' }));
     });
 
     it('employer: explains that an offer with applications can only be closed', () => {
@@ -370,8 +369,7 @@ describe('AdminJobsTabComponent', () => {
 
       component.deleteJob(1);
 
-      expect(confirmSpy).toHaveBeenCalledWith(
-        'Czy na pewno chcesz usunąć tę ofertę? Ofertę, na którą wpłynęły aplikacje, można tylko zamknąć.');
+      expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({ message: 'Czy na pewno chcesz usunąć tę ofertę? Ofertę, na którą wpłynęły aplikacje, można tylko zamknąć.' }));
       expect(deleteJob).toHaveBeenCalledWith(1);
     });
 
@@ -383,7 +381,7 @@ describe('AdminJobsTabComponent', () => {
 
       component.deleteJob(1);
 
-      expect(alertSpy).toHaveBeenCalledWith('Oferta ma aplikacje – zamiast usuwać, zamknij ją.');
+      expect(snackBarOpen).toHaveBeenCalledWith('Oferta ma aplikacje – zamiast usuwać, zamknij ją.', 'OK', expect.anything());
       expect(component.deletingId()).toBeNull();
       expect(getManagedJobs).toHaveBeenCalledTimes(1);
     });
@@ -394,24 +392,25 @@ describe('AdminJobsTabComponent', () => {
 
       component.deleteJob(1);
 
-      expect(alertSpy).not.toHaveBeenCalled();
+      expect(snackBarOpen).not.toHaveBeenCalled();
       expect(component.deletingId()).toBeNull();
     });
   });
 
   describe('load errors and out-of-range pages', () => {
-    it('alerts on a load error and stops the loading indicator', () => {
+    it('shows a load error in the view and stops the loading indicator', () => {
       create(throwError(() => new HttpErrorResponse({ status: 500 })));
 
-      expect(alertSpy).toHaveBeenCalledWith('Błąd podczas ładowania ofert');
+      expect(component.loadError()).toBe('Błąd podczas ładowania ofert');
+      expect((fixture.nativeElement as HTMLElement).querySelector('[role="alert"]')?.textContent).toContain('Błąd podczas ładowania ofert');
       expect(component.loading()).toBe(false);
       expect(component.jobs()).toEqual([]);
     });
 
-    it('does not alert on 401 (handled by the interceptor)', () => {
+    it('does not show its own error on 401 (handled by the interceptor)', () => {
       create(throwError(() => new HttpErrorResponse({ status: 401 })));
 
-      expect(alertSpy).not.toHaveBeenCalled();
+      expect(component.loadError()).toBeNull();
       expect(component.loading()).toBe(false);
     });
 
@@ -552,7 +551,7 @@ describe('AdminJobsTabComponent', () => {
         const root = await render();
 
         const labels = Array.from(root.querySelectorAll('tr.table-row')).map(row =>
-          row.querySelector('.actions-cell button')?.getAttribute('aria-label'));
+          row.querySelector('.actions-cell button')?.getAttribute('aria-label')?.split(':')[0]);
         expect(labels).toEqual(['Opublikuj', 'Zamknij', 'Zamknij', 'Wznów']);
       });
 
@@ -560,7 +559,7 @@ describe('AdminJobsTabComponent', () => {
         const root = await render();
         const callsBefore = getManagedJobs.mock.calls.length;
 
-        root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label="Opublikuj"]')!.click();
+        root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label^="Opublikuj:"]')!.click();
 
         expect(updateJobStatus).toHaveBeenCalledWith(1, JobOfferStatus.Active);
         expect(getManagedJobs.mock.calls.length).toBe(callsBefore + 1);
@@ -569,7 +568,7 @@ describe('AdminJobsTabComponent', () => {
       it('clicking "Zamknij" sends the Closed status', async () => {
         const root = await render();
 
-        root.querySelectorAll('tr.table-row')[1].querySelector<HTMLButtonElement>('button[aria-label="Zamknij"]')!.click();
+        root.querySelectorAll('tr.table-row')[1].querySelector<HTMLButtonElement>('button[aria-label^="Zamknij:"]')!.click();
 
         expect(updateJobStatus).toHaveBeenCalledWith(2, JobOfferStatus.Closed);
       });
@@ -577,7 +576,7 @@ describe('AdminJobsTabComponent', () => {
       it('clicking "Wznów" sends the Active status', async () => {
         const root = await render();
 
-        root.querySelectorAll('tr.table-row')[3].querySelector<HTMLButtonElement>('button[aria-label="Wznów"]')!.click();
+        root.querySelectorAll('tr.table-row')[3].querySelector<HTMLButtonElement>('button[aria-label^="Wznów:"]')!.click();
 
         expect(updateJobStatus).toHaveBeenCalledWith(4, JobOfferStatus.Active);
       });
@@ -587,12 +586,12 @@ describe('AdminJobsTabComponent', () => {
         updateJobStatus.mockReturnValue(pending);
         const root = await render();
 
-        root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label="Opublikuj"]')!.click();
+        root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label^="Opublikuj:"]')!.click();
         fixture.detectChanges();
 
         expect(component.statusChangingId()).toBe(1);
-        expect(root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label="Opublikuj"]')!.disabled).toBe(true);
-        expect(root.querySelectorAll('tr.table-row')[1].querySelector<HTMLButtonElement>('button[aria-label="Zamknij"]')!.disabled).toBe(false);
+        expect(root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label^="Opublikuj:"]')!.disabled).toBe(true);
+        expect(root.querySelectorAll('tr.table-row')[1].querySelector<HTMLButtonElement>('button[aria-label^="Zamknij:"]')!.disabled).toBe(false);
       });
 
       it('keeps the list unchanged and shows the API message when publishing with a past date fails', async () => {
@@ -602,7 +601,7 @@ describe('AdminJobsTabComponent', () => {
         const root = await render();
         const callsBefore = getManagedJobs.mock.calls.length;
 
-        root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label="Opublikuj"]')!.click();
+        root.querySelectorAll('tr.table-row')[0].querySelector<HTMLButtonElement>('button[aria-label^="Opublikuj:"]')!.click();
 
         expect(snackBarOpen.mock.calls[0][0]).toBe('Aby opublikować ofertę, ustaw datę wygaśnięcia w przyszłości');
         expect(getManagedJobs.mock.calls.length).toBe(callsBefore);
@@ -611,9 +610,9 @@ describe('AdminJobsTabComponent', () => {
       it('selecting a state in the dropdown requests /manage with that state', async () => {
         const root = await render();
 
-        // trzecie pole filtrów: szukaj, typ pracy, stan
-        const triggers = root.querySelectorAll<HTMLElement>('.filters-card .mat-mdc-select-trigger');
-        triggers[1].click();
+        // pierwsza lista wyboru: „Pokaż” (stan oferty)
+        const triggers = root.querySelectorAll<HTMLElement>('.toolbar .mat-mdc-select-trigger');
+        triggers[0].click();
         fixture.detectChanges();
         await fixture.whenStable();
         const option = Array.from(document.querySelectorAll<HTMLElement>('mat-option')).find(o => o.textContent?.trim() === 'Zamknięte');
@@ -632,7 +631,7 @@ describe('AdminJobsTabComponent', () => {
       component.changeStatus(makeJob(4), JobOfferStatus.Closed);
 
       expect(snackBarOpen).not.toHaveBeenCalled();
-      expect(alertSpy).not.toHaveBeenCalled();
+      expect(snackBarOpen).not.toHaveBeenCalled();
     });
   });
 
@@ -661,7 +660,7 @@ describe('AdminJobsTabComponent', () => {
 
     function rowActions(index: number): (string | null)[] {
       return Array.from(root().querySelectorAll('tr.table-row')[index].querySelectorAll('.actions-cell button'))
-        .map(b => b.getAttribute('aria-label'));
+        .map(b => b.getAttribute('aria-label')?.split(':')[0] ?? null);
     }
 
     const jobsInEveryState = (): JobOffer[] => [
@@ -780,7 +779,7 @@ describe('AdminJobsTabComponent', () => {
       it('keeps all other columns', () => {
         createInMode('employer', makeCompany(1, { status: CompanyStatus.Approved }));
 
-        expect(component.displayedColumns()).toEqual(['id', 'title', 'status', 'location', 'workType', 'salary', 'createdAt', 'actions']);
+        expect(component.displayedColumns()).toEqual(['title', 'location', 'status', 'salary', 'createdAt', 'actions']);
       });
 
       it('never sends a company filter', () => {
@@ -874,11 +873,20 @@ describe('AdminJobsTabComponent', () => {
   describe('formatting helpers', () => {
     beforeEach(() => create());
 
-    it('formatSalary covers all combinations', () => {
-      expect(component.formatSalary(null, null)).toBe('Nieokreślona');
-      expect(component.formatSalary(1000, 2000)).toBe('1000 - 2000 PLN');
-      expect(component.formatSalary(1000, null)).toBe('Od 1000 PLN');
-      expect(component.formatSalary(null, 2000)).toBe('Do 2000 PLN');
+    it('salary uses the offer currency and period', () => {
+      expect(component.salary(makeJob(1))).toContain('PLN');
+    });
+
+    it('metaLine joins seniority, contract types and work type', () => {
+      expect(component.metaLine(makeJob(1))).toBe('Zdalna');
+    });
+
+    it('names the offer in the action labels and the table', () => {
+      const root = fixture.nativeElement as HTMLElement;
+      fixture.detectChanges();
+      const labels = Array.from(root.querySelectorAll('tr.table-row')[0].querySelectorAll('.actions-cell button')).map(b => b.getAttribute('aria-label'));
+      expect(labels).toEqual(['Zamknij: Oferta 1', 'Edytuj ofertę: Oferta 1', 'Usuń ofertę: Oferta 1']);
+      expect(root.querySelector('table')?.getAttribute('aria-label')).toBe('Oferty pracy');
     });
 
     it('getWorkTypeLabel returns Polish labels', () => {

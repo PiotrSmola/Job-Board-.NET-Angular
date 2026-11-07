@@ -1,0 +1,8 @@
+@use '../admin-table';
+
+:host { padding-top: 40px; }
+.count { font-weight: 400; }
+.state { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 120px; }
+.state p, .more, .empty { margin: 0; }
+.more { margin-top: 8px; }
+.text-link { word-break: break-all; }

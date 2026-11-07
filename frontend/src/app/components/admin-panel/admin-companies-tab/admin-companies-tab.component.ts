@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -6,7 +6,6 @@ import { RouterLink } from '@angular/router';
 import { MatTableModule } from '@angular/material/table';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -17,8 +16,9 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { providePolishPaginatorIntl } from '../../../services/polish-paginator-intl';
 import { MatSortModule, Sort } from '@angular/material/sort';
-import { Subject, catchError, debounceTime, filter, map, of, switchMap, tap } from 'rxjs';
+import { Observable, Subject, catchError, debounceTime, filter, map, of, switchMap, tap } from 'rxjs';
 import { AdminService } from '../../../services/admin.service';
+import { ConfirmService } from '../../../services/confirm.service';
 import { Company, CompanyStatus } from '../../../models/company.model';
 import { AdminCompanyOrderBy, AdminCompanyParams } from '../../../models/company-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
@@ -26,6 +26,7 @@ import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-
 import { COMPANY_STATUS_FILTER_OPTIONS, getCompanyStatusPresentation } from '../../../utils/status-labels';
 import { StatusChipComponent } from '../../shared/status-chip.component';
 import { CompanyDialogComponent } from '../company-dialog/company-dialog.component';
+import { CompanyMediaDialogComponent } from '../company-media-dialog/company-media-dialog.component';
 import { RejectCompanyDialogComponent } from '../reject-company-dialog/reject-company-dialog.component';
 
 // Kolumny sortowane po stronie serwera -> wartości orderBy z API
@@ -36,7 +37,7 @@ const SORT_ORDER: Record<string, { asc: AdminCompanyOrderBy; desc: AdminCompanyO
 
 const DEFAULT_SORT: Sort = { active: 'createdAt', direction: 'desc' };
 
-/** Moderacja firm w panelu admina: zatwierdzanie, odrzucanie, edycja, dodawanie i usuwanie. */
+/** Moderacja firm w panelu admina: zatwierdzanie, odrzucanie, edycja, dodawanie, usuwanie i moderacja galerii. */
 @Component({
   selector: 'app-admin-companies-tab',
   providers: [providePolishPaginatorIntl()],
@@ -48,7 +49,6 @@ const DEFAULT_SORT: Sort = { active: 'createdAt', direction: 'desc' };
     MatTableModule,
     MatButtonModule,
     MatIconModule,
-    MatCardModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
     MatFormFieldModule,
@@ -59,15 +59,17 @@ const DEFAULT_SORT: Sort = { active: 'createdAt', direction: 'desc' };
     StatusChipComponent
   ],
   templateUrl: './admin-companies-tab.component.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './admin-companies-tab.component.scss'
 })
 export class AdminCompaniesTabComponent {
   private adminService = inject(AdminService);
   private dialog = inject(MatDialog);
   private snackBar = inject(MatSnackBar);
+  private confirm = inject(ConfirmService);
+  private destroyRef = inject(DestroyRef);
 
-  readonly displayedColumns = ['id', 'name', 'status', 'membersCount', 'activeJobsCount', 'createdAt', 'actions'];
+  readonly displayedColumns = ['name', 'status', 'membersCount', 'activeJobsCount', 'photosCount', 'createdAt', 'actions'];
   readonly pageSizeOptions = [5, 10, 25, 50];
   readonly statusOptions = COMPANY_STATUS_FILTER_OPTIONS;
   readonly CompanyStatus = CompanyStatus;
@@ -106,7 +108,7 @@ export class AdminCompaniesTabComponent {
         catchError(error => {
           console.error('Error loading companies:', error);
           if (!isHandledByInterceptor(error)) {
-            this.notify(getApiErrorMessage(error, 'Błąd podczas ładowania firm'));
+            this.notify(getApiErrorMessage(error, 'Błąd podczas ładowania firm'), 'assertive');
           }
           return of(null);
         })
@@ -165,9 +167,14 @@ export class AdminCompaniesTabComponent {
     return getCompanyStatusPresentation(status ?? CompanyStatus.Pending);
   }
 
+  /** Firma ma coś do moderacji: zdjęcia albo obraz tła ofert. */
+  hasMedia(company: Company): boolean {
+    return (company.photosCount ?? 0) > 0 || !!company.offerBackground;
+  }
+
   approve(company: Company): void {
     this.busyId.set(company.id);
-    this.adminService.approveCompany(company.id).subscribe({
+    this.adminService.approveCompany(company.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: updated => {
         this.busyId.set(null);
         this.notify(`Firma „${updated.name}” została zatwierdzona`);
@@ -178,19 +185,23 @@ export class AdminCompaniesTabComponent {
         console.error('Error approving company:', error);
         this.busyId.set(null);
         if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Błąd podczas zatwierdzania firmy'));
+          this.notify(getApiErrorMessage(error, 'Błąd podczas zatwierdzania firmy'), 'assertive');
         }
       }
     });
   }
 
   openRejectDialog(company: Company): void {
-    const dialogRef = this.dialog.open(RejectCompanyDialogComponent, { width: '520px', data: company });
-    dialogRef.afterClosed().subscribe(updated => {
-      if (updated) {
-        this.reload();
-      }
-    });
+    this.reloadAfter(this.dialog.open(RejectCompanyDialogComponent, {
+      width: '520px', maxWidth: '95vw', ariaModal: true, data: company
+    }).afterClosed());
+  }
+
+  openMediaDialog(company: Company): void {
+    // zamknięcie klawiszem Esc nie przekazuje wyniku – liczby zdjęć odświeżamy zawsze
+    this.dialog.open(CompanyMediaDialogComponent, {
+      width: '720px', maxWidth: '95vw', ariaModal: true, data: company
+    }).afterClosed().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.reload());
   }
 
   openAddDialog(): void {
@@ -202,12 +213,17 @@ export class AdminCompaniesTabComponent {
   }
 
   deleteCompany(company: Company): void {
-    if (!confirm(`Czy na pewno chcesz usunąć firmę „${company.name}”?`)) {
-      return;
-    }
+    this.confirm.confirm({
+      title: 'Usunąć firmę?',
+      message: `Czy na pewno chcesz usunąć firmę „${company.name}”? Firmy z ofertami lub członkami zespołu nie można usunąć.`,
+      confirmLabel: 'Usuń',
+      destructive: true
+    }).pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.delete(company));
+  }
 
+  private delete(company: Company): void {
     this.busyId.set(company.id);
-    this.adminService.deleteCompany(company.id).subscribe({
+    this.adminService.deleteCompany(company.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.busyId.set(null);
         // Usunięto ostatnią firmę na stronie – cofamy się o stronę
@@ -221,18 +237,22 @@ export class AdminCompaniesTabComponent {
         console.error('Error deleting company:', error);
         this.busyId.set(null);
         if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Błąd podczas usuwania firmy'));
+          this.notify(getApiErrorMessage(error, 'Błąd podczas usuwania firmy'), 'assertive');
         }
       }
     });
   }
 
   private openCompanyDialog(company: Company | null): void {
-    const dialogRef = this.dialog.open(CompanyDialogComponent, { width: '600px', disableClose: true, data: company });
-    dialogRef.afterClosed().subscribe(saved => {
-      if (saved) {
-        this.reload();
-      }
+    this.reloadAfter(this.dialog.open(CompanyDialogComponent, {
+      width: '600px', maxWidth: '95vw', disableClose: true, ariaModal: true, data: company
+    }).afterClosed());
+  }
+
+  /** Po zamknięciu dialogu ze zmianą (wynik „truthy”) odświeża listę. */
+  private reloadAfter(closed: Observable<unknown>): void {
+    closed.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(changed => {
+      if (changed) this.reload();
     });
   }
 
@@ -241,8 +261,8 @@ export class AdminCompaniesTabComponent {
     this.reload(true);
   }
 
-  private notify(message: string): void {
-    this.snackBar.open(message, 'OK', { duration: 5000 });
+  private notify(message: string, politeness: 'polite' | 'assertive' = 'polite'): void {
+    this.snackBar.open(message, 'OK', { duration: 5000, politeness });
   }
 
   private buildParams(): AdminCompanyParams {

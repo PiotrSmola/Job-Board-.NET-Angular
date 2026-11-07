@@ -138,7 +138,7 @@ describe('JobDialogComponent', () => {
 
       expect(component.jobForm.hasError('salaryRangeInvalid')).toBe(true);
       expect(component.jobForm.valid).toBe(false);
-      expect(root().querySelector('.salary-error')?.textContent).toContain('Wynagrodzenie "Od" nie może być wyższe niż "Do"');
+      expect(root().querySelector('.form-error')?.textContent).toContain('Wynagrodzenie „od” nie może być wyższe niż „do”');
     });
 
     it('compares salaries numerically', async () => {
@@ -322,7 +322,7 @@ describe('JobDialogComponent', () => {
       component.onSubmit();
 
       expect(createJob).not.toHaveBeenCalled();
-      expect((fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('button[mat-raised-button]')?.disabled).toBe(true);
+      expect((fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('button.submit-button')?.disabled).toBe(true);
     });
 
     it('moves an already passed expiration hour of an active offer to the end of the same day', async () => {
@@ -357,7 +357,7 @@ describe('JobDialogComponent', () => {
       component.onSubmit();
 
       expect(createJob).toHaveBeenCalledWith(expect.objectContaining({ title: 'Angular Developer', salaryMin: null, salaryMax: null }));
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Oferta dodana!');
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Oferta została dodana');
       expect(close).toHaveBeenCalledWith(true);
       expect(alertSpy).not.toHaveBeenCalled();
     });
@@ -392,7 +392,7 @@ describe('JobDialogComponent', () => {
       component.onSubmit();
 
       expect(updateJob).toHaveBeenCalledWith(9, expect.objectContaining({ salaryMin: 8000, salaryMax: 12000 }));
-      expect(snackBarOpen.mock.calls[0][0]).toBe('Oferta zaktualizowana!');
+      expect(snackBarOpen.mock.calls[0][0]).toBe('Oferta została zapisana');
       expect(close).toHaveBeenCalledWith(true);
     });
 
@@ -403,7 +403,7 @@ describe('JobDialogComponent', () => {
 
       component.onSubmit();
 
-      expect(component.submitting).toBe(false);
+      expect(component.submitting()).toBe(false);
       expect(snackBarOpen).not.toHaveBeenCalled();
       expect(alertSpy).not.toHaveBeenCalled();
       expect(close).not.toHaveBeenCalled();

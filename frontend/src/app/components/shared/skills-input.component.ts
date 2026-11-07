@@ -37,15 +37,14 @@ import { ChipItem, RemovableChipsComponent } from './removable-chips.component';
     </mat-form-field>
     <p [id]="helpId" class="help" [class.error]="isError()" aria-live="polite">{{ help() }}</p>
     <app-removable-chips [items]="chips()" ariaLabel="Wybrane umiejętności" [focusOnEmpty]="textInput" (remove)="remove($event)" />
-    <p class="sr-only" role="status">{{ announcement() }}</p>
+    <p class="visually-hidden" role="status">{{ announcement() }}</p>
   `,
   styles: [`
     :host { display: block; }
     .skills-field { width: 100%; }
-    .count { color: var(--text-secondary); font-size: 0.8rem; }
-    .help { margin: 4px 0 8px; min-height: 1.25em; font-size: 0.8rem; color: var(--text-secondary); }
-    .help.error { color: #ff8a80; }
-    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .count { color: var(--color-text-tertiary); font-size: var(--font-size-sm); }
+    .help { margin: 4px 0 8px; min-height: 1.5em; font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+    .help.error { color: var(--color-danger); }
   `]
 })
 export class SkillsInputComponent {

@@ -1,247 +1,192 @@
-<div class="tab-content">
-  <div class="tab-header">
-    <button mat-raised-button color="primary" (click)="openAddDialog()" class="add-button">
-      <mat-icon>add</mat-icon>
-      Dodaj ofertę
-    </button>
+<div class="toolbar">
+  <mat-form-field appearance="outline" class="search-field">
+    <mat-label>Szukaj</mat-label>
+    <input matInput [ngModel]="searchInput()" (ngModelChange)="onSearchInput($event)" placeholder="Stanowisko, firma…">
+    <mat-icon matPrefix aria-hidden="true">search</mat-icon>
+    @if (searchInput()) {
+      <button mat-icon-button matSuffix type="button" (click)="clearSearch()" aria-label="Wyczyść wyszukiwanie">
+        <mat-icon aria-hidden="true">close</mat-icon>
+      </button>
+    }
+  </mat-form-field>
+
+  <mat-form-field appearance="outline">
+    <mat-label>Pokaż</mat-label>
+    <mat-select [ngModel]="state()" (ngModelChange)="onStateChange($event)">
+      @for (option of stateOptions; track option.value) {
+        <mat-option [value]="option.value">{{ option.label }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field appearance="outline">
+    <mat-label>Typ pracy</mat-label>
+    <mat-select [ngModel]="workType()" (ngModelChange)="onWorkTypeChange($event)">
+      @for (option of workTypeOptions; track option.value) {
+        <mat-option [value]="option.value">{{ option.label }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  @if (isAdmin()) {
+    <app-company-autocomplete
+      source="all"
+      label="Firma"
+      placeholder="Wszystkie firmy"
+      (companyChange)="onCompanyFilterChange($event)" />
+  }
+
+  <div class="toolbar-actions">
     <ng-content></ng-content>
+    @if (isAdmin()) {
+      <button mat-flat-button type="button" (click)="openAddDialog()" class="add-button">
+        <mat-icon aria-hidden="true">add</mat-icon>
+        Dodaj ofertę
+      </button>
+    }
   </div>
+</div>
 
-  <!-- Filters Section -->
-  <mat-card class="filters-card">
-    <!-- admin ma dodatkowy filtr firmy (czwarta kolumna) -->
-    <div class="filters-grid three-columns" [style.grid-template-columns]="isAdmin() ? '2fr 1fr 1fr 1.5fr' : null">
-      <!-- Search -->
-      <mat-form-field appearance="outline" class="search-field">
-        <mat-label>Szukaj</mat-label>
-        <input matInput [ngModel]="searchInput()" (ngModelChange)="onSearchInput($event)" placeholder="Stanowisko, firma...">
-        <mat-icon matPrefix>search</mat-icon>
-        @if (searchInput()) {
-          <button mat-icon-button matSuffix (click)="clearSearch()">
-            <mat-icon>close</mat-icon>
-          </button>
-        }
-      </mat-form-field>
-
-      <!-- Work Type Filter -->
-      <mat-form-field appearance="outline">
-        <mat-label>Typ pracy</mat-label>
-        <mat-select [ngModel]="workType()" (ngModelChange)="onWorkTypeChange($event)">
-          @for (option of workTypeOptions; track option.value) {
-            <mat-option [value]="option.value">{{ option.label }}</mat-option>
-          }
-        </mat-select>
-        <mat-icon matPrefix>work_outline</mat-icon>
-      </mat-form-field>
-
-      <!-- State Filter -->
-      <mat-form-field appearance="outline">
-        <mat-label>Stan</mat-label>
-        <mat-select [ngModel]="state()" (ngModelChange)="onStateChange($event)">
-          @for (option of stateOptions; track option.value) {
-            <mat-option [value]="option.value">{{ option.label }}</mat-option>
-          }
-        </mat-select>
-        <mat-icon matPrefix>flag</mat-icon>
-      </mat-form-field>
-
-      <!-- Company Filter (admin) -->
-      @if (isAdmin()) {
-        <app-company-autocomplete
-          source="all"
-          label="Firma"
-          placeholder="Wszystkie firmy"
-          (companyChange)="onCompanyFilterChange($event)" />
-      }
-    </div>
-
-    <div class="filter-actions">
-      <button mat-button (click)="clearFilters()">
-        <mat-icon>clear</mat-icon>
-        Wyczyść filtry
-      </button>
-      <div class="results-count">
-        Znaleziono: <strong>{{ totalItems() }}</strong> ofert
-      </div>
-    </div>
-  </mat-card>
-
-  @if (jobs().length > 0) {
-    <mat-card class="table-card">
-      @if (loading()) {
-        <div class="loading-overlay">
-          <mat-spinner diameter="48"></mat-spinner>
-        </div>
-      }
-
-      <div class="table-container">
-        <table
-          mat-table
-          [dataSource]="jobs()"
-          matSort
-          matSortDisableClear
-          [matSortActive]="sort().active"
-          [matSortDirection]="sort().direction"
-          (matSortChange)="onSortChange($event)"
-          class="jobs-table">
-          <!-- ID Column -->
-          <ng-container matColumnDef="id">
-            <th mat-header-cell *matHeaderCellDef>ID</th>
-            <td mat-cell *matCellDef="let job">
-              <span class="job-id">#{{ job.id }}</span>
-            </td>
-          </ng-container>
-
-          <!-- Title Column (Sortable) -->
-          <ng-container matColumnDef="title">
-            <th mat-header-cell *matHeaderCellDef mat-sort-header>Stanowisko</th>
-            <td mat-cell *matCellDef="let job">
-              <span class="job-title">{{ job.title }}</span>
-            </td>
-          </ng-container>
-
-          <!-- Status Column -->
-          <ng-container matColumnDef="status">
-            <th mat-header-cell *matHeaderCellDef>Stan</th>
-            <td mat-cell *matCellDef="let job">
-              <div class="status-cell">
-                @let presentation = statePresentation(job);
-                <app-status-chip [label]="presentation.label" [tone]="presentation.tone" />
-                @if (job.expiresAt) {
-                  <span class="expires">do {{ job.expiresAt | date: 'dd.MM.yyyy' }}</span>
-                }
-              </div>
-            </td>
-          </ng-container>
-
-          <!-- Company Column (Sortable) -->
-          <ng-container matColumnDef="company">
-            <th mat-header-cell *matHeaderCellDef mat-sort-header>Firma</th>
-            <td mat-cell *matCellDef="let job">
-              <span class="company-name">{{ job.company }}</span>
-            </td>
-          </ng-container>
-
-          <!-- Location Column (Sortable) -->
-          <ng-container matColumnDef="location">
-            <th mat-header-cell *matHeaderCellDef mat-sort-header>Lokalizacja</th>
-            <td mat-cell *matCellDef="let job">
-              <div class="location-cell">
-                <mat-icon>location_on</mat-icon>
-                <span>{{ job.location }}</span>
-              </div>
-            </td>
-          </ng-container>
-
-          <!-- Work Type Column -->
-          <ng-container matColumnDef="workType">
-            <th mat-header-cell *matHeaderCellDef>Typ pracy</th>
-            <td mat-cell *matCellDef="let job">
-              <div class="worktype-cell">
-                <mat-icon>work</mat-icon>
-                <span>{{ getWorkTypeLabel(job.workType) }}</span>
-              </div>
-            </td>
-          </ng-container>
-
-          <!-- Salary Column (Sortable) -->
-          <ng-container matColumnDef="salary">
-            <th mat-header-cell *matHeaderCellDef mat-sort-header>Wynagrodzenie</th>
-            <td mat-cell *matCellDef="let job">
-              <div class="salary-cell">
-                <mat-icon>payments</mat-icon>
-                <span>{{ formatSalary(job.salaryMin, job.salaryMax) }}</span>
-              </div>
-            </td>
-          </ng-container>
-
-          <!-- Created At Column (Sortable) -->
-          <ng-container matColumnDef="createdAt">
-            <th mat-header-cell *matHeaderCellDef mat-sort-header>Data dodania</th>
-            <td mat-cell *matCellDef="let job">
-              <div class="date-cell">
-                <mat-icon>schedule</mat-icon>
-                <span>{{ job.createdAt | date: 'dd.MM.yyyy' }}</span>
-              </div>
-            </td>
-          </ng-container>
-
-          <!-- Actions Column -->
-          <ng-container matColumnDef="actions">
-            <th mat-header-cell *matHeaderCellDef>Akcje</th>
-            <td mat-cell *matCellDef="let job">
-              <div class="actions-cell">
-                @for (action of quickActions(job); track action.status) {
-                  <button
-                    mat-icon-button
-                    (click)="changeStatus(job, action.status)"
-                    [disabled]="statusChangingId() === job.id"
-                    [matTooltip]="action.label"
-                    [attr.aria-label]="action.label">
-                    @if (statusChangingId() === job.id) {
-                      <mat-spinner diameter="24"></mat-spinner>
-                    } @else {
-                      <mat-icon>{{ action.icon }}</mat-icon>
-                    }
-                  </button>
-                }
-                <button mat-icon-button color="primary" (click)="openEditDialog(job)" matTooltip="Edytuj">
-                  <mat-icon>edit</mat-icon>
-                </button>
-                <button
-                  mat-icon-button
-                  color="warn"
-                  (click)="deleteJob(job.id)"
-                  [disabled]="deletingId() === job.id"
-                  matTooltip="Usuń">
-                  @if (deletingId() === job.id) {
-                    <mat-spinner diameter="24"></mat-spinner>
-                  } @else {
-                    <mat-icon>delete</mat-icon>
-                  }
-                </button>
-              </div>
-            </td>
-          </ng-container>
-
-          <tr mat-header-row *matHeaderRowDef="displayedColumns()"></tr>
-          <tr mat-row *matRowDef="let row; columns: displayedColumns();" class="table-row"></tr>
-        </table>
-      </div>
-
-      <!-- Pagination -->
-      <mat-paginator
-        [length]="totalItems()"
-        [pageSize]="pageSize()"
-        [pageIndex]="pageIndex()"
-        [pageSizeOptions]="pageSizeOptions"
-        (page)="onPageChange($event)"
-        showFirstLastButtons>
-      </mat-paginator>
-    </mat-card>
-  } @else if (loading()) {
-    <div class="loading-container">
-      <mat-spinner></mat-spinner>
-    </div>
-  } @else if (hasActiveFilters()) {
-    <div class="empty-state">
-      <mat-icon>search_off</mat-icon>
-      <h3>Brak wyników</h3>
-      <p>Żadna oferta nie pasuje do wybranych filtrów</p>
-      <button mat-raised-button (click)="clearFilters()">
-        <mat-icon>clear</mat-icon>
-        Wyczyść filtry
-      </button>
-    </div>
-  } @else {
-    <div class="empty-state">
-      <mat-icon>work_off</mat-icon>
-      <h3>Brak ofert</h3>
-      <p>Nie dodano jeszcze żadnych ofert pracy</p>
-      <button mat-raised-button color="primary" (click)="openAddDialog()">
-        <mat-icon>add</mat-icon>
-        Dodaj pierwszą ofertę
-      </button>
-    </div>
+<div class="results-row">
+  <p role="status">Znaleziono: <span class="num">{{ totalItems() }}</span> {{ offersNoun(totalItems()) }}</p>
+  @if (hasActiveFilters()) {
+    <button mat-button type="button" (click)="clearFilters()">Wyczyść filtry</button>
   }
 </div>
+
+@if (loadError(); as message) {
+  <p class="danger-text" role="alert">{{ message }}</p>
+}
+
+@if (jobs().length > 0) {
+  <div class="table-card">
+    @if (loading()) {
+      <div class="loading-overlay">
+        <mat-spinner diameter="40" aria-label="Wczytywanie ofert"></mat-spinner>
+      </div>
+    }
+
+    <div class="table-scroll">
+      <table
+        mat-table
+        [dataSource]="jobs()"
+        matSort
+        matSortDisableClear
+        [matSortActive]="sort().active"
+        [matSortDirection]="sort().direction"
+        (matSortChange)="onSortChange($event)"
+        [attr.aria-label]="isAdmin() ? 'Oferty pracy' : 'Oferty firmy'">
+        <ng-container matColumnDef="title">
+          <th mat-header-cell *matHeaderCellDef mat-sort-header>Stanowisko</th>
+          <td mat-cell *matCellDef="let job">
+            <span class="primary-text job-title">{{ job.title }}</span>
+            <span class="secondary-text">{{ metaLine(job) }}</span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="company">
+          <th mat-header-cell *matHeaderCellDef mat-sort-header>Firma</th>
+          <td mat-cell *matCellDef="let job" class="company-name">{{ job.company }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="location">
+          <th mat-header-cell *matHeaderCellDef mat-sort-header>Lokalizacja</th>
+          <td mat-cell *matCellDef="let job">{{ job.location }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="status">
+          <th mat-header-cell *matHeaderCellDef>Status</th>
+          <td mat-cell *matCellDef="let job" class="nowrap">
+            @let presentation = statePresentation(job);
+            <app-status-chip [label]="presentation.label" [tone]="presentation.tone" />
+            @if (job.expiresAt) {
+              <span class="secondary-text small expires">do {{ job.expiresAt | date: 'dd.MM.yyyy' }}</span>
+            }
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="salary">
+          <th mat-header-cell *matHeaderCellDef mat-sort-header>Wynagrodzenie</th>
+          <td mat-cell *matCellDef="let job" class="num nowrap">{{ salary(job) }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="createdAt">
+          <th mat-header-cell *matHeaderCellDef mat-sort-header>Dodana</th>
+          <td mat-cell *matCellDef="let job" class="muted nowrap">{{ job.createdAt | date: 'dd.MM.yyyy' }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef class="actions-header"><span class="visually-hidden">Akcje</span></th>
+          <td mat-cell *matCellDef="let job">
+            <div class="actions-cell">
+              @for (action of quickActions(job); track action.status) {
+                <button
+                  mat-icon-button
+                  type="button"
+                  (click)="changeStatus(job, action.status)"
+                  [disabled]="statusChangingId() === job.id"
+                  [matTooltip]="action.label"
+                  [attr.aria-label]="action.label + ': ' + job.title">
+                  @if (statusChangingId() === job.id) {
+                    <mat-spinner diameter="20" aria-hidden="true"></mat-spinner>
+                  } @else {
+                    <mat-icon aria-hidden="true">{{ action.icon }}</mat-icon>
+                  }
+                </button>
+              }
+              <button mat-icon-button type="button" (click)="openEditDialog(job)" matTooltip="Edytuj"
+                [attr.aria-label]="'Edytuj ofertę: ' + job.title">
+                <mat-icon aria-hidden="true">edit</mat-icon>
+              </button>
+              <button
+                mat-icon-button
+                type="button"
+                color="warn"
+                (click)="deleteJob(job.id)"
+                [disabled]="deletingId() === job.id"
+                matTooltip="Usuń"
+                [attr.aria-label]="'Usuń ofertę: ' + job.title">
+                @if (deletingId() === job.id) {
+                  <mat-spinner diameter="20" aria-hidden="true"></mat-spinner>
+                } @else {
+                  <mat-icon aria-hidden="true">delete</mat-icon>
+                }
+              </button>
+            </div>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="displayedColumns()"></tr>
+        <tr mat-row *matRowDef="let row; columns: displayedColumns();" class="table-row"></tr>
+      </table>
+    </div>
+
+    <mat-paginator
+      [length]="totalItems()"
+      [pageSize]="pageSize()"
+      [pageIndex]="pageIndex()"
+      [pageSizeOptions]="pageSizeOptions"
+      (page)="onPageChange($event)"
+      showFirstLastButtons>
+    </mat-paginator>
+  </div>
+} @else if (loading()) {
+  <div class="loading-container">
+    <mat-spinner diameter="40" aria-label="Wczytywanie ofert"></mat-spinner>
+  </div>
+} @else if (hasActiveFilters()) {
+  <div class="empty-state">
+    <h3>Brak wyników</h3>
+    <p>Żadna oferta nie pasuje do wybranych filtrów</p>
+    <button mat-stroked-button type="button" (click)="clearFilters()">Wyczyść filtry</button>
+  </div>
+} @else {
+  <div class="empty-state">
+    <h3>Brak ofert</h3>
+    <p>Nie dodano jeszcze żadnych ofert pracy</p>
+    <button mat-flat-button type="button" (click)="openAddDialog()">
+      <mat-icon aria-hidden="true">add</mat-icon>
+      Dodaj pierwszą ofertę
+    </button>
+  </div>
+}

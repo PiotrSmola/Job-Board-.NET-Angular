@@ -1,27 +1,28 @@
-import { Component, computed, inject, input, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, DestroyRef, computed, inject, input, signal, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { CommonModule } from '@angular/common';
+import { SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatTableModule } from '@angular/material/table';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatDialog } from '@angular/material/dialog';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { providePolishPaginatorIntl } from '../../../services/polish-paginator-intl';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { Subject, catchError, debounceTime, filter, map, of, switchMap, tap } from 'rxjs';
 import { JobApplicationService } from '../../../services/job-application.service';
+import { ConfirmService } from '../../../services/confirm.service';
 import { ApplicationStatus, JobApplication } from '../../../models/job-application.model';
 import { ApplicationOrderBy, ApplicationParams } from '../../../models/application-params.model';
 import { PaginatedResult } from '../../../models/pagination.model';
 import { PanelMode } from '../../../models/panel-mode.model';
-import { isHandledByInterceptor } from '../../../utils/http-errors';
+import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
 import { APPLICATION_STATUS_FILTER_OPTIONS, getApplicationStatusPresentation } from '../../../utils/status-labels';
 import { StatusChipComponent } from '../../shared/status-chip.component';
 import { ApplicationStatusDialogComponent } from '../application-status-dialog/application-status-dialog.component';
@@ -31,19 +32,19 @@ import { AttachmentListComponent } from '../../shared/attachment-list.component'
 // API sortuje aplikacje tylko po dacie złożenia
 const DEFAULT_SORT: Sort = { active: 'appliedAt', direction: 'desc' };
 
-const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt', 'note', 'attachments', 'actions'];
+const ALL_COLUMNS = ['user', 'jobTitle', 'company', 'status', 'appliedAt', 'note', 'attachments', 'actions'];
 
+/** Tabela aplikacji: admin – wszystkie (z usuwaniem), pracodawca – aplikacje na oferty własnej firmy. */
 @Component({
   selector: 'app-admin-applications-tab',
   providers: [providePolishPaginatorIntl()],
   standalone: true,
   imports: [
-    CommonModule,
+    SlicePipe,
     FormsModule,
     MatTableModule,
     MatButtonModule,
     MatIconModule,
-    MatCardModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
     MatFormFieldModule,
@@ -55,12 +56,15 @@ const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt',
     AttachmentListComponent
   ],
   templateUrl: './admin-applications-tab.component.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './admin-applications-tab.component.scss'
 })
 export class AdminApplicationsTabComponent {
   private applicationService = inject(JobApplicationService);
   private dialog = inject(MatDialog);
+  private snackBar = inject(MatSnackBar);
+  private confirm = inject(ConfirmService);
+  private destroyRef = inject(DestroyRef);
 
   /** admin – wszystkie aplikacje (z usuwaniem); employer – aplikacje do ofert własnej firmy, bez usuwania. */
   readonly mode = input<PanelMode>('admin');
@@ -73,6 +77,7 @@ export class AdminApplicationsTabComponent {
   readonly applications = signal<JobApplication[]>([]);
   readonly totalItems = signal(0);
   readonly loading = signal(false);
+  readonly loadError = signal<string | null>(null);
   readonly deletingId = signal<number | null>(null);
 
   readonly pageIndex = signal(0);
@@ -98,12 +103,15 @@ export class AdminApplicationsTabComponent {
 
     // switchMap anuluje poprzednie żądanie – odpowiedzi nie nadpiszą się w złej kolejności
     this.load$.pipe(
-      tap(() => this.loading.set(true)),
+      tap(() => {
+        this.loading.set(true);
+        this.loadError.set(null);
+      }),
       switchMap(() => this.applicationService.getAllApplications(this.buildParams()).pipe(
         catchError(error => {
           console.error('Error loading applications:', error);
           if (!isHandledByInterceptor(error)) {
-            alert('Błąd podczas ładowania aplikacji');
+            this.loadError.set(getApiErrorMessage(error, 'Błąd podczas ładowania aplikacji'));
           }
           return of(null);
         })
@@ -143,9 +151,11 @@ export class AdminApplicationsTabComponent {
   }
 
   openStatusDialog(application: JobApplication): void {
-    const dialogRef = this.dialog.open(ApplicationStatusDialogComponent, { width: '520px', ariaModal: true, data: application });
+    const dialogRef = this.dialog.open(ApplicationStatusDialogComponent, {
+      width: '480px', maxWidth: '95vw', ariaModal: true, data: application
+    });
 
-    dialogRef.afterClosed().subscribe(updated => {
+    dialogRef.afterClosed().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(updated => {
       if (updated) {
         // przy aktywnym filtrze statusu aplikacja może zniknąć z bieżącej listy
         this.reload();
@@ -154,7 +164,7 @@ export class AdminApplicationsTabComponent {
   }
 
   openHistoryDialog(application: JobApplication): void {
-    this.dialog.open(ApplicationHistoryDialogComponent, { width: '560px', ariaModal: true, data: application });
+    this.dialog.open(ApplicationHistoryDialogComponent, { width: '560px', maxWidth: '95vw', ariaModal: true, data: application });
   }
 
   onSortChange(sort: Sort): void {
@@ -179,29 +189,14 @@ export class AdminApplicationsTabComponent {
 
   deleteApplication(id: number): void {
     // Usuwanie aplikacji – tylko admin
-    if (!this.isAdmin() || !confirm('Czy na pewno chcesz usunąć tę aplikację?')) {
-      return;
-    }
+    if (!this.isAdmin()) return;
 
-    this.deletingId.set(id);
-    this.applicationService.deleteApplication(id).subscribe({
-      next: () => {
-        this.deletingId.set(null);
-        // Usunięto ostatnią aplikację na stronie – cofamy się o stronę
-        if (this.applications().length === 1 && this.pageIndex() > 0) {
-          this.pageIndex.update(index => index - 1);
-        }
-        this.reload();
-        alert('Aplikacja została usunięta');
-      },
-      error: (error) => {
-        console.error('Error deleting application:', error);
-        this.deletingId.set(null);
-        if (!isHandledByInterceptor(error)) {
-          alert('Błąd podczas usuwania aplikacji');
-        }
-      }
-    });
+    this.confirm.confirm({
+      title: 'Usunąć aplikację?',
+      message: 'Czy na pewno chcesz usunąć tę aplikację? Zostanie usunięta razem z historią i załącznikami.',
+      confirmLabel: 'Usuń',
+      destructive: true
+    }).pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.delete(id));
   }
 
   formatDate(date: Date): string {
@@ -214,9 +209,35 @@ export class AdminApplicationsTabComponent {
     });
   }
 
+  private delete(id: number): void {
+    this.deletingId.set(id);
+    this.applicationService.deleteApplication(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
+        this.deletingId.set(null);
+        // Usunięto ostatnią aplikację na stronie – cofamy się o stronę
+        if (this.applications().length === 1 && this.pageIndex() > 0) {
+          this.pageIndex.update(index => index - 1);
+        }
+        this.reload();
+        this.notify('Aplikacja została usunięta');
+      },
+      error: (error) => {
+        console.error('Error deleting application:', error);
+        this.deletingId.set(null);
+        if (!isHandledByInterceptor(error)) {
+          this.notify(getApiErrorMessage(error, 'Błąd podczas usuwania aplikacji'), 'assertive');
+        }
+      }
+    });
+  }
+
   private applySearch(term: string): void {
     this.searchTerm.set(term);
     this.reload(true);
+  }
+
+  private notify(message: string, politeness: 'polite' | 'assertive' = 'polite'): void {
+    this.snackBar.open(message, 'OK', { duration: 5000, politeness });
   }
 
   private buildParams(): ApplicationParams {

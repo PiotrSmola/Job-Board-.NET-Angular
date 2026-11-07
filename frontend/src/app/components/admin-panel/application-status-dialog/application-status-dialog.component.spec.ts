@@ -41,7 +41,7 @@ describe('ApplicationStatusDialogComponent', () => {
   }
 
   function saveButton(): HTMLButtonElement {
-    return root().querySelector<HTMLButtonElement>('button[mat-raised-button]')!;
+    return root().querySelector<HTMLButtonElement>('button.save-button')!;
   }
 
   function httpError(status: number, error: unknown = null): HttpErrorResponse {
@@ -106,7 +106,7 @@ describe('ApplicationStatusDialogComponent', () => {
     it('tells the recruiter that the comment is visible to the candidate', async () => {
       await create();
 
-      expect(root().textContent).toContain('Komentarz będzie widoczny dla kandydata w historii aplikacji');
+      expect(root().textContent).toContain('Kandydat zobaczy ten komentarz w historii aplikacji');
     });
 
     it('preselects the current status and starts with an empty comment', async () => {
@@ -290,7 +290,7 @@ describe('ApplicationStatusDialogComponent', () => {
 
       expect(component.saving()).toBe(true);
       expect(saveButton().disabled).toBe(true);
-      expect(root().querySelector('button[mat-raised-button] mat-spinner')).not.toBeNull();
+      expect(root().querySelector('button.save-button mat-spinner')).not.toBeNull();
       expect(root().querySelector<HTMLButtonElement>('button[mat-button]')!.disabled).toBe(true);
 
       component.save();

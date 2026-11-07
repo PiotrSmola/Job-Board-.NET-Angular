@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MatDialog } from '@angular/material/dialog';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { ConfirmService } from '../../../services/confirm.service';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { AdminApplicationsTabComponent } from './admin-applications-tab.component';
 import { ApplicationStatusDialogComponent } from '../application-status-dialog/application-status-dialog.component';
@@ -51,8 +53,8 @@ describe('AdminApplicationsTabComponent', () => {
   let getAllApplications: ReturnType<typeof vi.fn>;
   let deleteApplication: ReturnType<typeof vi.fn>;
   let downloadAttachment: ReturnType<typeof vi.fn>;
-  let alertSpy: ReturnType<typeof vi.spyOn>;
-  let confirmSpy: ReturnType<typeof vi.spyOn>;
+  let snackBarOpen: ReturnType<typeof vi.fn>;
+  let confirmSpy: ReturnType<typeof vi.fn>;
   let dialogOpen: ReturnType<typeof vi.fn>;
   let dialogResult: Observable<JobApplication | undefined>;
 
@@ -71,8 +73,8 @@ describe('AdminApplicationsTabComponent', () => {
     getAllApplications = vi.fn();
     deleteApplication = vi.fn().mockReturnValue(of(undefined));
     downloadAttachment = vi.fn().mockReturnValue(of(undefined));
-    alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
-    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    snackBarOpen = vi.fn();
+    confirmSpy = vi.fn().mockReturnValue(of(true));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     dialogResult = of(undefined);
     dialogOpen = vi.fn().mockImplementation(() => ({ afterClosed: () => dialogResult }));
@@ -81,7 +83,9 @@ describe('AdminApplicationsTabComponent', () => {
       imports: [AdminApplicationsTabComponent],
       providers: [
         { provide: JobApplicationService, useValue: { getAllApplications, deleteApplication, downloadAttachment } },
-        { provide: MatDialog, useValue: { open: dialogOpen } }
+        { provide: MatDialog, useValue: { open: dialogOpen } },
+        { provide: MatSnackBar, useValue: { open: snackBarOpen } },
+        { provide: ConfirmService, useValue: { confirm: confirmSpy } }
       ]
     }).compileComponents();
   });
@@ -217,7 +221,7 @@ describe('AdminApplicationsTabComponent', () => {
     it('does nothing when the user cancels the confirmation', () => {
       create();
 
-      confirmSpy.mockReturnValue(false);
+      confirmSpy.mockReturnValue(of(false));
       component.deleteApplication(1);
 
       expect(deleteApplication).not.toHaveBeenCalled();
@@ -232,7 +236,7 @@ describe('AdminApplicationsTabComponent', () => {
 
       expect(deleteApplication).toHaveBeenCalledWith(4);
       expect(lastParams().pageNumber).toBe(2);
-      expect(alertSpy).toHaveBeenCalledWith('Aplikacja została usunięta');
+      expect(snackBarOpen).toHaveBeenCalledWith('Aplikacja została usunięta', 'OK', expect.anything());
       expect(component.deletingId()).toBeNull();
     });
 
@@ -256,7 +260,7 @@ describe('AdminApplicationsTabComponent', () => {
 
       component.deleteApplication(1);
 
-      expect(alertSpy).toHaveBeenCalledWith('Błąd podczas usuwania aplikacji');
+      expect(snackBarOpen).toHaveBeenCalledWith('Błąd podczas usuwania aplikacji', 'OK', expect.anything());
       expect(component.deletingId()).toBeNull();
     });
 
@@ -266,22 +270,22 @@ describe('AdminApplicationsTabComponent', () => {
 
       component.deleteApplication(1);
 
-      expect(alertSpy).not.toHaveBeenCalled();
+      expect(snackBarOpen).not.toHaveBeenCalled();
     });
   });
 
   describe('load errors and out-of-range pages', () => {
-    it('alerts on a load error and stops the loading indicator', () => {
+    it('shows a load error in the view and stops the loading indicator', () => {
       create(throwError(() => new HttpErrorResponse({ status: 500 })));
 
-      expect(alertSpy).toHaveBeenCalledWith('Błąd podczas ładowania aplikacji');
+      expect(component.loadError()).toBe('Błąd podczas ładowania aplikacji');
       expect(component.loading()).toBe(false);
     });
 
-    it('does not alert on 401 (handled by the interceptor)', () => {
+    it('does not show its own error on 401 (handled by the interceptor)', () => {
       create(throwError(() => new HttpErrorResponse({ status: 401 })));
 
-      expect(alertSpy).not.toHaveBeenCalled();
+      expect(component.loadError()).toBeNull();
     });
 
     it('jumps to the last existing page when the requested page is out of range', () => {
@@ -367,7 +371,7 @@ describe('AdminApplicationsTabComponent', () => {
       await fixture.whenStable();
       fixture.detectChanges();
 
-      const selects = (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('.filters-card .mat-mdc-select-trigger');
+      const selects = (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('.toolbar .mat-mdc-select-trigger');
       selects[0].click();
       fixture.detectChanges();
       await fixture.whenStable();
@@ -536,7 +540,7 @@ describe('AdminApplicationsTabComponent', () => {
         createInMode('admin', [{ ...makeApplication(1), company: 'Alfa' }, { ...makeApplication(2), company: '' }]);
 
         const cells = Array.from(root().querySelectorAll('tr.table-row .company-name')).map(c => c.textContent);
-        expect(cells).toEqual(['Alfa', 'N/A']);
+        expect(cells).toEqual(['Alfa', '–']);
       });
 
       it('deletes an application after confirmation', () => {
@@ -567,7 +571,7 @@ describe('AdminApplicationsTabComponent', () => {
         createInMode('employer');
 
         expect(component.isAdmin()).toBe(false);
-        expect(component.displayedColumns()).toEqual(['id', 'jobTitle', 'user', 'status', 'appliedAt', 'note', 'attachments', 'actions']);
+        expect(component.displayedColumns()).toEqual(['user', 'jobTitle', 'status', 'appliedAt', 'note', 'attachments', 'actions']);
         expect(headers()).not.toContain('Firma');
         expect(root().querySelector('.company-name')).toBeNull();
       });
@@ -706,7 +710,7 @@ describe('AdminApplicationsTabComponent', () => {
       downloadButtons(0)[0].click();
 
       expect(cell(0).querySelector('[role="alert"]')?.textContent).toBe('Nie znaleziono załącznika');
-      expect(alertSpy).not.toHaveBeenCalled();
+      expect(snackBarOpen).not.toHaveBeenCalled();
     });
 
     it('does not show a message when the interceptor handles 403', () => {
@@ -716,7 +720,7 @@ describe('AdminApplicationsTabComponent', () => {
       downloadButtons(0)[0].click();
 
       expect(cell(0).querySelector('[role="alert"]')).toBeNull();
-      expect(alertSpy).not.toHaveBeenCalled();
+      expect(snackBarOpen).not.toHaveBeenCalled();
     });
 
     it('opens the status and history dialogs as ARIA modals', () => {

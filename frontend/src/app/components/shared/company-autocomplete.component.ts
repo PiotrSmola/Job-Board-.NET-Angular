@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, input, output, signal, ChangeDetectionStrategy } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject, input, output, signal, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, ReactiveFormsModule, ValidationErrors } from '@angular/forms';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
@@ -48,10 +48,10 @@ function companySelectedValidator(control: AbstractControl): ValidationErrors | 
     <mat-form-field appearance="outline" class="company-field">
       <mat-label>{{ label() }}</mat-label>
       <input matInput [formControl]="control" [matAutocomplete]="auto" [placeholder]="placeholder()" (focus)="onFocus()">
-      <mat-icon matPrefix>business</mat-icon>
+      <mat-icon matPrefix aria-hidden="true">business</mat-icon>
       @if (control.value) {
         <button mat-icon-button matSuffix type="button" (click)="clear()" aria-label="Wyczyść firmę">
-          <mat-icon>close</mat-icon>
+          <mat-icon aria-hidden="true">close</mat-icon>
         </button>
       }
       <mat-autocomplete #auto="matAutocomplete" [displayWith]="displayName" (optionSelected)="select($event.option.value)">
@@ -68,7 +68,7 @@ function companySelectedValidator(control: AbstractControl): ValidationErrors | 
       }
     </mat-form-field>
   `,
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [`
     :host { display: block; }
     .company-field { width: 100%; }
@@ -77,6 +77,7 @@ function companySelectedValidator(control: AbstractControl): ValidationErrors | 
 export class CompanyAutocompleteComponent implements OnInit {
   private companyService = inject(CompanyService);
   private adminService = inject(AdminService);
+  private cdr = inject(ChangeDetectorRef);
 
   readonly label = input('Firma');
   readonly placeholder = input('Zacznij wpisywać nazwę...');
@@ -96,6 +97,9 @@ export class CompanyAutocompleteComponent implements OnInit {
   private readonly search$ = new Subject<string>();
 
   constructor() {
+    // OnPush: wartość zmienia się też z panelu podpowiedzi i programowo (reset() rodzica)
+    this.control.events.pipe(takeUntilDestroyed()).subscribe(() => this.cdr.markForCheck());
+
     this.search$.pipe(
       debounceTime(300),
       switchMap(term => this.fetch(term)),

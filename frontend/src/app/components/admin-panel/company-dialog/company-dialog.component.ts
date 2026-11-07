@@ -3,7 +3,6 @@ import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -21,73 +20,64 @@ import { COMPANY_DESCRIPTION_MAX, buildCompanyForm, toSaveCompany } from '../../
     MatDialogModule,
     MatButtonModule,
     MatFormFieldModule,
-    MatIconModule,
     MatInputModule,
     MatProgressSpinnerModule
   ],
   template: `
-    <h2 mat-dialog-title>
-      <mat-icon>{{ company ? 'edit' : 'add_business' }}</mat-icon>
-      {{ company ? 'Edytuj firmę' : 'Dodaj firmę' }}
-    </h2>
-    <mat-dialog-content>
-      <form [formGroup]="form" class="company-form">
-        <mat-form-field appearance="outline">
-          <mat-label>Nazwa firmy</mat-label>
-          <input matInput formControlName="name" maxlength="200">
-          <mat-icon matPrefix>business</mat-icon>
-          @if (form.get('name')?.invalid && form.get('name')?.touched) {
-            <mat-error>Nazwa firmy jest wymagana (maks. 200 znaków)</mat-error>
+    <h2 mat-dialog-title>{{ company ? 'Edytuj firmę' : 'Dodaj firmę' }}</h2>
+    <form [formGroup]="form" (ngSubmit)="onSubmit()">
+      <mat-dialog-content>
+        <div class="company-form">
+          <mat-form-field appearance="outline">
+            <mat-label>Nazwa firmy</mat-label>
+            <input matInput formControlName="name" maxlength="200" required cdkFocusInitial>
+            @if (form.get('name')?.invalid && form.get('name')?.touched) {
+              <mat-error>Nazwa firmy jest wymagana (maks. 200 znaków)</mat-error>
+            }
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Miasto</mat-label>
+            <input matInput formControlName="location" maxlength="200" placeholder="np. Rzeszów">
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Strona internetowa</mat-label>
+            <input matInput type="url" formControlName="website" maxlength="300" placeholder="https://...">
+            @if (form.get('website')?.invalid) {
+              <mat-error>Podaj adres zaczynający się od http:// lub https://</mat-error>
+            }
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Opis</mat-label>
+            <textarea matInput formControlName="description" rows="5" [maxlength]="descriptionMax"></textarea>
+            <mat-hint align="end">{{ form.get('description')?.value?.length ?? 0 }} / {{ descriptionMax }}</mat-hint>
+          </mat-form-field>
+
+          @if (!company) {
+            <p class="hint">Firma dodana przez administratora jest od razu zatwierdzona.</p>
           }
-        </mat-form-field>
-
-        <mat-form-field appearance="outline">
-          <mat-label>Lokalizacja</mat-label>
-          <input matInput formControlName="location" maxlength="200" placeholder="np. Rzeszów">
-          <mat-icon matPrefix>location_on</mat-icon>
-        </mat-form-field>
-
-        <mat-form-field appearance="outline">
-          <mat-label>Strona www</mat-label>
-          <input matInput formControlName="website" maxlength="300" placeholder="https://...">
-          <mat-icon matPrefix>language</mat-icon>
-          @if (form.get('website')?.invalid) {
-            <mat-error>Podaj adres zaczynający się od http:// lub https://</mat-error>
-          }
-        </mat-form-field>
-
-        <mat-form-field appearance="outline">
-          <mat-label>Opis</mat-label>
-          <textarea matInput formControlName="description" rows="5" [maxlength]="descriptionMax"></textarea>
-          <mat-hint align="end">{{ form.get('description')?.value?.length ?? 0 }} / {{ descriptionMax }}</mat-hint>
-        </mat-form-field>
-
-        @if (!company) {
-          <p class="hint">Firma dodana przez administratora jest od razu zatwierdzona.</p>
-        }
-      </form>
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button mat-dialog-close [disabled]="submitting()">Anuluj</button>
-      <button mat-raised-button color="primary" (click)="onSubmit()" [disabled]="form.invalid || submitting()">
-        @if (submitting()) {
-          <mat-spinner diameter="20"></mat-spinner>
-        } @else {
-          <ng-container>
-            <mat-icon>{{ company ? 'save' : 'add' }}</mat-icon>
+        </div>
+      </mat-dialog-content>
+      <mat-dialog-actions align="end">
+        <button mat-button type="button" mat-dialog-close [disabled]="submitting()">Anuluj</button>
+        <button mat-flat-button type="submit" class="submit-button" [disabled]="form.invalid || submitting()">
+          @if (submitting()) {
+            <mat-spinner diameter="20" aria-label="Zapisywanie"></mat-spinner>
+          } @else {
             {{ company ? 'Zapisz' : 'Dodaj' }}
-          </ng-container>
-        }
-      </button>
-    </mat-dialog-actions>
+          }
+        </button>
+      </mat-dialog-actions>
+    </form>
   `,
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [`
-    h2 { display: flex; align-items: center; gap: 12px; }
     mat-dialog-content { min-width: min(500px, 80vw); }
     .company-form { display: flex; flex-direction: column; gap: 8px; }
     .company-form mat-form-field { width: 100%; }
-    .hint { margin: 0; color: var(--text-secondary); font-size: 0.875rem; }
+    .hint { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
   `]
 })
 export class CompanyDialogComponent {
@@ -121,13 +111,13 @@ export class CompanyDialogComponent {
         console.error('Error saving company:', error);
         this.submitting.set(false);
         if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Błąd podczas zapisywania firmy'));
+          this.notify(getApiErrorMessage(error, 'Błąd podczas zapisywania firmy'), 'assertive');
         }
       }
     });
   }
 
-  private notify(message: string): void {
-    this.snackBar.open(message, 'OK', { duration: 5000 });
+  private notify(message: string, politeness: 'polite' | 'assertive' = 'polite'): void {
+    this.snackBar.open(message, 'OK', { duration: 5000, politeness });
   }
 }
