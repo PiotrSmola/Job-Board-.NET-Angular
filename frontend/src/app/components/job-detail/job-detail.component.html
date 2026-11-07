@@ -13,10 +13,8 @@
       aria-label="Nagłówek oferty"
       [class.has-image]="hero()"
       [style.background-image]="hero()?.image ?? null"
-      [style.background-position]="hero()?.position ?? null"
-      [style.--hero-dim]="hero()?.dim ?? null"
-      [style.--hero-dim-mid]="hero()?.dimMid ?? null">
-      <div class="hero-mask">
+      [style.background-position]="hero()?.position ?? null">
+      <div class="hero-mask" [style.background-image]="hero()?.mask ?? null">
         <div class="hero-inner">
           <a class="back" routerLink="/jobs" [queryParams]="backQuery">
             <mat-icon aria-hidden="true">arrow_back</mat-icon>

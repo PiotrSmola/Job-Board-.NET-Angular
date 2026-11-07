@@ -14,6 +14,7 @@ import { SavedJobsService } from '../../services/saved-jobs.service';
 import { PageTitleService } from '../../services/page-title.service';
 import { ContractTypes, Currency, JobOffer, JobOfferStatus, SalaryPeriod, SeniorityLevel, WorkType } from '../../models/job-offer.model';
 import { BackgroundFocus } from '../../models/company-media.model';
+import { offerHeroMask } from '../../utils/offer-hero';
 import { makeJob, jobPage } from '../../../testing/job-fixtures';
 import { makeCompany } from '../../../testing/company-fixtures';
 
@@ -31,15 +32,15 @@ const squash = (text: string | null | undefined) => (text ?? '').replace(/[\s �
 describe('heroStyle', () => {
   it('uses the API image with the focal point and the dim of the company', () => {
     expect(heroStyle({ url: '/api/companies/1/offer-background/file?v=abc123', dim: 70, focus: BackgroundFocus.Top })).toEqual({
-      image: 'url("/api/companies/1/offer-background/file?v=abc123")', position: 'center top', dim: '70%', dimMid: '82%'
+      image: 'url("/api/companies/1/offer-background/file?v=abc123")', position: 'center top', mask: offerHeroMask(70)
     });
     expect(heroStyle({ url: '/api/x', dim: 75, focus: BackgroundFocus.Bottom })?.position).toBe('center bottom');
     expect(heroStyle({ url: '/api/x', dim: 75, focus: BackgroundFocus.Center })?.position).toBe('center');
   });
 
-  it('keeps the dim between 55 and 95 %', () => {
-    expect(heroStyle({ url: '/api/x', dim: 10, focus: BackgroundFocus.Center })?.dim).toBe('55%');
-    expect(heroStyle({ url: '/api/x', dim: 120, focus: BackgroundFocus.Center })?.dim).toBe('95%');
+  it('uses the shared mask with the dim clamped to 55–95', () => {
+    expect(heroStyle({ url: '/api/x', dim: 10, focus: BackgroundFocus.Center })?.mask).toBe(offerHeroMask(55));
+    expect(heroStyle({ url: '/api/x', dim: 120, focus: BackgroundFocus.Center })?.mask).toBe(offerHeroMask(95));
   });
 
   it('falls back to the plain hero without a background or for a URL outside /api/', () => {
@@ -147,8 +148,7 @@ describe('JobDetailComponent', () => {
       expect(section.classList.contains('has-image')).toBe(true);
       expect(section.style.backgroundImage).toContain('/api/companies/1/offer-background/file?v=ff00');
       expect(section.style.backgroundPosition).toBe('center bottom');
-      expect(section.style.getPropertyValue('--hero-dim')).toBe('80%');
-      expect(section.style.getPropertyValue('--hero-dim-mid')).toBe('88%');
+      expect(component.hero()?.mask).toBe(offerHeroMask(80));
     });
 
     it('is plain (no image, no mask) without a company background', () => {

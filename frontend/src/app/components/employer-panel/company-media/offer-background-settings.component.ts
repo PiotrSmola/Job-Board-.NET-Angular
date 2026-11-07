@@ -13,6 +13,7 @@ import {
   DEFAULT_BACKGROUND_DIM, EmployerMediaService, IMAGE_ACCEPT, OfferBackgroundSettings, validateImageFile
 } from '../../../services/employer-media.service';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../../utils/http-errors';
+import { offerHeroMask } from '../../../utils/offer-hero';
 import { BlobImageDirective } from './blob-image.directive';
 
 export const FOCUS_OPTIONS: readonly { value: BackgroundFocus; label: string; position: string }[] = [
@@ -20,17 +21,6 @@ export const FOCUS_OPTIONS: readonly { value: BackgroundFocus; label: string; po
   { value: BackgroundFocus.Top, label: 'Góra', position: 'center top' },
   { value: BackgroundFocus.Bottom, label: 'Dół', position: 'center bottom' }
 ];
-
-/**
- * Maska nagłówka oferty dla przyciemnienia `dim` (55–95 %): kolor tła strony o kryciu dim → 40 % drogi do pełnego → pełny.
- * Ten sam przebieg co nagłówek na stronie oferty (job-detail `heroStyle`; makieta: 70 % → 82 % → tło strony).
- */
-export function offerHeroMask(dim: number): string {
-  const top = Math.min(100, Math.max(0, dim));
-  const middle = Math.round(top + (100 - top) * 0.4);
-  return `linear-gradient(180deg, color-mix(in srgb, var(--color-bg) ${top}%, transparent) 0%, ` +
-    `color-mix(in srgb, var(--color-bg) ${middle}%, transparent) 55%, var(--color-bg) 100%)`;
-}
 
 /**
  * Tło nagłówka ofert: podgląd na żywo (obraz, maska wg suwaka, punkt ostrości), zmiana i usunięcie obrazu

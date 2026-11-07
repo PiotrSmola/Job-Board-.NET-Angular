@@ -2,7 +2,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Subject, of, throwError } from 'rxjs';
-import { OfferBackgroundSettingsComponent, offerHeroMask } from './offer-background-settings.component';
+import { OfferBackgroundSettingsComponent } from './offer-background-settings.component';
+import { offerHeroMask } from '../../../utils/offer-hero';
 import { BackgroundFocus, OfferBackground } from '../../../models/company-media.model';
 import { Company } from '../../../models/company.model';
 import { ConfirmService } from '../../../services/confirm.service';
@@ -67,13 +68,9 @@ describe('OfferBackgroundSettingsComponent', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it('offerHeroMask matches the offer hero: dim, 40% of the way to opaque, then the page background', () => {
-    const mask = offerHeroMask(75);
-    expect(mask).toContain('var(--color-bg) 75%');
-    expect(mask).toContain('var(--color-bg) 85%');
-    expect(offerHeroMask(70)).toContain('var(--color-bg) 82%');
-    expect(mask).toContain('var(--color-bg) 100%');
-    expect(offerHeroMask(95)).toContain('var(--color-bg) 97%, transparent) 55%');
+  it('previews the same mask as the offer page (shared offerHeroMask)', () => {
+    create();
+    expect(component.mask()).toBe(offerHeroMask(70));
   });
 
   it('shows the live preview with the saved settings, image loaded with the token', () => {
@@ -100,7 +97,7 @@ describe('OfferBackgroundSettingsComponent', () => {
     expect(component.dim()).toBe(85);
     expect(root().querySelector('label[for="background-dim"]')?.textContent).toContain('85%');
     expect(slider().getAttribute('aria-valuetext')).toBe('85 procent');
-    expect(component.mask()).toContain('85%');
+    expect(component.mask()).toBe(offerHeroMask(85));
     expect(buttonWithText('Zapisz tło')!.disabled).toBe(false);
   });
 

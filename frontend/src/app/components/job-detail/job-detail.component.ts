@@ -11,7 +11,8 @@ import { PageTitleService } from '../../services/page-title.service';
 import { JobOffer } from '../../models/job-offer.model';
 import { JobParams } from '../../models/job-params.model';
 import { Company } from '../../models/company.model';
-import { BackgroundFocus, MAX_BACKGROUND_DIM, MIN_BACKGROUND_DIM, OfferBackground } from '../../models/company-media.model';
+import { BackgroundFocus, OfferBackground } from '../../models/company-media.model';
+import { offerHeroMask } from '../../utils/offer-hero';
 import { getJobState } from '../../utils/status-labels';
 import {
   SALARY_PERIOD_OPTIONS, formatJobSalary, formatSalaryRange, getContractTypeLabels, getSeniorityLabel, offersNoun
@@ -44,20 +45,15 @@ const FOCUS_POSITION: Record<BackgroundFocus, string> = {
   [BackgroundFocus.Bottom]: 'center bottom'
 };
 
-/** Styl nagłówka z tłem firmy: obraz, punkt ostrości i przyciemnienie maski (55–95 %); null = jednolite tło. */
+/** Styl nagłówka z tłem firmy: obraz, punkt ostrości i maska z przyciemnienia (wspólna z podglądem w panelu); null = jednolite tło. */
 export function heroStyle(background: OfferBackground | null | undefined): {
-  image: string; position: string; dim: string; dimMid: string;
+  image: string; position: string; mask: string;
 } | null {
   if (!background || !isSafeApiUrl(background.url)) return null;
-  const raw = Number.isFinite(background.dim) ? background.dim : MIN_BACKGROUND_DIM;
-  const dim = Math.min(MAX_BACKGROUND_DIM, Math.max(MIN_BACKGROUND_DIM, Math.round(raw)));
-  // środek gradientu: 40% drogi od przyciemnienia do pełnego tła (dla 70% → 82%, jak w makiecie)
-  const dimMid = Math.round(dim + (100 - dim) * 0.4);
   return {
     image: `url("${background.url}")`,
     position: FOCUS_POSITION[background.focus] ?? FOCUS_POSITION[BackgroundFocus.Center],
-    dim: `${dim}%`,
-    dimMid: `${dimMid}%`
+    mask: offerHeroMask(background.dim)
   };
 }
 

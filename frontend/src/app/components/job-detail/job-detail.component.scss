@@ -5,15 +5,8 @@
   background-repeat: no-repeat;
 }
 
-// Jedyny dozwolony gradient (maska tła oferty): przyciemnienie → mocniej → kolor strony
-.has-image .hero-mask {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--color-bg) var(--hero-dim, 75%), transparent) 0%,
-    color-mix(in srgb, var(--color-bg) var(--hero-dim-mid, 85%), transparent) 55%,
-    var(--color-bg) 100%
-  );
-}
+// Maska (jedyny dozwolony gradient) przychodzi ze wspólnej funkcji offerHeroMask (utils/offer-hero.ts) –
+// efektywne krycie gwarantuje kontrast tekstu ≥ 4,5:1 także na białym obrazie
 
 .hero-inner,
 .offer-body {
