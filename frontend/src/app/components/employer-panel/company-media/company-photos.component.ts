@@ -62,7 +62,8 @@ export class CompanyPhotosComponent implements OnInit {
   });
 
   private readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
-  private readonly load$ = new Subject<void>();
+  /** true = ciche odświeżenie (siatka zostaje, bez szkieletu i bez komunikatu o błędzie wczytywania). */
+  private readonly load$ = new Subject<boolean>();
   private readonly order$ = new Subject<number[]>();
   /** Kolejność ostatnio potwierdzona przez API – do niej wracamy po błędzie zapisu kolejności. */
   private confirmed: CompanyPhoto[] = [];
@@ -70,14 +71,16 @@ export class CompanyPhotosComponent implements OnInit {
 
   constructor() {
     this.load$.pipe(
-      tap(() => {
+      tap(silent => {
+        if (silent) return;
         this.loading.set(true);
         this.loadError.set(null);
       }),
-      switchMap(() => this.media.getPhotos(this.company().id).pipe(
+      switchMap(silent => this.media.getPhotos(this.company().id).pipe(
         catchError(error => {
           console.error('Error loading company photos:', error);
-          this.loadError.set(getApiErrorMessage(error, 'Nie udało się wczytać zdjęć'));
+          // ciche odświeżenie po błędzie innej operacji – zostaje ostatni znany stan, błąd pokazał już wywołujący
+          if (!silent) this.loadError.set(getApiErrorMessage(error, 'Nie udało się wczytać zdjęć'));
           return of(null);
         })
       )),
@@ -94,6 +97,8 @@ export class CompanyPhotosComponent implements OnInit {
           console.error('Error reordering photos:', error);
           this.photos.set(this.confirmed);
           this.showError(error, 'Nie udało się zapisać kolejności zdjęć');
+          // np. „Invalid photo order” – galeria zmieniła się gdzie indziej; stan z serwera zamiast zgadywania
+          this.refresh();
           return of(null);
         })
       )),
@@ -107,7 +112,7 @@ export class CompanyPhotosComponent implements OnInit {
   }
 
   reload(): void {
-    this.load$.next();
+    this.load$.next(false);
   }
 
   label(photo: CompanyPhoto, index: number): string {
@@ -152,6 +157,8 @@ export class CompanyPhotosComponent implements OnInit {
     this.upload?.unsubscribe();
     this.uploadProgress.set(null);
     this.announce('Wysyłanie zdjęć przerwane');
+    // serwer mógł już zapisać zdjęcia (przerwanie po wysłaniu całego żądania) – lista z serwera
+    this.refresh();
   }
 
   drop(event: CdkDragDrop<CompanyPhoto[]>): void {
@@ -228,6 +235,11 @@ export class CompanyPhotosComponent implements OnInit {
     this.photos.set(list);
     this.announce(`${this.label(list[to], from)} – pozycja ${to + 1} z ${list.length}`);
     this.order$.next(list.map(p => p.id));
+  }
+
+  /** Ciche przeładowanie listy z serwera po operacji, której wynik jest niepewny (bez szkieletu – brak CLS i utraty fokusu). */
+  private refresh(): void {
+    this.load$.next(true);
   }
 
   private setPhotos(photos: CompanyPhoto[]): void {

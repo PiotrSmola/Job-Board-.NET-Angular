@@ -141,14 +141,36 @@ describe('CompanyPhotosComponent', () => {
       expect(media['reorderPhotos']).toHaveBeenCalledWith([3, 1, 2]);
     });
 
-    it('restores the last saved order when saving fails', () => {
+    it('restores the last saved order when saving fails and quietly reloads the gallery from the server', () => {
       create();
       media['reorderPhotos'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'Invalid photo order' } })));
+      const reloaded = new Subject<CompanyPhoto[]>();
+      media['getPhotos'].mockReturnValue(reloaded);
 
       button('Przesuń w lewo: Zdjęcie firmy 2').click();
 
       expect(component.photos().map(p => p.id)).toEqual([1, 2, 3]);
       expect(root().querySelector('.errors')?.textContent).toContain('Nieprawidłowa kolejność zdjęć');
+      expect(media['getPhotos']).toHaveBeenCalledTimes(2);
+      // ciche odświeżenie – siatka zostaje (bez szkieletu)
+      expect(component.loading()).toBe(false);
+      expect(root().querySelector('.skeleton')).toBeNull();
+
+      // galeria zmieniła się w innej karcie – widać stan z serwera
+      reloaded.next([photo(1), photo(3)]);
+      expect(component.photos().map(p => p.id)).toEqual([1, 3]);
+      expect(root().querySelector('.errors')?.textContent).toContain('Nieprawidłowa kolejność zdjęć');
+    });
+
+    it('keeps the current gallery when the quiet reload fails', () => {
+      create();
+      media['reorderPhotos'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'Invalid photo order' } })));
+      media['getPhotos'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+
+      button('Przesuń w lewo: Zdjęcie firmy 2').click();
+
+      expect(component.loadError()).toBeNull();
+      expect(component.photos().map(p => p.id)).toEqual([1, 2, 3]);
     });
   });
 
@@ -208,10 +230,15 @@ describe('CompanyPhotosComponent', () => {
       media['uploadPhotos'].mockReturnValue(upload);
       selectFiles([imageFile('a.png')]);
 
+      media['getPhotos'].mockReturnValue(of([photo(1), photo(2), photo(3), photo(4)]));
+
       component.cancelUpload();
 
       expect(upload.observed).toBe(false);
       expect(component.uploadProgress()).toBeNull();
+      // serwer mógł zapisać zdjęcia przed przerwaniem – lista przeładowana z serwera
+      expect(media['getPhotos']).toHaveBeenCalledTimes(2);
+      expect(component.photos().length).toBe(4);
     });
   });
 
