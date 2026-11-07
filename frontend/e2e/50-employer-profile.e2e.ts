@@ -136,7 +136,7 @@ test.describe('pracodawca – profil firmy: zdjęcia', () => {
       await pub.goto(href);
       const gallery = pub.getByRole('list', { name: 'Zdjęcia firmy' });
       await expect(gallery.getByRole('listitem')).toHaveCount(5);
-      const more = gallery.getByRole('button', { name: 'Pokaż wszystkie zdjęcia (6)' });
+      const more = gallery.getByRole('button', { name: '+2 zdjęcia, pokaż wszystkie (6)' });
       await expect(more).toBeVisible();
       await expect(more).toContainText('+2 zdjęcia');
       // zdjęcia faktycznie się załadowały (nie są uszkodzone)

@@ -73,7 +73,8 @@ export class CompanyGalleryComponent {
         index,
         alt,
         more: more ? `+${more} ${photosNoun(more)}` : '',
-        label: more ? `Pokaż wszystkie zdjęcia (${photos.length})` : `Powiększ zdjęcie: ${alt}`
+        // nazwa zaczyna się od widocznego „+N zdjęć” (WCAG 2.5.3 – głosowe „kliknij +8 zdjęć” działa)
+        label: more ? `+${more} ${photosNoun(more)}, pokaż wszystkie (${photos.length})` : `Powiększ zdjęcie: ${alt}`
       };
     });
   });

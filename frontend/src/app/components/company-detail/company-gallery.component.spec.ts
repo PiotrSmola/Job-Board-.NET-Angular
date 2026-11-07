@@ -55,7 +55,7 @@ describe('CompanyGalleryComponent', () => {
 
     expect(buttons().length).toBe(5);
     expect(root().querySelector('li.large')).toBe(buttons()[0].parentElement);
-    expect(buttons()[4].getAttribute('aria-label')).toBe('Pokaż wszystkie zdjęcia (12)');
+    expect(buttons()[4].getAttribute('aria-label')).toBe('+8 zdjęć, pokaż wszystkie (12)');
     expect(buttons()[4].querySelector('.more')?.textContent).toBe('+8 zdjęć');
     expect(buttons()[4].querySelector('img')?.getAttribute('alt')).toBe('');
   });
