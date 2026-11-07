@@ -367,6 +367,8 @@ describe('CompanyDetailComponent', () => {
       expect(root().textContent).toContain('Nie znaleziono firmy');
       expect(root().querySelector('.profile')).toBeNull();
       expect(getJobs).not.toHaveBeenCalled();
+      // oczekiwany stan strony – bez console.error
+      expect(console.error).not.toHaveBeenCalled();
     });
 
     it('treats a non-numeric id as not found', async () => {

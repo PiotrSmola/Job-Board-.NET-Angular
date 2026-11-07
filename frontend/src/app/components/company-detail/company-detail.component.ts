@@ -157,12 +157,13 @@ export class CompanyDetailComponent {
   }
 
   private onCompanyError(error: unknown): void {
-    console.error('Error loading company:', error);
     this.loading.set(false);
     this.pageTitle.set('Firma niedostępna');
+    // brak firmy (404, 400 dla nienumerycznego id) to oczekiwany stan strony – bez logowania jako błąd
     if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 400)) {
       this.notFound.set(true);
     } else {
+      console.error('Error loading company:', error);
       this.loadError.set(getApiErrorMessage(error, 'Nie udało się wczytać profilu firmy'));
     }
   }

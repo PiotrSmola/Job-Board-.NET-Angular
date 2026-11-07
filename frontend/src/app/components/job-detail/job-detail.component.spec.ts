@@ -370,10 +370,13 @@ describe('JobDetailComponent', () => {
       expect(root().querySelector('[role="alert"]')?.textContent?.trim()).toBeTruthy();
       expect(setTitle).toHaveBeenCalledWith('Oferta niedostępna');
       expect(root().querySelector('a[href="/jobs"]')).not.toBeNull();
+      // brak oferty to oczekiwany stan – nie jest logowany jako błąd
+      expect(console.error).not.toHaveBeenCalled();
     });
 
     it('shows a generic message for server errors', () => {
       create(throwError(() => httpError(500)));
+      expect(console.error).toHaveBeenCalledWith('Error loading job:', expect.anything());
 
       expect(root().querySelector('[role="alert"]')?.textContent).toBeTruthy();
       expect(root().querySelector('app-job-apply')).toBeNull();

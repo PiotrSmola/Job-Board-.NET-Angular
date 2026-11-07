@@ -18,7 +18,7 @@ import {
   SALARY_PERIOD_OPTIONS, formatJobSalary, formatSalaryRange, getContractTypeLabels, getSeniorityLabel, offersNoun
 } from '../../utils/job-labels';
 import { paramsFromQuery, urlQuery } from '../../utils/job-query';
-import { getApiErrorMessage } from '../../utils/http-errors';
+import { getApiErrorMessage, isNotFound } from '../../utils/http-errors';
 import { formatDayMonth, formatSkills, getWorkModeLabel, isoDate } from '../shared/job-taxonomy.component';
 import { SaveJobButtonComponent } from '../shared/save-job-button.component';
 import { JOBS_QUERY_STATE } from '../job-list/jobs-query-state';
@@ -161,7 +161,8 @@ export class JobDetailComponent {
         this.pageTitle.set(job.title);
         this.related$.next(job);
       } else if (!silent) {
-        console.error('Error loading job:', error);
+        // brak oferty (404) to oczekiwany stan strony, nie błąd aplikacji
+        if (!isNotFound(error)) console.error('Error loading job:', error);
         this.job.set(null);
         this.loadError.set(getApiErrorMessage(error, 'Nie udało się wczytać oferty'));
         this.pageTitle.set('Oferta niedostępna');

@@ -6,6 +6,11 @@ export function isHandledByInterceptor(error: unknown): boolean {
   return error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403);
 }
 
+/** Zasób nie istnieje (404) – oczekiwany wynik (np. usunięta oferta), nie błąd do logowania w konsoli. */
+export function isNotFound(error: unknown): boolean {
+  return error instanceof HttpErrorResponse && error.status === 404;
+}
+
 const TOO_MANY_REQUESTS = 'Too many requests - try again later';
 const TOO_MANY_REQUESTS_PL = 'Zbyt wiele żądań – spróbuj ponownie za kilka minut';
 /** 413 bez komunikatu API – limit nginx dla uploadu załączników (strona HTML). */

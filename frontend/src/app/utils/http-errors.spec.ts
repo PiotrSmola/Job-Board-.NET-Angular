@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { getApiErrorMessage, isHandledByInterceptor } from './http-errors';
+import { getApiErrorMessage, isHandledByInterceptor, isNotFound } from './http-errors';
 
 const FALLBACK = 'Coś poszło nie tak';
 
@@ -19,6 +19,15 @@ describe('http-errors', () => {
 
     it('is false for non-HTTP errors', () => {
       expect(isHandledByInterceptor(new Error('x'))).toBe(false);
+    });
+  });
+
+  describe('isNotFound', () => {
+    it('is true only for an HTTP 404', () => {
+      expect(isNotFound(httpError(404))).toBe(true);
+      expect(isNotFound(httpError(400))).toBe(false);
+      expect(isNotFound(httpError(500))).toBe(false);
+      expect(isNotFound(new Error('404'))).toBe(false);
     });
   });
 
