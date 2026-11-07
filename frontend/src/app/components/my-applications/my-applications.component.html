@@ -112,8 +112,10 @@
                 @if (canAddAttachments(application) || canWithdraw(application)) {
                   <div class="actions">
                     @if (canAddAttachments(application)) {
-                      <button mat-stroked-button type="button" class="add-attachments" (click)="openAttachmentsDialog(application)">
-                        Dodaj załączniki<span class="visually-hidden">: {{ application.jobTitle }}</span>
+                      <!-- aria-label zamiast ukrytego dopisku: ukryty (absolutnie pozycjonowany) span dokładał spację przed dwukropkiem -->
+                      <button mat-stroked-button type="button" class="add-attachments" (click)="openAttachmentsDialog(application)"
+                        [attr.aria-label]="'Dodaj załączniki: ' + application.jobTitle">
+                        Dodaj załączniki
                       </button>
                     }
                     @if (canWithdraw(application)) {
@@ -124,12 +126,13 @@
                         class="withdraw"
                         (click)="withdrawApplication(application)"
                         [disabled]="withdrawingId() === application.id"
-                        [disabledInteractive]="true">
+                        [disabledInteractive]="true"
+                        [attr.aria-label]="withdrawingId() === application.id ? null : 'Wycofaj aplikację: ' + application.jobTitle">
                         @if (withdrawingId() === application.id) {
                           <mat-spinner diameter="18" aria-hidden="true"></mat-spinner>
                           Wycofywanie…
                         } @else {
-                          Wycofaj aplikację<span class="visually-hidden">: {{ application.jobTitle }}</span>
+                          Wycofaj aplikację
                         }
                       </button>
                     }

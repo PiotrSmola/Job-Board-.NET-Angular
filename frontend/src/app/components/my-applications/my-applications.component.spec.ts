@@ -448,8 +448,9 @@ describe('MyApplicationsComponent', () => {
         'Pobierz CV: moje-cv.pdf', 'Usuń CV: moje-cv.pdf',
         'Pobierz List motywacyjny: list.docx', 'Usuń List motywacyjny: list.docx'
       ]);
-      expect(details.querySelector('button.add-attachments')?.textContent?.replace(/\s+/g, ' ').trim())
-        .toBe('Dodaj załączniki: Oferta 1');
+      // bez spacji przed dwukropkiem (ukryty dopisek w osobnym elemencie dawał „Dodaj załączniki : …”)
+      expect(details.querySelector('button.add-attachments')?.getAttribute('aria-label')).toBe('Dodaj załączniki: Oferta 1');
+      expect(details.querySelector('button.withdraw')?.getAttribute('aria-label')).toBe('Wycofaj aplikację: Oferta 1');
     });
 
     it('offers adding only in the statuses the API allows, but deleting and downloading always', () => {

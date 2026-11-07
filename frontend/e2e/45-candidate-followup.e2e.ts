@@ -23,7 +23,7 @@ test.describe('kandydat – po decyzji rekrutera', () => {
     await page.goto('/my-applications');
     const article = page.locator('article.application', { hasText: job.title });
     await article.getByRole('button', { name: `Szczegóły aplikacji: ${job.title}` }).click();
-    const withdraw = article.getByRole('button', { name: new RegExp(`Wycofaj aplikację\\s*: ${job.title}`) });
+    const withdraw = article.getByRole('button', { name: `Wycofaj aplikację: ${job.title}` });
 
     // Anuluj – nic się nie dzieje, fokus wraca na przycisk
     await withdraw.click();
