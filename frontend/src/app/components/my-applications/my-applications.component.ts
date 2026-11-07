@@ -1,16 +1,16 @@
-import { Component, DestroyRef, inject, OnInit, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { CommonModule } from '@angular/common';
-import { Router, RouterModule } from '@angular/router';
-import { MatTableModule } from '@angular/material/table';
+import { NgTemplateOutlet } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatTabsModule } from '@angular/material/tabs';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatDialog } from '@angular/material/dialog';
+import { filter, switchMap, tap } from 'rxjs';
 import { JobApplicationService } from '../../services/job-application.service';
+import { ConfirmService } from '../../services/confirm.service';
 import { ApplicationAttachment, ApplicationStatus, ApplicationStatusHistoryEntry, JobApplication } from '../../models/job-application.model';
 import { getApiErrorMessage, isHandledByInterceptor } from '../../utils/http-errors';
 import { canAddAttachments, canWithdraw, getApplicationStatusPresentation, StatusPresentation } from '../../utils/status-labels';
@@ -25,73 +25,108 @@ import {
   AttachmentsDialogResult
 } from './attachments-dialog.component';
 
+/** Statusy końcowe – aplikacje w zakładce „Zakończone”; pozostałe są „W toku”. */
+export const CLOSED_APPLICATION_STATUSES: readonly ApplicationStatus[] = [
+  ApplicationStatus.Hired,
+  ApplicationStatus.Rejected,
+  ApplicationStatus.Withdrawn
+];
+
+export function isClosedApplication(status: ApplicationStatus): boolean {
+  return CLOSED_APPLICATION_STATUSES.includes(status);
+}
+
+/** „3 listopada” (z rokiem, gdy inny niż bieżący) – od kiedy aplikacja ma obecny status. */
+export function formatStatusSince(date: string | Date, now: Date = new Date()): string {
+  const value = new Date(date);
+  if (Number.isNaN(value.getTime())) return '';
+  return value.toLocaleDateString('pl-PL', {
+    day: 'numeric',
+    month: 'long',
+    ...(value.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' })
+  });
+}
+
+type LoadState = 'loading' | 'loaded' | 'error';
+
+/**
+ * „Moje aplikacje” (makieta MojeAplikacje.dc.html): zakładki „W toku” / „Zakończone” (podział po statusie),
+ * karty z przyciskiem rozwijania (`aria-expanded`/`aria-controls`), a w szczegółach oś czasu, pełna treść wiadomości,
+ * załączniki z pobieraniem/usuwaniem, „Dodaj załączniki” i „Wycofaj aplikację” (potwierdzenie przez ConfirmService).
+ * Historia pobierana przy pierwszym rozwinięciu i trzymana w pamięci podręcznej komponentu.
+ */
 @Component({
   selector: 'app-my-applications',
   standalone: true,
   imports: [
-    CommonModule,
-    RouterModule,
-    MatTableModule,
+    NgTemplateOutlet,
+    RouterLink,
     MatButtonModule,
     MatIconModule,
-    MatCardModule,
     MatProgressSpinnerModule,
-    MatTooltipModule,
+    MatTabsModule,
     StatusChipComponent,
     StatusTimelineComponent,
     AttachmentListComponent
   ],
   templateUrl: './my-applications.component.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './my-applications.component.scss'
 })
-export class MyApplicationsComponent implements OnInit {
-  private applicationService = inject(JobApplicationService);
-  private router = inject(Router);
-  private cdr = inject(ChangeDetectorRef);
-  private snackBar = inject(MatSnackBar);
-  private dialog = inject(MatDialog);
-  private destroyRef = inject(DestroyRef);
+export class MyApplicationsComponent {
+  private readonly applicationService = inject(JobApplicationService);
+  private readonly snackBar = inject(MatSnackBar);
+  private readonly dialog = inject(MatDialog);
+  private readonly confirmService = inject(ConfirmService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
 
-  applications: JobApplication[] = [];
-  displayedColumns: string[] = ['jobTitle', 'company', 'location', 'status', 'appliedAt', 'note', 'attachments', 'actions'];
-  loading = false;
-  withdrawingId: number | null = null;
+  readonly applications = signal<JobApplication[]>([]);
+  readonly state = signal<LoadState>('loading');
+  readonly loadError = signal('');
+  /** 0 = „W toku”, 1 = „Zakończone”. */
+  readonly selectedTab = signal(0);
+  readonly activeApplications = computed(() => this.applications().filter(a => !isClosedApplication(a.status)));
+  readonly closedApplications = computed(() => this.applications().filter(a => isClosedApplication(a.status)));
 
-  /** Wiersze śledzone po id – podmiana aplikacji (np. po usunięciu załącznika) nie odtwarza wiersza, więc fokus zostaje. */
-  readonly trackById = (_: number, application: JobApplication): number => application.id;
-
-  /** Aplikacja z rozwiniętą historią (null = żadna). */
-  expandedId: number | null = null;
-  historyLoadingId: number | null = null;
+  /** Rozwinięte karty (można rozwinąć kilka naraz). */
+  readonly expandedIds = signal<ReadonlySet<number>>(new Set());
+  readonly historyLoadingIds = signal<ReadonlySet<number>>(new Set());
   /** Historia pobrana z GET /api/jobapplications/{id}, per aplikacja. */
-  histories: Record<number, ApplicationStatusHistoryEntry[]> = {};
+  readonly histories = signal<Readonly<Record<number, ApplicationStatusHistoryEntry[]>>>({});
+  readonly withdrawingId = signal<number | null>(null);
 
-  ngOnInit(): void {
+  constructor() {
     this.loadApplications();
   }
 
   loadApplications(): void {
-    this.loading = true;
-    this.applicationService.getMyApplications().subscribe({
-      next: (applications) => {
-        this.applications = applications;
-        this.loading = false;
-        this.cdr.detectChanges();
-      },
-      error: (error) => {
-        console.error('Error loading applications:', error);
-        this.loading = false;
-        this.cdr.detectChanges();
-        if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Błąd podczas ładowania aplikacji'));
+    this.state.set('loading');
+    this.applicationService.getMyApplications().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: applications => {
+        this.applications.set(applications);
+        // nic w toku, ale są zakończone – od razu pokazujemy zakończone
+        if (!this.activeApplications().length && this.closedApplications().length) {
+          this.selectedTab.set(1);
         }
+        this.state.set('loaded');
+      },
+      error: error => {
+        console.error('Error loading applications:', error);
+        this.loadError.set(isHandledByInterceptor(error)
+          ? 'Nie udało się wczytać aplikacji'
+          : getApiErrorMessage(error, 'Nie udało się wczytać aplikacji – spróbuj ponownie'));
+        this.state.set('error');
       }
     });
   }
 
   statusPresentation(status: ApplicationStatus): StatusPresentation {
     return getApplicationStatusPresentation(status);
+  }
+
+  statusSince(application: JobApplication): string {
+    return formatStatusSince(application.statusChangedAt || application.appliedAt);
   }
 
   canWithdraw(application: JobApplication): boolean {
@@ -101,6 +136,23 @@ export class MyApplicationsComponent implements OnInit {
   /** Dodawanie załączników: dozwolony status i wolne miejsce w limicie liczby plików (usuwać można zawsze). */
   canAddAttachments(application: JobApplication): boolean {
     return canAddAttachments(application.status) && application.attachments.length < ATTACHMENTS_MAX_COUNT;
+  }
+
+  isExpanded(id: number): boolean {
+    return this.expandedIds().has(id);
+  }
+
+  /** Rozwija/zwija szczegóły; przy pierwszym rozwinięciu pobiera historię z API. */
+  toggleDetails(application: JobApplication): void {
+    const id = application.id;
+    if (this.isExpanded(id)) {
+      this.expandedIds.update(ids => without(ids, id));
+      return;
+    }
+    this.expandedIds.update(ids => new Set(ids).add(id));
+    if (!this.histories()[id] && !this.historyLoadingIds().has(id)) {
+      this.loadHistory(id);
+    }
   }
 
   /** Dodanie załączników w dialogu z paskiem postępu. */
@@ -117,14 +169,13 @@ export class MyApplicationsComponent implements OnInit {
       }
       if (!result) return;
       this.replaceApplication(result);
-      this.cdr.detectChanges();
-      this.notify('Załączniki zostały dodane do aplikacji');
+      this.notifySuccess('Załączniki zostały dodane do aplikacji');
     });
   }
 
   /** Załącznik usunięty w liście – aktualizujemy aplikację bez ponownego pobierania. */
   onAttachmentDeleted(applicationId: number, attachment: ApplicationAttachment): void {
-    const current = this.applications.find(app => app.id === applicationId);
+    const current = this.applications().find(app => app.id === applicationId);
     if (!current) return;
 
     this.replaceApplication({
@@ -132,22 +183,65 @@ export class MyApplicationsComponent implements OnInit {
       attachments: current.attachments.filter(a => a.id !== attachment.id),
       attachmentsTotalSize: Math.max(0, current.attachmentsTotalSize - attachment.size)
     });
-    this.cdr.detectChanges();
-    this.notify('Załącznik został usunięty');
+    this.notifySuccess('Załącznik został usunięty');
+  }
+
+  withdrawApplication(application: JobApplication): void {
+    if (this.withdrawingId() !== null) return;
+
+    this.confirmService.confirm({
+      title: 'Wycofać aplikację?',
+      message: `Aplikacja na stanowisko „${application.jobTitle}” zostanie wycofana. ` +
+        'Jeśli oferta będzie nadal aktywna, możesz później aplikować ponownie.',
+      confirmLabel: 'Wycofaj aplikację',
+      destructive: true
+    }).pipe(
+      filter(Boolean),
+      tap(() => this.withdrawingId.set(application.id)),
+      switchMap(() => this.applicationService.withdraw(application.id)),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      next: updated => {
+        const { history, ...rest } = updated;
+        this.replaceApplication(rest);
+        // historia w cache jest już nieaktualna – bierzemy ją z odpowiedzi albo pobieramy od nowa
+        if (history) {
+          this.histories.update(all => ({ ...all, [updated.id]: history }));
+        } else {
+          this.histories.update(all => {
+            const { [updated.id]: _stale, ...others } = all;
+            return others;
+          });
+          if (this.isExpanded(updated.id)) {
+            this.loadHistory(updated.id);
+          }
+        }
+        this.withdrawingId.set(null);
+        // karta przeszła do „Zakończone” i znika z bieżącej zakładki – fokus na nagłówek strony, żeby nie zginął
+        this.heading().nativeElement.focus();
+        this.notifySuccess('Aplikacja została wycofana – znajdziesz ją w zakładce „Zakończone”');
+      },
+      error: error => {
+        console.error('Error withdrawing application:', error);
+        this.withdrawingId.set(null);
+        if (!isHandledByInterceptor(error)) {
+          this.notify(getApiErrorMessage(error, 'Nie udało się wycofać aplikacji'));
+        }
+      }
+    });
   }
 
   private refreshApplication(id: number): void {
     this.applicationService.getApplication(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (details) => {
+      next: details => {
         // szczegóły zawierają też historię – od razu aktualizujemy jej cache
         const { history, ...application } = details;
         this.replaceApplication(application);
         if (history) {
-          this.histories = { ...this.histories, [id]: history };
+          this.histories.update(all => ({ ...all, [id]: history }));
         }
-        this.cdr.detectChanges();
       },
-      error: (error) => {
+      error: error => {
         console.error('Error refreshing application:', error);
         if (!isHandledByInterceptor(error)) {
           this.notify(getApiErrorMessage(error, 'Nie udało się odświeżyć aplikacji – odśwież stronę'));
@@ -157,82 +251,23 @@ export class MyApplicationsComponent implements OnInit {
   }
 
   private replaceApplication(updated: JobApplication): void {
-    this.applications = this.applications.map(app => app.id === updated.id ? { ...app, ...updated } : app);
+    this.applications.update(all => all.map(app => app.id === updated.id ? { ...app, ...updated } : app));
   }
 
-  /** Rozwija/zwija historię; przy pierwszym rozwinięciu pobiera ją z API. */
-  toggleHistory(application: JobApplication): void {
-    if (this.expandedId === application.id) {
-      this.expandedId = null;
-      return;
-    }
-
-    this.expandedId = application.id;
-    if (this.histories[application.id]) return;
-
-    this.loadHistory(application.id);
-  }
-
-  /**
-   * Pobiera historię aplikacji do cache. Odpowiedź może przyjść, gdy użytkownik rozwinął już inny wiersz –
-   * spinner i zwijanie dotyczą wtedy tylko wiersza, którego odpowiedź dotyczy.
-   */
+  /** Pobiera historię aplikacji do cache; przy błędzie zwija tylko kartę, której odpowiedź dotyczy. */
   private loadHistory(id: number): void {
-    this.historyLoadingId = id;
-    this.applicationService.getApplication(id).subscribe({
-      next: (details) => {
-        this.histories = { ...this.histories, [id]: details.history ?? [] };
-        if (this.historyLoadingId === id) {
-          this.historyLoadingId = null;
-        }
-        this.cdr.detectChanges();
+    this.historyLoadingIds.update(ids => new Set(ids).add(id));
+    this.applicationService.getApplication(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: details => {
+        this.histories.update(all => ({ ...all, [id]: details.history ?? [] }));
+        this.historyLoadingIds.update(ids => without(ids, id));
       },
-      error: (error) => {
+      error: error => {
         console.error('Error loading application history:', error);
-        if (this.historyLoadingId === id) {
-          this.historyLoadingId = null;
-        }
-        if (this.expandedId === id) {
-          this.expandedId = null;
-        }
-        this.cdr.detectChanges();
+        this.historyLoadingIds.update(ids => without(ids, id));
+        this.expandedIds.update(ids => without(ids, id));
         if (!isHandledByInterceptor(error)) {
           this.notify(getApiErrorMessage(error, 'Nie udało się wczytać historii aplikacji'));
-        }
-      }
-    });
-  }
-
-  withdrawApplication(application: JobApplication): void {
-    if (!confirm(`Czy na pewno chcesz wycofać aplikację na stanowisko „${application.jobTitle}”? ` +
-      'Jeśli oferta będzie nadal aktywna, możesz później aplikować ponownie.')) {
-      return;
-    }
-
-    this.withdrawingId = application.id;
-    this.applicationService.withdraw(application.id).subscribe({
-      next: (updated) => {
-        this.applications = this.applications.map(app => app.id === updated.id ? { ...app, ...updated } : app);
-        // historia w cache jest już nieaktualna – bierzemy ją z odpowiedzi albo pobieramy od nowa
-        if (updated.history) {
-          this.histories = { ...this.histories, [updated.id]: updated.history };
-        } else {
-          const { [updated.id]: _stale, ...rest } = this.histories;
-          this.histories = rest;
-          if (this.expandedId === updated.id) {
-            this.loadHistory(updated.id);
-          }
-        }
-        this.withdrawingId = null;
-        this.cdr.detectChanges();
-        this.notify('Aplikacja została wycofana');
-      },
-      error: (error) => {
-        console.error('Error withdrawing application:', error);
-        this.withdrawingId = null;
-        this.cdr.detectChanges();
-        if (!isHandledByInterceptor(error)) {
-          this.notify(getApiErrorMessage(error, 'Błąd podczas wycofywania aplikacji'));
         }
       }
     });
@@ -242,17 +277,13 @@ export class MyApplicationsComponent implements OnInit {
     this.snackBar.open(message, 'OK', { duration: 5000 });
   }
 
-  viewJobDetails(jobId: number): void {
-    this.router.navigate(['/jobs', jobId]);
+  private notifySuccess(message: string): void {
+    this.snackBar.open(message, 'OK', { duration: 5000, politeness: 'polite' });
   }
+}
 
-  formatDate(date: Date | string): string {
-    return new Date(date).toLocaleDateString('pl-PL', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  }
+function without(ids: ReadonlySet<number>, id: number): ReadonlySet<number> {
+  const next = new Set(ids);
+  next.delete(id);
+  return next;
 }

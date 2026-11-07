@@ -1,166 +1,150 @@
-<div class="my-applications-container">
-  <div class="header">
-    <h1>Moje Aplikacje</h1>
-    <p class="subtitle">Śledź status swoich aplikacji i historię rekrutacji</p>
+<div class="page">
+  <div class="page-header">
+    <h1 #heading tabindex="-1">Moje aplikacje</h1>
   </div>
 
-  @if (loading) {
-    <div class="loading-container">
-      <mat-spinner></mat-spinner>
-    </div>
+  @switch (state()) {
+    @case ('loading') {
+      <!-- szkielet kart rezerwuje miejsce na listę (CLS) -->
+      <div class="list" role="status">
+        <span class="visually-hidden">Wczytywanie aplikacji…</span>
+        @for (placeholder of [1, 2, 3]; track placeholder) {
+          <div class="surface skeleton" aria-hidden="true"></div>
+        }
+      </div>
+    }
+    @case ('error') {
+      <div class="surface state" role="alert">
+        <p>{{ loadError() }}</p>
+        <button mat-stroked-button type="button" (click)="loadApplications()">Spróbuj ponownie</button>
+      </div>
+    }
+    @default {
+      @if (!applications().length) {
+        <div class="surface state">
+          <p>Nie masz jeszcze żadnych aplikacji.</p>
+          <a mat-flat-button routerLink="/jobs">Przeglądaj oferty</a>
+        </div>
+      } @else {
+        <mat-tab-group
+          class="tabs"
+          [selectedIndex]="selectedTab()"
+          (selectedIndexChange)="selectedTab.set($event)"
+          mat-stretch-tabs="false"
+          mat-align-tabs="start"
+          aria-label="Filtr aplikacji">
+          <mat-tab [label]="'W toku (' + activeApplications().length + ')'">
+            <ng-template matTabContent>
+              <ng-container *ngTemplateOutlet="list; context: { $implicit: activeApplications(), empty: 'Nie masz aplikacji w toku.' }" />
+            </ng-template>
+          </mat-tab>
+          <mat-tab [label]="'Zakończone (' + closedApplications().length + ')'">
+            <ng-template matTabContent>
+              <ng-container *ngTemplateOutlet="list; context: { $implicit: closedApplications(), empty: 'Nie masz zakończonych aplikacji.' }" />
+            </ng-template>
+          </mat-tab>
+        </mat-tab-group>
+      }
+    }
   }
+</div>
 
-  @if (!loading && applications.length > 0) {
-    <mat-card class="table-card">
-      <div class="table-container">
-        <table mat-table [dataSource]="applications" [trackBy]="trackById" multiTemplateDataRows class="applications-table">
-          <ng-container matColumnDef="jobTitle">
-            <th mat-header-cell *matHeaderCellDef>Stanowisko</th>
-            <td mat-cell *matCellDef="let application">
-              <span class="job-title">{{ application.jobTitle || 'N/A' }}</span>
-            </td>
-          </ng-container>
-
-          <ng-container matColumnDef="company">
-            <th mat-header-cell *matHeaderCellDef>Firma</th>
-            <td mat-cell *matCellDef="let application">
-              <span class="company-name">{{ application.company || 'N/A' }}</span>
-            </td>
-          </ng-container>
-
-          <ng-container matColumnDef="location">
-            <th mat-header-cell *matHeaderCellDef>Lokalizacja</th>
-            <td mat-cell *matCellDef="let application">
-              <div class="location-cell">
-                <mat-icon>location_on</mat-icon>
-                <span>{{ application.jobOffer?.location || 'N/A' }}</span>
-              </div>
-            </td>
-          </ng-container>
-
-          <ng-container matColumnDef="status">
-            <th mat-header-cell *matHeaderCellDef>Status</th>
-            <td mat-cell *matCellDef="let application">
-              @let presentation = statusPresentation(application.status);
+<ng-template #list let-items let-empty="empty">
+  @if (items.length) {
+    <div class="list">
+      @for (application of items; track application.id) {
+        @let expanded = isExpanded(application.id);
+        @let presentation = statusPresentation(application.status);
+        @let location = application.jobOffer?.location;
+        <article class="surface application" [attr.aria-labelledby]="'application-title-' + application.id">
+          <div class="summary">
+            <div class="main">
+              <h2 class="title" [id]="'application-title-' + application.id">
+                <a [routerLink]="['/jobs', application.jobOfferId]">{{ application.jobTitle }}</a>
+              </h2>
+              <p class="secondary">{{ application.company }}@if (location) { · {{ location }} }</p>
+            </div>
+            <div class="status">
               <app-status-chip [label]="presentation.label" [tone]="presentation.tone" />
-            </td>
-          </ng-container>
+              <span class="since">od {{ statusSince(application) }}</span>
+            </div>
+            <button
+              mat-icon-button
+              type="button"
+              class="toggle"
+              (click)="toggleDetails(application)"
+              [attr.aria-expanded]="expanded"
+              [attr.aria-controls]="'application-details-' + application.id"
+              [attr.aria-label]="'Szczegóły aplikacji: ' + application.jobTitle">
+              <mat-icon aria-hidden="true">{{ expanded ? 'expand_less' : 'expand_more' }}</mat-icon>
+            </button>
+          </div>
 
-          <ng-container matColumnDef="appliedAt">
-            <th mat-header-cell *matHeaderCellDef>Data aplikacji</th>
-            <td mat-cell *matCellDef="let application">
-              <div class="date-cell">
-                <mat-icon>schedule</mat-icon>
-                <span>{{ formatDate(application.appliedAt) }}</span>
+          <div class="details" [id]="'application-details-' + application.id" [hidden]="!expanded">
+            @if (expanded) {
+              <div class="column">
+                <h3>Historia</h3>
+                @if (historyLoadingIds().has(application.id)) {
+                  <div class="history-loading" role="status">
+                    <mat-spinner diameter="28" aria-hidden="true"></mat-spinner>
+                    <span class="visually-hidden">Wczytywanie historii…</span>
+                  </div>
+                } @else {
+                  <app-status-timeline [history]="histories()[application.id]" />
+                }
+
+                @if (application.note) {
+                  <h3 class="note-heading">Twoja wiadomość</h3>
+                  <p class="note">{{ application.note }}</p>
+                }
               </div>
-            </td>
-          </ng-container>
 
-          <ng-container matColumnDef="note">
-            <th mat-header-cell *matHeaderCellDef>Notatka</th>
-            <td mat-cell *matCellDef="let application">
-              @if (application.note) {
-                <span class="note" [matTooltip]="application.note">{{ application.note | slice:0:50 }}{{ application.note.length > 50 ? '...' : '' }}</span>
-              } @else {
-                <span class="no-note">Brak</span>
-              }
-            </td>
-          </ng-container>
-
-          <ng-container matColumnDef="attachments">
-            <th mat-header-cell *matHeaderCellDef>Załączniki</th>
-            <td mat-cell *matCellDef="let application">
-              <div class="attachments-cell">
+              <div class="column">
+                <h3>Załączniki</h3>
                 <app-attachment-list
                   [applicationId]="application.id"
                   [attachments]="application.attachments"
                   [allowDelete]="true"
                   [showDate]="true"
+                  emptyText="Brak załączników"
                   (deleted)="onAttachmentDeleted(application.id, $event)" />
-                @if (canAddAttachments(application)) {
-                  <button
-                    mat-stroked-button
-                    type="button"
-                    class="add-attachments"
-                    (click)="openAttachmentsDialog(application)"
-                    [attr.aria-label]="'Dodaj załączniki do aplikacji: ' + application.jobTitle">
-                    <mat-icon aria-hidden="true">attach_file</mat-icon>
-                    Dodaj
-                  </button>
-                }
-              </div>
-            </td>
-          </ng-container>
 
-          <ng-container matColumnDef="actions">
-            <th mat-header-cell *matHeaderCellDef>Akcje</th>
-            <td mat-cell *matCellDef="let application">
-              <div class="actions-cell">
-                <button mat-icon-button color="primary" (click)="viewJobDetails(application.jobOfferId)" matTooltip="Zobacz ofertę">
-                  <mat-icon>visibility</mat-icon>
-                </button>
-                <button
-                  mat-icon-button
-                  (click)="toggleHistory(application)"
-                  [attr.aria-expanded]="expandedId === application.id"
-                  [matTooltip]="expandedId === application.id ? 'Ukryj historię' : 'Pokaż historię'">
-                  <mat-icon>{{ expandedId === application.id ? 'expand_less' : 'history' }}</mat-icon>
-                </button>
-                @if (canWithdraw(application)) {
-                  <button
-                    mat-icon-button
-                    color="warn"
-                    (click)="withdrawApplication(application)"
-                    [disabled]="withdrawingId === application.id"
-                    matTooltip="Wycofaj aplikację">
-                    @if (withdrawingId === application.id) {
-                      <mat-spinner diameter="24"></mat-spinner>
-                    } @else {
-                      <mat-icon>undo</mat-icon>
+                @if (canAddAttachments(application) || canWithdraw(application)) {
+                  <div class="actions">
+                    @if (canAddAttachments(application)) {
+                      <button mat-stroked-button type="button" class="add-attachments" (click)="openAttachmentsDialog(application)">
+                        Dodaj załączniki<span class="visually-hidden">: {{ application.jobTitle }}</span>
+                      </button>
                     }
-                  </button>
+                    @if (canWithdraw(application)) {
+                      <button
+                        mat-button
+                        color="warn"
+                        type="button"
+                        class="withdraw"
+                        (click)="withdrawApplication(application)"
+                        [disabled]="withdrawingId() === application.id"
+                        [disabledInteractive]="true">
+                        @if (withdrawingId() === application.id) {
+                          <mat-spinner diameter="18" aria-hidden="true"></mat-spinner>
+                          Wycofywanie…
+                        } @else {
+                          Wycofaj aplikację<span class="visually-hidden">: {{ application.jobTitle }}</span>
+                        }
+                      </button>
+                    }
+                  </div>
                 }
               </div>
-            </td>
-          </ng-container>
-
-          <!-- Rozwijana historia statusów -->
-          <ng-container matColumnDef="expandedDetail">
-            <td mat-cell *matCellDef="let application" [attr.colspan]="displayedColumns.length" class="detail-cell">
-              @if (expandedId === application.id) {
-                <div class="history-panel">
-                  @if (historyLoadingId === application.id) {
-                    <mat-spinner diameter="32"></mat-spinner>
-                  } @else {
-                    <app-status-timeline [history]="histories[application.id]" />
-                  }
-                </div>
-              }
-            </td>
-          </ng-container>
-
-          <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-          <tr mat-row *matRowDef="let row; columns: displayedColumns;" class="table-row"></tr>
-          <tr mat-row *matRowDef="let row; columns: ['expandedDetail']" class="detail-row"
-            [class.expanded]="expandedId === row.id"></tr>
-        </table>
-      </div>
-
-      <div class="stats-footer">
-        <mat-icon>assessment</mat-icon>
-        <span>Łącznie aplikacji: <strong>{{ applications.length }}</strong></span>
-      </div>
-    </mat-card>
-  }
-
-  @if (!loading && applications.length === 0) {
-    <div class="no-applications">
-      <mat-icon>inbox</mat-icon>
-      <h3>Brak aplikacji</h3>
-      <p>Nie aplikowałeś jeszcze na żadne oferty pracy</p>
-      <button mat-raised-button color="primary" routerLink="/jobs">
-        Przeglądaj oferty
-      </button>
+            }
+          </div>
+        </article>
+      }
+    </div>
+  } @else {
+    <div class="surface state">
+      <p>{{ empty }}</p>
+      <a mat-stroked-button routerLink="/jobs">Przeglądaj oferty</a>
     </div>
   }
-</div>
+</ng-template>
