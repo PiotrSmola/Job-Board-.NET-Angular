@@ -3,12 +3,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
-import { SavedJobsComponent } from './saved-jobs.component';
+import { SavedJobsComponent, formatSavedAt } from './saved-jobs.component';
 import { SavedJobsService } from '../../services/saved-jobs.service';
 import { SavedJob } from '../../models/account.model';
 import { PaginatedResult } from '../../models/pagination.model';
 import { JobOfferStatus } from '../../models/job-offer.model';
 import { makeJob } from '../../../testing/job-fixtures';
+import { formatJobSalary } from '../../utils/job-labels';
 
 vi.setConfig({ testTimeout: 20000 });
 
@@ -71,8 +72,38 @@ describe('SavedJobsComponent', () => {
     expect(getSavedJobs).toHaveBeenCalledWith(1, 10);
     const titles = Array.from(root().querySelectorAll('.title a')).map(a => [a.textContent?.trim(), a.getAttribute('href')]);
     expect(titles).toEqual([['Angular Developer', '/jobs/1'], ['Stara oferta', '/jobs/2'], ['Zamknięta', '/jobs/3']]);
-    expect(root().textContent).toContain('Zapisano: 02.03.2026');
+    expect(root().querySelector('.item .saved-at')?.textContent?.trim()).toBe('Zapisano ' + formatSavedAt('2026-03-02T10:00:00Z'));
     expect(root().querySelectorAll('app-save-job-button button[aria-pressed="true"]').length).toBe(3);
+    expect(root().querySelector('h1')?.textContent?.trim()).toBe('Zapisane oferty');
+    expect(root().querySelector('.page-subtitle')?.textContent?.trim()).toBe('3 oferty');
+  });
+
+  it('renders the offers as cards like the job list: company link, salary only when given', () => {
+    const items: SavedJob[] = [
+      { savedAt: '2026-03-02T10:00:00Z', job: makeJob(1, { title: 'Z widełkami', salaryMin: 10000, salaryMax: 15000 }) },
+      { savedAt: '2026-03-02T10:00:00Z', job: makeJob(2, { title: 'Bez widełek', salaryMin: null, salaryMax: null }) }
+    ];
+    create(of(page(items)));
+
+    const cards = Array.from(root().querySelectorAll<HTMLElement>('article.item'));
+    expect(cards[0].getAttribute('aria-labelledby')).toBe('saved-job-1');
+    expect(cards[0].querySelector('.company-link')?.getAttribute('href')).toBe(`/companies/${items[0].job.companyId}`);
+    expect(cards[0].querySelector('.salary')?.textContent?.trim()).toBe(formatJobSalary(items[0].job));
+    expect(cards[1].querySelector('.salary')).toBeNull();
+    expect(cards[0].querySelector('app-job-taxonomy')).not.toBeNull();
+  });
+
+  it('formats the saved date short, with the year only for other years', () => {
+    const now = new Date('2026-11-07T12:00:00');
+    expect(formatSavedAt('2026-11-03T10:00:00', now)).toBe('3 lis');
+    expect(formatSavedAt('2025-11-03T10:00:00', now)).toBe('3 lis 2025');
+  });
+
+  it('reserves space with skeleton cards while loading', () => {
+    create(new Subject<PaginatedResult<SavedJob>>());
+
+    expect(root().querySelectorAll('.skeleton').length).toBe(3);
+    expect(root().querySelector('[role="status"]')?.textContent).toContain('Wczytywanie zapisanych ofert');
   });
 
   it('marks expired and closed offers with a text label (not only colour)', () => {
