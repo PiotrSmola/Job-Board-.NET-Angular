@@ -1,6 +1,6 @@
 import { Component, DestroyRef, computed, inject, input, signal, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { SlicePipe } from '@angular/common';
+import { DatePipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatTableModule } from '@angular/material/table';
 import { MatButtonModule } from '@angular/material/button';
@@ -40,6 +40,7 @@ const ALL_COLUMNS = ['user', 'jobTitle', 'company', 'status', 'appliedAt', 'note
   providers: [providePolishPaginatorIntl()],
   standalone: true,
   imports: [
+    DatePipe,
     SlicePipe,
     FormsModule,
     MatTableModule,
@@ -197,16 +198,6 @@ export class AdminApplicationsTabComponent {
       confirmLabel: 'Usuń',
       destructive: true
     }).pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.delete(id));
-  }
-
-  formatDate(date: Date): string {
-    return new Date(date).toLocaleDateString('pl-PL', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
   }
 
   private delete(id: number): void {

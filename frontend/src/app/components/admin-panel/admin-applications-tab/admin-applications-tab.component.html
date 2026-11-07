@@ -79,7 +79,7 @@
 
         <ng-container matColumnDef="appliedAt">
           <th mat-header-cell *matHeaderCellDef mat-sort-header>Data aplikacji</th>
-          <td mat-cell *matCellDef="let app" class="muted nowrap">{{ formatDate(app.appliedAt) }}</td>
+          <td mat-cell *matCellDef="let app" class="muted nowrap">{{ app.appliedAt | date: 'dd.MM.yyyy HH:mm' }}</td>
         </ng-container>
 
         <ng-container matColumnDef="note">

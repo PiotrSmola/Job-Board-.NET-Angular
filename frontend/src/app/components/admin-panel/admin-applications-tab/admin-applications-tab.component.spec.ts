@@ -623,11 +623,15 @@ describe('AdminApplicationsTabComponent', () => {
     });
   });
 
-  it('formatDate renders a Polish date', () => {
+  it('shows the application date in the same numeric format as the other admin tables', () => {
     create();
-    const text = component.formatDate(new Date('2026-03-05T10:30:00Z'));
-    expect(text).toContain('2026');
-    expect(text.toLowerCase()).toContain('marca');
+    const appliedAt = new Date('2026-03-05T10:30:00Z');
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const expected = `05.03.2026 ${pad(appliedAt.getHours())}:${pad(appliedAt.getMinutes())}`;
+    component.applications.set([{ ...component.applications()[0], appliedAt }]);
+    fixture.detectChanges();
+    const cell = (fixture.nativeElement as HTMLElement).querySelector('td.mat-column-appliedAt');
+    expect(cell?.textContent?.trim()).toBe(expected);
   });
 
   describe('attachments', () => {
