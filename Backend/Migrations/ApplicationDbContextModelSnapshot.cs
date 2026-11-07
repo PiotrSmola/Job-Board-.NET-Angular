@@ -263,6 +263,20 @@ namespace Backend.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)");
 
+                    b.Property<string>("OfferBackgroundContentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<int>("OfferBackgroundDim")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OfferBackgroundFocus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OfferBackgroundKey")
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
                     b.Property<string>("RejectionReason")
                         .HasMaxLength(1000)
                         .HasColumnType("varchar(1000)");
@@ -290,6 +304,56 @@ namespace Backend.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("Companies");
+                });
+
+            modelBuilder.Entity("Backend.Models.CompanyPhoto", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Caption")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("FileKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FileKey")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "SortOrder");
+
+                    b.ToTable("CompanyPhotos");
                 });
 
             modelBuilder.Entity("Backend.Models.EmailMessage", b =>
@@ -818,6 +882,17 @@ namespace Backend.Migrations
                     b.Navigation("ReviewedByUser");
                 });
 
+            modelBuilder.Entity("Backend.Models.CompanyPhoto", b =>
+                {
+                    b.HasOne("Backend.Models.Company", "Company")
+                        .WithMany("Photos")
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Company");
+                });
+
             modelBuilder.Entity("Backend.Models.EmailMessage", b =>
                 {
                     b.HasOne("Backend.Models.ApplicationUser", "User")
@@ -1003,6 +1078,8 @@ namespace Backend.Migrations
                     b.Navigation("JobOffers");
 
                     b.Navigation("Members");
+
+                    b.Navigation("Photos");
                 });
 
             modelBuilder.Entity("Backend.Models.JobApplication", b =>

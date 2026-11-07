@@ -33,8 +33,22 @@ public class Company
     // null po usunięciu konta admina
     public string? ReviewedByUserId { get; set; }
 
+    // Tło nagłówka ofert firmy: klucz pliku w magazynie i typ ustalony przez serwer (null - brak tła); przyciemnienie
+    // w procentach (CompanyMedia.MinBackgroundDim-MaxBackgroundDim) i punkt zaczepienia obrazu. Wartości domyślne
+    // kolumn (75, Center) są też w migracji - istniejące firmy dostają je bez danych w kodzie
+    [MaxLength(300)]
+    public string? OfferBackgroundKey { get; set; }
+
+    [MaxLength(100)]
+    public string? OfferBackgroundContentType { get; set; }
+
+    public int OfferBackgroundDim { get; set; } = 75;
+
+    public OfferBackgroundFocus OfferBackgroundFocus { get; set; } = OfferBackgroundFocus.Center;
+
     // Navigation properties
     public ApplicationUser? ReviewedByUser { get; set; }
+    public ICollection<CompanyPhoto> Photos { get; set; } = new List<CompanyPhoto>();
     public ICollection<ApplicationUser> Members { get; set; } = new List<ApplicationUser>();
     public ICollection<JobOffer> JobOffers { get; set; } = new List<JobOffer>();
 
