@@ -1,0 +1,145 @@
+:host { display: block; }
+
+.heading-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+
+  .section-title { flex: 1; margin-bottom: 4px; }
+}
+
+.hint { margin: 0 0 16px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+// Kafel 4:3 – miejsce zarezerwowane przed wczytaniem obrazu (bez skoku układu)
+.tile {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--color-selected);
+}
+
+.photo {
+  cursor: grab;
+
+  &.busy { opacity: .6; }
+}
+
+figure { margin: 0; height: 100%; }
+
+img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+figcaption {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 6px 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-bg) 82%, transparent);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools {
+  position: absolute;
+  top: 6px;
+  display: flex;
+  gap: 4px;
+
+  &.start { left: 6px; }
+  &.end { right: 6px; }
+}
+
+.tool {
+  --mat-icon-button-state-layer-size: 36px;
+  --mat-icon-button-icon-color: var(--color-text);
+  width: 36px;
+  height: 36px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--color-bg) 78%, transparent);
+
+  // skrajne zdjęcie nie ma strzałki w stronę krawędzi
+  &.move-left:disabled,
+  &.move-right:disabled { visibility: hidden; }
+}
+
+.add-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 10px;
+  background: var(--color-raised);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+
+  &:hover:not(:disabled) { background: var(--color-selected); }
+  &:disabled { color: var(--color-text-secondary); cursor: default; }
+}
+
+.add-item { background: transparent; }
+
+.skeleton { background: var(--color-raised); }
+
+.load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-height: 135px;
+
+  p { margin: 0; color: var(--color-danger); }
+}
+
+.upload {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.errors {
+  margin: 12px 0 0;
+  padding-left: 20px;
+}
+
+// Podgląd przeciąganego kafla i miejsce docelowe
+.cdk-drag-preview {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgb(0 0 0 / .5);
+}
+
+.cdk-drag-placeholder { opacity: .3; }
+
+.cdk-drag-animating,
+.grid.cdk-drop-list-dragging .photo:not(.cdk-drag-placeholder) {
+  transition: transform 200ms cubic-bezier(0, 0, .2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cdk-drag-animating,
+  .grid.cdk-drop-list-dragging .photo { transition: none; }
+}

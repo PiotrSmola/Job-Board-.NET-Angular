@@ -1,0 +1,73 @@
+<section class="block" aria-labelledby="background-heading">
+  <h2 id="background-heading" class="section-title">Tło ofert</h2>
+  <p class="tertiary small hint">
+    Obraz w nagłówku każdej oferty firmy. Przyciemnienie zapewnia czytelność tekstu, minimum to {{ minDim }}%.
+  </p>
+
+  <div class="layout">
+    <div class="preview-column">
+      <div class="preview" [class.empty]="!url()" role="img" [attr.aria-label]="previewLabel()">
+        @if (url()) {
+          <img [appBlobSrc]="url()" alt="" [style.object-position]="objectPosition()">
+        }
+        <div class="mask" [style.background]="url() ? mask() : null" aria-hidden="true">
+          <span class="preview-title">Przykładowe stanowisko</span>
+          <span class="preview-meta">{{ company().name }}{{ company().location ? ' · ' + company().location : '' }}</span>
+        </div>
+      </div>
+      @if (!url()) {
+        <p class="tertiary small no-image">Brak obrazu – nagłówki ofert mają jednolite tło.</p>
+      }
+    </div>
+
+    <div class="controls">
+      <div class="image-actions">
+        <button mat-stroked-button type="button" (click)="openFilePicker()" [disabled]="busy()">
+          {{ url() ? 'Zmień obraz' : 'Dodaj obraz' }}
+        </button>
+        @if (url()) {
+          <button mat-button color="warn" type="button" (click)="removeImage()" [disabled]="busy()">Usuń tło</button>
+        }
+      </div>
+
+      @if (uploadProgress() !== null) {
+        <div class="upload">
+          <mat-progress-bar mode="determinate" [value]="uploadProgress()" aria-label="Wysyłanie obrazu tła"
+            [attr.aria-valuetext]="progressText()" />
+          <span class="tertiary small" aria-hidden="true">{{ progressText() }}</span>
+          <button mat-button type="button" (click)="cancelUpload()">Przerwij</button>
+        </div>
+      }
+
+      <div class="field">
+        <label for="background-dim">Przyciemnienie: <span class="num">{{ dim() }}%</span></label>
+        <input id="background-dim" class="range" type="range" step="1" [min]="minDim" [max]="maxDim" [value]="dim()"
+          [attr.aria-valuetext]="dim() + ' procent'" (input)="onDimInput($event)">
+      </div>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Punkt ostrości</mat-label>
+        <mat-select [value]="focus()" (valueChange)="focus.set($event)">
+          @for (option of focusOptions; track option.value) {
+            <mat-option [value]="option.value">{{ option.label }}</mat-option>
+          }
+        </mat-select>
+        <mat-hint>Część obrazu, która zostaje widoczna przy przycięciu</mat-hint>
+      </mat-form-field>
+
+      <div>
+        <button mat-flat-button type="button" (click)="save()" [disabled]="!dirty() || busy()">
+          {{ saving() ? 'Zapisywanie…' : 'Zapisz tło' }}
+        </button>
+      </div>
+
+      @if (error(); as message) {
+        <p class="danger-text error" role="alert">{{ message }}</p>
+      }
+    </div>
+  </div>
+
+  <p class="visually-hidden" role="status">{{ announcement() }}</p>
+  <input #fileInput type="file" class="visually-hidden" [accept]="accept" tabindex="-1" aria-hidden="true"
+    (change)="onFileSelected($event)">
+</section>

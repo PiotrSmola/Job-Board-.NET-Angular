@@ -1,0 +1,88 @@
+<section class="block" aria-labelledby="photos-heading">
+  <div class="heading-row">
+    <h2 id="photos-heading" class="section-title">Zdjęcia</h2>
+    @if (!loading() && !loadError()) {
+      <span class="tertiary small num">{{ photos().length }} z {{ max }} zdjęć</span>
+    }
+  </div>
+  <p id="photos-hint" class="tertiary small hint">
+    Widoczne na profilu firmy. JPG lub PNG, do 5 MB. Przeciągnij albo użyj strzałek, żeby zmienić kolejność – pierwsze jest największe.
+  </p>
+
+  @if (loading()) {
+    <div class="grid" aria-hidden="true">
+      @for (item of skeleton; track item) {
+        <div class="tile skeleton"></div>
+      }
+    </div>
+  } @else if (loadError(); as message) {
+    <div class="load-error" role="alert">
+      <p>{{ message }}</p>
+      <button mat-stroked-button type="button" (click)="reload()">Spróbuj ponownie</button>
+    </div>
+  } @else {
+    <ul class="grid" cdkDropList cdkDropListOrientation="mixed" [cdkDropListData]="photos()"
+      [cdkDropListDisabled]="uploading()" (cdkDropListDropped)="drop($event)" aria-describedby="photos-hint">
+      @for (photo of photos(); track photo.id; let i = $index, first = $first, last = $last) {
+        @let name = label(photo, i);
+        <li class="tile photo" cdkDrag [cdkDragData]="photo" [attr.data-photo-id]="photo.id"
+          [class.busy]="busyId() === photo.id">
+          <figure>
+            <img [appBlobSrc]="photo.url" [attr.width]="photo.width" [attr.height]="photo.height" [alt]="name" loading="lazy">
+            @if (photo.caption) {
+              <figcaption>{{ photo.caption }}</figcaption>
+            }
+          </figure>
+          <div class="tools start">
+            <button mat-icon-button type="button" class="tool move-left" [disabled]="first"
+              (click)="moveBy(photo, -1)" [attr.aria-label]="'Przesuń w lewo: ' + name">
+              <mat-icon aria-hidden="true">chevron_left</mat-icon>
+            </button>
+            <button mat-icon-button type="button" class="tool move-right" [disabled]="last"
+              (click)="moveBy(photo, 1)" [attr.aria-label]="'Przesuń w prawo: ' + name">
+              <mat-icon aria-hidden="true">chevron_right</mat-icon>
+            </button>
+          </div>
+          <div class="tools end">
+            <button mat-icon-button type="button" class="tool edit" [disabled]="busyId() === photo.id"
+              (click)="editCaption(photo, i)" [attr.aria-label]="'Edytuj opis zdjęcia: ' + name">
+              <mat-icon aria-hidden="true">edit</mat-icon>
+            </button>
+            <button mat-icon-button type="button" class="tool delete" [disabled]="busyId() === photo.id"
+              (click)="remove(photo, i)" [attr.aria-label]="'Usuń zdjęcie: ' + name">
+              <mat-icon aria-hidden="true">delete</mat-icon>
+            </button>
+          </div>
+        </li>
+      }
+      <li class="tile add-item">
+        <button type="button" class="add-tile" [disabled]="full() || uploading()" (click)="openFilePicker()"
+          aria-describedby="photos-hint">
+          <mat-icon aria-hidden="true">add</mat-icon>
+          {{ full() ? 'Limit ' + max + ' zdjęć' : 'Dodaj zdjęcia' }}
+        </button>
+      </li>
+    </ul>
+  }
+
+  @if (uploadProgress() !== null) {
+    <div class="upload">
+      <mat-progress-bar mode="determinate" [value]="uploadProgress()" aria-label="Wysyłanie zdjęć"
+        [attr.aria-valuetext]="progressText()" />
+      <span class="tertiary small" aria-hidden="true">{{ progressText() }}</span>
+      <button mat-button type="button" (click)="cancelUpload()">Przerwij</button>
+    </div>
+  }
+
+  @if (errors().length) {
+    <ul class="errors danger-text" role="alert">
+      @for (error of errors(); track $index) {
+        <li>{{ error }}</li>
+      }
+    </ul>
+  }
+
+  <p class="visually-hidden" role="status">{{ announcement() }}</p>
+  <input #fileInput type="file" class="visually-hidden" multiple [accept]="accept" tabindex="-1" aria-hidden="true"
+    (change)="onFilesSelected($event)">
+</section>

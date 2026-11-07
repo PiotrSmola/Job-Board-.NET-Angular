@@ -5,6 +5,9 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { Subject, of, throwError } from 'rxjs';
 import { EmployerCompanyTabComponent } from './employer-company-tab.component';
 import { CompanyService } from '../../../services/company.service';
+import { ConfirmService } from '../../../services/confirm.service';
+import { EmployerMediaService } from '../../../services/employer-media.service';
+import { REVERIFICATION_WARNING } from './employer-company-tab.component';
 import { Company, CompanyStatus } from '../../../models/company.model';
 import { makeCompany } from '../../../../testing/company-fixtures';
 
@@ -16,6 +19,7 @@ describe('EmployerCompanyTabComponent', () => {
   let component: EmployerCompanyTabComponent;
   let updateMyCompany: ReturnType<typeof vi.fn>;
   let snackBarOpen: ReturnType<typeof vi.fn>;
+  let confirmMock: ReturnType<typeof vi.fn>;
   let emitted: Company[];
 
   async function create(company: Company): Promise<void> {
@@ -57,6 +61,7 @@ describe('EmployerCompanyTabComponent', () => {
     updateMyCompany = vi.fn().mockImplementation((body: { name: string }) =>
       of(makeCompany(3, { name: body.name, status: CompanyStatus.Pending })));
     snackBarOpen = vi.fn();
+    confirmMock = vi.fn().mockReturnValue(of(true));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
@@ -64,7 +69,9 @@ describe('EmployerCompanyTabComponent', () => {
       providers: [
         provideRouter([]),
         { provide: CompanyService, useValue: { updateMyCompany } },
-        { provide: MatSnackBar, useValue: { open: snackBarOpen } }
+        { provide: MatSnackBar, useValue: { open: snackBarOpen } },
+        { provide: ConfirmService, useValue: { confirm: confirmMock } },
+        { provide: EmployerMediaService, useValue: { getPhotos: () => of([]), loadImage: () => of(new Blob()) } }
       ]
     }).compileComponents();
   });
@@ -126,6 +133,32 @@ describe('EmployerCompanyTabComponent', () => {
       await create(makeCompany(3, { status: null }));
 
       expect(banner()).toBeNull();
+    });
+  });
+
+  describe('media sections', () => {
+    it('renders the photos and offer background sections for the company', async () => {
+      await create(makeCompany(3));
+
+      expect(root().querySelector('app-company-photos')).not.toBeNull();
+      expect(root().querySelector('app-offer-background-settings')).not.toBeNull();
+      const headings = Array.from(root().querySelectorAll('h2')).map(h => h.textContent?.trim());
+      expect(headings).toEqual(['Dane firmy', 'Zdjęcia', 'Tło ofert']);
+    });
+
+    it('reports a changed offer background to the panel as an updated company', async () => {
+      await create(makeCompany(3, { name: 'Acme' }));
+      const background = { url: '/bg?v=2', dim: 80, focus: 0 };
+
+      component.onBackgroundChange(background);
+
+      expect(emitted).toEqual([expect.objectContaining({ name: 'Acme', offerBackground: background })]);
+    });
+
+    it('hints about re-verification next to the name of an approved company', async () => {
+      await create(makeCompany(3, { status: CompanyStatus.Approved }));
+
+      expect(root().textContent).toContain('Zmiana nazwy wymaga ponownej weryfikacji');
     });
   });
 
@@ -197,7 +230,7 @@ describe('EmployerCompanyTabComponent', () => {
     it('is disabled for a pristine pending/approved company', async () => {
       await create(makeCompany(3, { status: CompanyStatus.Approved }));
       expect(submitButton().disabled).toBe(true);
-      expect(submitButton().textContent).toContain('Zapisz zmiany');
+      expect(submitButton().textContent).toContain('Zapisz dane');
     });
 
     it('is enabled after a change', async () => {
@@ -233,12 +266,10 @@ describe('EmployerCompanyTabComponent', () => {
   });
 
   describe('approved company re-verification', () => {
-    const warning = 'Zmiana nazwy lub strony www wymaga ponownej weryfikacji przez administratora. ' +
-      'Do czasu zatwierdzenia oferty firmy nie będą widoczne publicznie.';
-    let confirmSpy: ReturnType<typeof vi.spyOn>;
+    let confirmSpy: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
-      confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      confirmSpy = confirmMock;
     });
 
     it.each([
@@ -251,7 +282,7 @@ describe('EmployerCompanyTabComponent', () => {
 
       component.onSubmit();
 
-      expect(confirmSpy).toHaveBeenCalledWith(warning);
+      expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({ message: REVERIFICATION_WARNING }));
       expect(updateMyCompany).toHaveBeenCalledTimes(1);
       expect(snackBarOpen).toHaveBeenCalledWith(
         'Zgłoszenie firmy zostało wysłane ponownie do weryfikacji', 'OK', expect.anything());
@@ -259,7 +290,7 @@ describe('EmployerCompanyTabComponent', () => {
 
     it('does not save when the confirmation is cancelled and keeps the edits', async () => {
       await create(makeCompany(3, { name: 'Acme', status: CompanyStatus.Approved }));
-      confirmSpy.mockReturnValue(false);
+      confirmSpy.mockReturnValue(of(false));
       edit('name', 'Podszywka');
 
       component.onSubmit();
