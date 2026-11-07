@@ -248,7 +248,7 @@ public static class MappingExtensions
         Caption = photo.Caption,
         Width = photo.Width,
         Height = photo.Height,
-        Url = CompanyMedia.PhotoUrl(photo.CompanyId, photo.Id)
+        Url = CompanyMedia.PhotoUrl(photo.CompanyId, photo.Id, photo.FileKey)
     };
 
     // Przepisuje dane z formularza (z normalizacją nazwy i pustych pól); status weryfikacji zmienia wywołujący

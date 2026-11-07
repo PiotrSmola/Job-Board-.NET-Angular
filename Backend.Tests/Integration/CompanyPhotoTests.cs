@@ -48,14 +48,21 @@ public class CompanyPhotoTests
         Assert.Equal((1600, 900), (photos[0].Width, photos[0].Height));
         Assert.Equal((800, 1200), (photos[1].Width, photos[1].Height));
         Assert.All(photos, p => Assert.Null(p.Caption));
-        Assert.Equal($"/api/companies/{employer.CompanyId}/photos/{photos[0].Id}/file", photos[0].Url);
 
         var publicPhotos = await PublicPhotosAsync(employer.CompanyId);
         Assert.Equal(photos.Select(p => p.Id), publicPhotos.Select(p => p.Id));
+        Assert.Equal(photos.Select(p => p.Url), publicPhotos.Select(p => p.Url));
 
         var keys = await _api.PhotoKeysAsync(employer.CompanyId);
         Assert.Matches($"^companies/{employer.CompanyId}/photos/[0-9a-f]{{32}}\\.png$", keys[0]);
         Assert.Matches($"^companies/{employer.CompanyId}/photos/[0-9a-f]{{32}}\\.jpg$", keys[1]);
+
+        // adres z wersją = GUID pliku: publiczny cache (1 dzień) nigdy nie pokaże pod tym adresem innego obrazu
+        for (var i = 0; i < photos.Count; i++)
+        {
+            Assert.Equal($"/api/companies/{employer.CompanyId}/photos/{photos[i].Id}/file?v={Path.GetFileNameWithoutExtension(keys[i])}",
+                photos[i].Url);
+        }
 
         // kolejne zdjęcia trafiają na koniec galerii
         var more = await client.UploadPhotosOkAsync(Png(10, 10));

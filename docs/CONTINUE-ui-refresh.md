@@ -31,7 +31,7 @@ WCAG 2.2 AA (contrast checked, keyboard, focus visible, landmarks `header`/`nav`
 Storage: existing `IFileStorage`; images validated by content (PNG/JPEG only, ≤ 5 MB each, read width/height from the header and store them), keys `companies/{companyId}/photos/{guid}.{ext}` and `companies/{companyId}/offer-background/{guid}.{ext}`; files deleted after commit when records are removed (also when the company is deleted).
 
 Company photos (`CompanyPhoto { id, companyId, fileKey, contentType, size, width, height, caption (≤150, nullable), sortOrder, uploadedAt }`, max 20 per company):
-- `GET /api/companies/{id}/photos` (public for approved companies; members/admin always) → `[{ id, caption, width, height, url }]` ordered by `sortOrder`; `url` = `/api/companies/{id}/photos/{photoId}/file`.
+- `GET /api/companies/{id}/photos` (public for approved companies; members/admin always) → `[{ id, caption, width, height, url }]` ordered by `sortOrder`; `url` = `/api/companies/{id}/photos/{photoId}/file?v={32 hex}` (version = the file's GUID - always use the `url` from the API).
 - `GET /api/companies/{id}/photos/{photoId}/file` → image, `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`, `Cache-Control: public, max-age=86400` (approved companies) / `private, no-store` otherwise.
 - Employer (own company): `POST /api/employer/company/photos` multipart `files` (all-or-nothing, limit check under the company row lock) → 201 list; `PATCH /api/employer/company/photos/{photoId}` `{ caption }`; `PUT /api/employer/company/photos/order` `{ photoIds: [...] }` (must contain exactly the company's photos) → 200 list; `DELETE /api/employer/company/photos/{photoId}` → 204.
 - Admin moderation: `DELETE /api/admin/companies/{id}/photos/{photoId}`.

@@ -48,15 +48,21 @@ public static class CompanyMedia
     public static string NewBackgroundStorageKey(int companyId, AttachmentFileType type) =>
         $"{StorageKeyPrefix}{companyId}/offer-background/{Guid.NewGuid():N}{type.Extension}";
 
-    public static string PhotoUrl(int companyId, int photoId) => $"/api/companies/{companyId}/photos/{photoId}/file";
+    // Adres zdjęcia z wersją (GUID z klucza pliku) - jak tło: adres wskazuje zawsze ten sam plik, więc publiczny cache
+    // (1 dzień) nie pokaże innego obrazu pod tym samym id (np. po resecie danych demo); usunięte zdjęcie znika z listy
+    // (lista nie jest cache'owana), więc strony nie odwołują się już do jego adresu; endpoint ignoruje parametr v
+    public static string PhotoUrl(int companyId, int photoId, string fileKey) =>
+        $"/api/companies/{companyId}/photos/{photoId}/file?v={FileVersion(fileKey)}";
 
     // Adres tła z wersją (GUID z klucza pliku): nowe tło ma nowy adres, więc obraz z publicznego cache (1 dzień) nie
     // zostaje po zmianie; endpoint ignoruje parametr v
     public static string BackgroundUrl(int companyId, string backgroundKey) =>
-        $"/api/companies/{companyId}/offer-background/file?v={Path.GetFileNameWithoutExtension(backgroundKey)}";
+        $"/api/companies/{companyId}/offer-background/file?v={FileVersion(backgroundKey)}";
 
-    // Cache-Control pliku: obrazy firmy zatwierdzonej są publiczne (zdjęcie ma stały adres, tło - adres z wersją),
-    // pozostałe widzą tylko admin i członkowie firmy - bez zapisu w żadnym cache
+    private static string FileVersion(string fileKey) => Path.GetFileNameWithoutExtension(fileKey);
+
+    // Cache-Control pliku: obrazy firmy zatwierdzonej są publiczne (adresy z wersją), pozostałe widzą tylko admin
+    // i członkowie firmy - bez zapisu w żadnym cache
     public static string CacheControl(bool isPublic) => isPublic ? "public, max-age=86400" : "private, no-store";
 
     // Content-Disposition: wyświetlenie w przeglądarce (nazwa tylko z identyfikatorów i rozszerzenia typu)

@@ -11,7 +11,7 @@ export interface CompanyPhoto {
   caption: string | null;
   width: number;
   height: number;
-  /** Względny adres pliku: /api/companies/{id}/photos/{photoId}/file */
+  /** Względny adres pliku z wersją: /api/companies/{id}/photos/{photoId}/file?v={guid} – używaj go, nie składaj adresu. */
   url: string;
 }
 
