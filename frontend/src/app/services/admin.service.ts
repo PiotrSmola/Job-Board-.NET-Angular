@@ -73,6 +73,16 @@ export class AdminService {
     return this.http.delete<void>(`${this.COMPANIES_URL}/${id}`);
   }
 
+  /** Moderacja galerii: usunięcie zdjęcia firmy (404 „Photo not found”). */
+  deleteCompanyPhoto(companyId: number, photoId: number): Observable<void> {
+    return this.http.delete<void>(`${this.COMPANIES_URL}/${companyId}/photos/${photoId}`);
+  }
+
+  /** Moderacja: usunięcie obrazu tła ofert firmy (ustawienia przyciemnienia zostają). */
+  deleteCompanyBackground(companyId: number): Observable<void> {
+    return this.http.delete<void>(`${this.COMPANIES_URL}/${companyId}/offer-background`);
+  }
+
   // --- kategorie ofert (lista: CategoryService, publiczny GET /api/categories) ---
 
   createCategory(category: SaveCategory): Observable<Category> {

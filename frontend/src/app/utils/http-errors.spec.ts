@@ -60,7 +60,12 @@ describe('http-errors', () => {
       ['A profile can have at most 10 documents', 'Profil może mieć maksymalnie 10 dokumentów'],
       ['Total size of profile documents cannot exceed 25 MB', 'Łączny rozmiar dokumentów profilu nie może przekroczyć 25 MB'],
       ['Document not found', 'Nie znaleziono dokumentu'],
-      ['No documents selected', 'Nie wybrano dokumentów z profilu']
+      ['No documents selected', 'Nie wybrano dokumentów z profilu'],
+      ['A company can have at most 20 photos', 'Firma może mieć maksymalnie 20 zdjęć'],
+      ['Unsupported image type - upload a PNG or JPEG file', 'Nieobsługiwany typ obrazu – prześlij plik PNG lub JPEG'],
+      ['Request is too large - upload at most 25 MB at once', 'Przesyłane pliki są za duże – jednorazowo można wysłać do 25 MB'],
+      ['Invalid photo order', 'Nieprawidłowa kolejność zdjęć – odśwież galerię'],
+      ['Offer background not found', 'Firma nie ma tła ofert']
     ])('translates the known API message "%s"', (message, expected) => {
       expect(getApiErrorMessage(httpError(400, { message }), FALLBACK)).toBe(expected);
     });
