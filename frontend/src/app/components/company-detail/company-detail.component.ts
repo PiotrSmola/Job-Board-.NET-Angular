@@ -1,21 +1,19 @@
-import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
-import { MatDividerModule } from '@angular/material/divider';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { providePolishPaginatorIntl } from '../../services/polish-paginator-intl';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { EMPTY, Observable, Subject, catchError, map, of, switchMap, tap } from 'rxjs';
 import { Company, CompanyStatus } from '../../models/company.model';
-import { JobOffer, WorkType } from '../../models/job-offer.model';
+import { CompanyPhoto } from '../../models/company-media.model';
+import { JobOffer } from '../../models/job-offer.model';
 import { JobParams } from '../../models/job-params.model';
 import { PaginatedResult } from '../../models/pagination.model';
 import { CompanyService } from '../../services/company.service';
+import { CompanyMediaService } from '../../services/company-media.service';
 import { JobService } from '../../services/job.service';
 import { PageTitleService } from '../../services/page-title.service';
 import { getApiErrorMessage } from '../../utils/http-errors';
@@ -23,36 +21,30 @@ import { safeWebsiteUrl } from '../../utils/company-form';
 import { getCompanyStatusPresentation } from '../../utils/status-labels';
 import { formatJobSalary } from '../../utils/job-labels';
 import { StatusChipComponent } from '../shared/status-chip.component';
+import { formatFullDate, formatJobMeta } from '../shared/job-taxonomy.component';
+import { CompanyGalleryComponent } from './company-gallery.component';
 
-const WORK_TYPE_LABELS: Record<WorkType, string> = {
-  [WorkType.Remote]: 'Zdalna',
-  [WorkType.Hybrid]: 'Hybrydowa',
-  [WorkType.Onsite]: 'Stacjonarna'
-};
-
-/** Publiczny profil firmy z listą jej aktywnych ofert. */
+/** Publiczny profil firmy (makieta Firmy): dane, galeria zdjęć i lista aktywnych ofert. */
 @Component({
   selector: 'app-company-detail',
   providers: [providePolishPaginatorIntl()],
   standalone: true,
   imports: [
-    DatePipe,
     RouterLink,
     MatButtonModule,
-    MatCardModule,
-    MatDividerModule,
     MatIconModule,
     MatPaginatorModule,
-    MatProgressSpinnerModule,
-    StatusChipComponent
+    StatusChipComponent,
+    CompanyGalleryComponent
   ],
   templateUrl: './company-detail.component.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './company-detail.component.scss'
 })
 export class CompanyDetailComponent {
   private route = inject(ActivatedRoute);
   private companyService = inject(CompanyService);
+  private mediaService = inject(CompanyMediaService);
   private jobService = inject(JobService);
   private pageTitle = inject(PageTitleService);
 
@@ -67,7 +59,13 @@ export class CompanyDetailComponent {
   readonly jobsPageIndex = signal(0);
   readonly jobsPageSize = 10;
 
+  readonly photos = signal<CompanyPhoto[]>([]);
+  /** Galeria w trakcie wczytywania – miejsce jest zarezerwowane (bez przesunięć układu). */
+  readonly photosLoading = signal(false);
+
   readonly websiteUrl = computed(() => safeWebsiteUrl(this.company()?.website));
+  /** Adres strony bez protokołu jako tekst linku („acme.example.com”). */
+  readonly websiteLabel = computed(() => (this.websiteUrl() ?? '').replace(/^https?:\/\//i, '').replace(/\/$/, ''));
   /** Status pokazujemy tylko, gdy API go zwróciło i firma nie jest zatwierdzona (widok admina / członka firmy). */
   readonly statusPresentation = computed(() => {
     const status = this.company()?.status;
@@ -75,18 +73,33 @@ export class CompanyDetailComponent {
       ? null
       : getCompanyStatusPresentation(status);
   });
+  readonly since = computed(() => {
+    const createdAt = this.company()?.createdAt;
+    return createdAt ? formatFullDate(createdAt) : null;
+  });
+  readonly jobRows = computed(() => this.jobs().map(job => ({ job, meta: formatJobMeta(job), salary: formatJobSalary(job) })));
 
   private companyId = 0;
   /** Kolejne wczytania profilu – switchMap anuluje poprzednie żądanie (szybka zmiana :id, ponowna próba). */
   private readonly companyLoad$ = new Subject<number>();
   /** true – wczytaj oferty bieżącej firmy, false – anuluj trwające wczytywanie (zmiana firmy). */
   private readonly jobsLoad$ = new Subject<boolean>();
+  /** Firma, której zdjęcia wczytać (null – anuluj, np. zmiana firmy). */
+  private readonly photosLoad$ = new Subject<Company | null>();
 
   constructor() {
     this.jobsLoad$.pipe(
       switchMap(load => load ? this.fetchJobs() : EMPTY),
       takeUntilDestroyed()
     ).subscribe(result => this.onJobsLoaded(result));
+
+    this.photosLoad$.pipe(
+      switchMap(company => company ? this.fetchPhotos(company) : EMPTY),
+      takeUntilDestroyed()
+    ).subscribe(photos => {
+      this.photos.set(photos);
+      this.photosLoading.set(false);
+    });
 
     this.companyLoad$.pipe(
       tap(() => this.startCompanyLoad()),
@@ -113,11 +126,14 @@ export class CompanyDetailComponent {
     this.notFound.set(false);
     this.loadError.set(null);
     this.company.set(null);
-    // oferty poprzedniej firmy nie mogą nadpisać listy
+    // oferty i zdjęcia poprzedniej firmy nie mogą nadpisać list
     this.jobsLoad$.next(false);
+    this.photosLoad$.next(null);
     this.jobs.set([]);
     this.jobsTotal.set(0);
     this.jobsLoading.set(false);
+    this.photos.set([]);
+    this.photosLoading.set(false);
   }
 
   private onCompanyLoaded(company: Company): void {
@@ -125,6 +141,19 @@ export class CompanyDetailComponent {
     this.loading.set(false);
     this.pageTitle.set(company.name);
     this.jobsLoad$.next(true);
+    if (this.hasPublicPhotos(company)) {
+      this.photosLoading.set(true);
+      this.photosLoad$.next(company);
+    }
+  }
+
+  /**
+   * Zdjęcia firmy niezatwierdzonej API serwuje tylko członkom i adminom z JWT, którego `<img src>` nie wysyła –
+   * na profilu publicznym pokazujemy więc galerię tylko firm zatwierdzonych (status pominięty = zatwierdzona).
+   */
+  private hasPublicPhotos(company: Company): boolean {
+    const approved = company.status === null || company.status === undefined || company.status === CompanyStatus.Approved;
+    return approved && (company.photosCount ?? 1) > 0;
   }
 
   private onCompanyError(error: unknown): void {
@@ -143,12 +172,19 @@ export class CompanyDetailComponent {
     this.jobsLoad$.next(true);
   }
 
-  workTypeLabel(workType: WorkType): string {
-    return WORK_TYPE_LABELS[workType] ?? 'Nieznany';
-  }
-
   formatSalary(job: JobOffer): string {
     return formatJobSalary(job);
+  }
+
+  private fetchPhotos(company: Company): Observable<CompanyPhoto[]> {
+    // błąd galerii nie psuje profilu – sekcja się nie pokazuje
+    return this.mediaService.getPhotos(company.id).pipe(
+      map(photos => Array.isArray(photos) ? photos : []),
+      catchError(error => {
+        console.error('Error loading company photos:', error);
+        return of([] as CompanyPhoto[]);
+      })
+    );
   }
 
   private fetchJobs(): Observable<PaginatedResult<JobOffer> | null> {

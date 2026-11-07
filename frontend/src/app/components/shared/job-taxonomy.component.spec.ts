@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
-  JobTaxonomyComponent, formatDayMonth, formatJobMeta, formatPosted, formatSkills, getWorkModeLabel, isoDate
+  JobTaxonomyComponent, formatDayMonth, formatFullDate, formatJobMeta, formatPosted, formatSkills, getWorkModeLabel, isoDate
 } from './job-taxonomy.component';
 import { ContractTypes, JobOffer, SeniorityLevel, WorkType } from '../../models/job-offer.model';
 import { makeJob } from '../../../testing/job-fixtures';
@@ -29,6 +29,7 @@ describe('job taxonomy text', () => {
     expect(formatPosted(new Date(2026, 9, 30), now)).toBe('tydzień temu');
     expect(formatPosted(new Date(2026, 9, 4), now)).toBe('4 października');
     expect(formatDayMonth(new Date(2025, 2, 1), now)).toBe('1 marca 2025');
+    expect(formatFullDate(new Date(2026, 2, 5))).toBe('5 marca 2026');
     expect(isoDate('nie-data')).toBeNull();
   });
 

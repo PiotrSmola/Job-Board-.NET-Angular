@@ -39,6 +39,11 @@ export function formatDayMonth(value: Date | string, now: Date = new Date()): st
   return (date.getFullYear() === now.getFullYear() ? dayMonth : dayMonthYear).format(date);
 }
 
+/** Pełna data po polsku z rokiem: „5 marca 2026”. */
+export function formatFullDate(value: Date | string): string {
+  return dayMonthYear.format(new Date(value));
+}
+
 /** Data dodania względnie: „dziś”, „wczoraj”, „3 dni temu”, „tydzień temu”, potem „4 listopada”. */
 export function formatPosted(value: Date | string, now: Date = new Date()): string {
   const date = new Date(value);

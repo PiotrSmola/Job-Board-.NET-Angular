@@ -1,96 +1,106 @@
-<div class="company-detail-container">
-  <div class="back">
-    <a mat-button routerLink="/companies">
-      <mat-icon>arrow_back</mat-icon>
+<div class="page">
+  <p class="back">
+    <a routerLink="/companies">
+      <mat-icon aria-hidden="true">arrow_back</mat-icon>
       Wszystkie firmy
     </a>
-  </div>
+  </p>
 
   @if (loading()) {
-    <div class="state">
-      <mat-spinner></mat-spinner>
+    <!-- rezerwacja miejsca na profil (bez przesunięć układu) -->
+    <div class="profile-skeleton" aria-busy="true">
+      <p class="visually-hidden">Wczytywanie profilu firmy…</p>
     </div>
   } @else if (notFound()) {
     <div class="state">
-      <mat-icon>domain_disabled</mat-icon>
-      <h3>Nie znaleziono firmy</h3>
-      <p>Firma nie istnieje lub jej profil nie jest publiczny.</p>
+      <h1>Nie znaleziono firmy</h1>
+      <p class="muted">Firma nie istnieje lub jej profil nie jest publiczny.</p>
     </div>
-  } @else if (loadError()) {
-    <div class="state">
-      <mat-icon>cloud_off</mat-icon>
-      <h3>{{ loadError() }}</h3>
-      <button mat-raised-button color="primary" (click)="loadCompany()">
-        <mat-icon>refresh</mat-icon>
-        Spróbuj ponownie
-      </button>
+  } @else if (loadError(); as error) {
+    <div class="state" role="alert">
+      <h1>Profil firmy niedostępny</h1>
+      <p class="muted">{{ error }}</p>
+      <button mat-flat-button type="button" (click)="loadCompany()">Spróbuj ponownie</button>
     </div>
   } @else if (company(); as current) {
-    <mat-card class="company-card">
-      <mat-card-header>
-        <mat-icon mat-card-avatar>business</mat-icon>
-        <mat-card-title>
-          {{ current.name }}
+    <div class="profile">
+      <div class="main">
+        <div class="title-row">
+          <h1>{{ current.name }}</h1>
           @if (statusPresentation(); as status) {
             <app-status-chip [label]="status.label" [tone]="status.tone" />
           }
-        </mat-card-title>
-        <mat-card-subtitle>Na Job Board od {{ current.createdAt | date: 'dd.MM.yyyy' }}</mat-card-subtitle>
-      </mat-card-header>
-
-      <mat-card-content>
-        <div class="meta">
-          @if (current.location) {
-            <span class="meta-item"><mat-icon>location_on</mat-icon>{{ current.location }}</span>
-          }
-          @if (websiteUrl(); as url) {
-            <a class="meta-item" [href]="url" target="_blank" rel="noopener noreferrer">
-              <mat-icon>language</mat-icon>{{ current.website }}
-            </a>
-          }
-          <span class="meta-item"><mat-icon>work</mat-icon>Aktywne oferty: {{ current.activeJobsCount }}</span>
         </div>
-
+        @if (current.location || websiteUrl()) {
+          <p class="meta">
+            @if (current.location) {
+              <span class="location">{{ current.location }}</span>
+            }
+            @if (current.location && websiteUrl()) {
+              <span aria-hidden="true"> · </span>
+            }
+            @if (websiteUrl(); as url) {
+              <a class="website-link" [href]="url" target="_blank" rel="noopener noreferrer">{{ websiteLabel() }}<span class="visually-hidden"> (otwiera się w nowej karcie)</span></a>
+            }
+          </p>
+        }
         @if (current.description) {
-          <mat-divider></mat-divider>
           <p class="description">{{ current.description }}</p>
         }
-      </mat-card-content>
-    </mat-card>
 
-    <section class="jobs-section">
-      <h2>Aktywne oferty</h2>
-
-      @if (jobsLoading() && jobs().length === 0) {
-        <div class="state small">
-          <mat-spinner diameter="40"></mat-spinner>
-        </div>
-      } @else {
-        @for (job of jobs(); track job.id) {
-          <a class="job-row" [routerLink]="['/jobs', job.id]">
-            <div>
-              <span class="job-title">{{ job.title }}</span>
-              <span class="job-meta">{{ job.location }} · {{ workTypeLabel(job.workType) }} · {{ formatSalary(job) }}</span>
-            </div>
-            <mat-icon>chevron_right</mat-icon>
-          </a>
-        } @empty {
-          <div class="state small">
-            <mat-icon>work_off</mat-icon>
-            <p>Ta firma nie ma obecnie aktywnych ofert.</p>
-          </div>
+        @if (photosLoading() || photos().length > 0) {
+          <section class="photos" aria-labelledby="photos-title">
+            <h2 id="photos-title">Zdjęcia</h2>
+            @if (photosLoading()) {
+              <div class="gallery-skeleton" aria-busy="true"><span class="visually-hidden">Wczytywanie zdjęć…</span></div>
+            } @else {
+              <app-company-gallery [photos]="photos()" [companyName]="current.name" />
+            }
+          </section>
         }
 
-        @if (jobsTotal() > jobsPageSize) {
-          <mat-paginator
-            [length]="jobsTotal()"
-            [pageSize]="jobsPageSize"
-            [pageIndex]="jobsPageIndex()"
-            [hidePageSize]="true"
-            (page)="onJobsPageChange($event)">
-          </mat-paginator>
-        }
-      }
-    </section>
+        <section class="jobs-section" aria-labelledby="jobs-title">
+          <h2 id="jobs-title">Aktualne oferty</h2>
+
+          @if (jobsLoading() && jobs().length === 0) {
+            <div class="jobs-skeleton" aria-busy="true"><span class="visually-hidden">Wczytywanie ofert…</span></div>
+          } @else {
+            <ul class="job-list" [attr.aria-busy]="jobsLoading()">
+              @for (row of jobRows(); track row.job.id) {
+                <li class="job-row">
+                  <a class="job-title" [routerLink]="['/jobs', row.job.id]">{{ row.job.title }}</a>
+                  <span class="job-meta">{{ row.meta }} · {{ row.job.location }}</span>
+                  <span class="job-salary">{{ row.salary }}</span>
+                </li>
+              } @empty {
+                <li class="empty muted">Ta firma nie ma obecnie aktywnych ofert.</li>
+              }
+            </ul>
+
+            @if (jobsTotal() > jobsPageSize) {
+              <mat-paginator
+                [length]="jobsTotal()"
+                [pageSize]="jobsPageSize"
+                [pageIndex]="jobsPageIndex()"
+                [hidePageSize]="true"
+                (page)="onJobsPageChange($event)">
+              </mat-paginator>
+            }
+          }
+        </section>
+      </div>
+
+      <aside class="facts surface" aria-label="Informacje o firmie">
+        <dl>
+          @if (current.location) {
+            <div><dt>Lokalizacja</dt><dd>{{ current.location }}</dd></div>
+          }
+          <div><dt>Aktywne oferty</dt><dd class="num">{{ current.activeJobsCount }}</dd></div>
+          @if (since(); as date) {
+            <div><dt>Na Job Board od</dt><dd>{{ date }}</dd></div>
+          }
+        </dl>
+      </aside>
+    </div>
   }
 </div>
