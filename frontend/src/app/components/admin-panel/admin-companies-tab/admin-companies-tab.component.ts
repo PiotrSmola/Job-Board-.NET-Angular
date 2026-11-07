@@ -15,6 +15,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { providePolishPaginatorIntl } from '../../../services/polish-paginator-intl';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { Subject, catchError, debounceTime, filter, map, of, switchMap, tap } from 'rxjs';
 import { AdminService } from '../../../services/admin.service';
@@ -38,6 +39,7 @@ const DEFAULT_SORT: Sort = { active: 'createdAt', direction: 'desc' };
 /** Moderacja firm w panelu admina: zatwierdzanie, odrzucanie, edycja, dodawanie i usuwanie. */
 @Component({
   selector: 'app-admin-companies-tab',
+  providers: [providePolishPaginatorIntl()],
   standalone: true,
   imports: [
     DatePipe,

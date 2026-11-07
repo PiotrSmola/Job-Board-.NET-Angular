@@ -8,6 +8,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { providePolishPaginatorIntl } from '../../services/polish-paginator-intl';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { EMPTY, Observable, Subject, catchError, map, of, switchMap, tap } from 'rxjs';
 import { Company, CompanyStatus } from '../../models/company.model';
@@ -32,6 +33,7 @@ const WORK_TYPE_LABELS: Record<WorkType, string> = {
 /** Publiczny profil firmy z listą jej aktywnych ofert. */
 @Component({
   selector: 'app-company-detail',
+  providers: [providePolishPaginatorIntl()],
   standalone: true,
   imports: [
     DatePipe,

@@ -6,6 +6,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { providePolishPaginatorIntl } from '../../services/polish-paginator-intl';
 import { Observable, Subject, catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
 import { JobService } from '../../services/job.service';
 import { CategoryService } from '../../services/category.service';
@@ -32,6 +33,7 @@ const SKELETON_COUNT = 6;
  */
 @Component({
   selector: 'app-job-list',
+  providers: [providePolishPaginatorIntl()],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [

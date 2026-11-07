@@ -13,6 +13,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatDialog } from '@angular/material/dialog';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { providePolishPaginatorIntl } from '../../../services/polish-paginator-intl';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { Subject, catchError, debounceTime, filter, map, of, switchMap, tap } from 'rxjs';
 import { JobApplicationService } from '../../../services/job-application.service';
@@ -34,6 +35,7 @@ const ALL_COLUMNS = ['id', 'jobTitle', 'company', 'user', 'status', 'appliedAt',
 
 @Component({
   selector: 'app-admin-applications-tab',
+  providers: [providePolishPaginatorIntl()],
   standalone: true,
   imports: [
     CommonModule,

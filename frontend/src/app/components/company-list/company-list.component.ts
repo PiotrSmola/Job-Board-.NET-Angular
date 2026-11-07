@@ -9,6 +9,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { providePolishPaginatorIntl } from '../../services/polish-paginator-intl';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSelectModule } from '@angular/material/select';
 import { Subject, catchError, debounceTime, filter, map, of, switchMap, tap } from 'rxjs';
@@ -21,6 +22,7 @@ import { getApiErrorMessage } from '../../utils/http-errors';
 /** Publiczna lista zatwierdzonych firm z wyszukiwaniem, sortowaniem i paginacją. */
 @Component({
   selector: 'app-company-list',
+  providers: [providePolishPaginatorIntl()],
   standalone: true,
   imports: [
     SlicePipe,

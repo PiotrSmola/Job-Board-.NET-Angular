@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { providePolishPaginatorIntl } from '../../services/polish-paginator-intl';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { Subscription } from 'rxjs';
 import { SavedJobsService } from '../../services/saved-jobs.service';
@@ -22,6 +23,7 @@ export const SAVED_JOBS_PAGE_SIZE = 10;
  */
 @Component({
   selector: 'app-saved-jobs',
+  providers: [providePolishPaginatorIntl()],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [DatePipe, RouterLink, MatButtonModule, MatIconModule, MatPaginatorModule, MatProgressSpinnerModule,

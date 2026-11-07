@@ -14,6 +14,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { providePolishPaginatorIntl } from '../../../services/polish-paginator-intl';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { Subject, catchError, debounceTime, filter, map, of, switchMap, tap } from 'rxjs';
 import { JobService } from '../../../services/job.service';
@@ -43,6 +44,7 @@ const DEFAULT_SORT: Sort = { active: 'createdAt', direction: 'desc' };
 
 @Component({
   selector: 'app-admin-jobs-tab',
+  providers: [providePolishPaginatorIntl()],
   standalone: true,
   imports: [
     CommonModule,
