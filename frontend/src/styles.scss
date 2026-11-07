@@ -524,9 +524,11 @@ video {
 // Klasy pomocnicze (minimalny zestaw – opis w docs/CONTINUE-ui-refresh.md)
 // ---------------------------------------------------------------------------------------------------
 
-// Ukryte wizualnie, dostępne dla czytników ekranu (zamiast display:none dla etykiet)
+// Ukryte wizualnie, dostępne dla czytników ekranu (zamiast display:none dla etykiet).
+// .cdk-visually-hidden – obszar ogłoszeń LiveAnnouncer; bez mat.core() reguła CDK nie trafia do arkusza.
 .visually-hidden,
-.sr-only {
+.sr-only,
+.cdk-visually-hidden {
   position: absolute !important;
   width: 1px !important;
   height: 1px !important;
