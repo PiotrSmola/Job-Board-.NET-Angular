@@ -128,3 +128,28 @@ export function makePdf(title: string): Buffer {
   const content = `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n% ${title}\ntrailer<</Root 1 0 R>>\n%%EOF\n`;
   return Buffer.from(content, 'latin1');
 }
+
+/**
+ * Jak `scanA11y`, ale z jawnie włączoną regułą `label-content-name-mismatch` (WCAG 2.5.3 – w axe oznaczona jako eksperymentalna)
+ * i bez dopuszczania jej naruszeń na żadnym poziomie (impact), nie tylko serious/critical.
+ */
+export async function scanA11yStrict(page: Page, label: string, options: { exclude?: string[] } = {}): Promise<A11yViolation[]> {
+  let builder = new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+    .options({ rules: { 'label-content-name-mismatch': { enabled: true } } });
+  for (const selector of options.exclude ?? []) builder = builder.exclude(selector);
+  const result = await builder.analyze();
+  const violations: A11yViolation[] = result.violations.map(violation => ({
+    label,
+    id: violation.id,
+    impact: violation.impact,
+    help: violation.help,
+    nodes: violation.nodes.slice(0, 5).map(node => `${node.target.join(' ')} :: ${(node.failureSummary ?? '').split('\n').slice(1, 3).join(' ').trim()}`)
+  }));
+  mkdirSync(ARTIFACTS_DIR, { recursive: true });
+  for (const violation of violations) appendFileSync(`${ARTIFACTS_DIR}/a11y.jsonl`, JSON.stringify(violation) + '\n');
+  const blocking = violations.filter(violation =>
+    violation.impact === 'serious' || violation.impact === 'critical' || violation.id === 'label-content-name-mismatch');
+  expect.soft(blocking, `axe (${label}): serious/critical i label-content-name-mismatch`).toEqual([]);
+  return violations;
+}
