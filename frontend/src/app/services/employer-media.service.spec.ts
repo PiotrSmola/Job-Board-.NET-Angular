@@ -9,6 +9,7 @@ import {
   selectPhotoFiles,
   validateImageFile
 } from './employer-media.service';
+import { CompanyMediaService } from './company-media.service';
 import { BackgroundFocus, CompanyPhoto } from '../models/company-media.model';
 
 function file(name: string, size = 100, type = name.endsWith('.png') ? 'image/png' : 'image/jpeg'): File {
@@ -38,6 +39,14 @@ describe('EmployerMediaService', () => {
     expect(req.request.method).toBe('GET');
     req.flush([photo(1)]);
     expect(result).toEqual([photo(1)]);
+  });
+
+  it('getPhotos reuses the public read of CompanyMediaService (one implementation)', () => {
+    const companyMedia = TestBed.inject(CompanyMediaService);
+    const spy = vi.spyOn(companyMedia, 'getPhotos');
+    service.getPhotos(3).subscribe();
+    expect(spy).toHaveBeenCalledWith(3);
+    http.expectOne('/api/companies/3/photos').flush([]);
   });
 
   it('loadImage requests the image as a blob', () => {

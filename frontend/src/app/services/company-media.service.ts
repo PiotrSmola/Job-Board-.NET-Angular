@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { CompanyPhoto } from '../models/company-media.model';
 
-/** Publiczny odczyt galerii firmy (zarządzanie zdjęciami jest w panelu pracodawcy). */
+/** Odczyt galerii firmy – profil publiczny, a przez `EmployerMediaService` także panele (zarządzanie jest tam). */
 @Injectable({
   providedIn: 'root'
 })

@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { BackgroundFocus, CompanyPhoto, MAX_COMPANY_PHOTOS } from '../models/company-media.model';
 import { UploadProgressEvent, mapUploadEvents } from '../utils/http-transfer';
+import { CompanyMediaService } from './company-media.service';
 
 /** Ustawienia tła ofert z API; `url` = null tylko po PATCH, gdy firma nie ma jeszcze obrazu. */
 export interface OfferBackgroundSettings {
@@ -67,11 +68,15 @@ export function selectPhotoFiles(files: readonly File[], currentCount: number): 
 @Injectable({ providedIn: 'root' })
 export class EmployerMediaService {
   private http = inject(HttpClient);
+  private companyMedia = inject(CompanyMediaService);
   private readonly MEDIA_URL = '/api/employer/company';
 
-  /** Galeria firmy w kolejności wyświetlania (członkowie i admin widzą też firmę niezatwierdzoną). */
+  /**
+   * Galeria firmy w kolejności wyświetlania – ten sam odczyt co na profilu publicznym (`CompanyMediaService`);
+   * członkowie i admin widzą też firmę niezatwierdzoną, obrazy panel i tak wczytuje przez `appBlobSrc`.
+   */
   getPhotos(companyId: number): Observable<CompanyPhoto[]> {
-    return this.http.get<CompanyPhoto[]>(`/api/companies/${companyId}/photos`);
+    return this.companyMedia.getPhotos(companyId);
   }
 
   /** Obraz jako Blob (z nagłówkiem Authorization) – do `URL.createObjectURL`. */
