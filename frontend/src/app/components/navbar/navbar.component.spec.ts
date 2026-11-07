@@ -53,6 +53,13 @@ describe('NavbarComponent', () => {
     return links().map(l => l.text);
   }
 
+  /** Tekst przycisku bez elementów aria-hidden (przybliżenie nazwy dostępnej z treści). */
+  function accessibleText(element: HTMLElement): string {
+    const clone = element.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('[aria-hidden="true"]').forEach(node => node.remove());
+    return (clone.textContent ?? '').replace(/\s+/g, ' ').trim();
+  }
+
   function accountButton(): HTMLButtonElement | null {
     return root().querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
   }
@@ -186,8 +193,11 @@ describe('NavbarComponent', () => {
       const button = accountButton()!;
       expect(button.querySelector('.avatar')?.textContent?.trim()).toBe('MN');
       expect(button.querySelector('.avatar')?.getAttribute('aria-hidden')).toBe('true');
-      expect(button.textContent).toContain('Marta');
-      expect(button.getAttribute('aria-label')).toBe('Menu konta: Marta Nowak');
+      expect(button.querySelector('.account-name')?.textContent?.trim()).toBe('Marta');
+      // nazwa dostępna z treści: ukryty prefiks + widoczne imię + ukryte nazwisko; bez inicjałów i ligatury ikony
+      expect(button.hasAttribute('aria-label')).toBe(false);
+      expect(button.querySelector('.chevron')?.getAttribute('aria-hidden')).toBe('true');
+      expect(accessibleText(button)).toBe('Menu konta: Marta Nowak');
       expect(button.getAttribute('aria-expanded')).toBe('false');
     });
 
@@ -195,7 +205,7 @@ describe('NavbarComponent', () => {
       create('User', { firstName: '', lastName: '', email: 'zofia@example.com' });
 
       expect(accountButton()!.querySelector('.avatar')?.textContent?.trim()).toBe('Z');
-      expect(accountButton()!.getAttribute('aria-label')).toBe('Menu konta: zofia@example.com');
+      expect(accessibleText(accountButton()!)).toBe('Menu konta: zofia@example.com');
     });
 
     it('shows the e-mail (disabled item) and logs out on "Wyloguj"', async () => {

@@ -26,6 +26,16 @@ export class NavbarComponent {
     return [user.firstName, user.lastName].map(part => part?.trim()).filter(Boolean).join(' ') || user.email;
   });
 
+  /**
+   * Nazwa na przycisku konta: widoczne imię (bez imienia – pełna nazwa lub e-mail) i reszta pełnej nazwy tylko
+   * dla czytników. Nazwa dostępna = „Menu konta: ” + widoczny tekst + reszta (WCAG 2.5.3 – zawiera widoczny tekst).
+   */
+  readonly accountName = computed(() => {
+    const full = this.fullName();
+    const visible = this.user()?.firstName?.trim() || full;
+    return { visible, rest: full.startsWith(visible) ? full.slice(visible.length) : '' };
+  });
+
   /** Inicjały do awatara („JK”); bez imienia i nazwiska – pierwsza litera e-maila. */
   readonly initials = computed(() => {
     const user = this.user();

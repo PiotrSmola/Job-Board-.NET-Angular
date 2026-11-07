@@ -49,10 +49,16 @@
     </ul>
 
     @if (user(); as current) {
-      <button type="button" class="account-button" [matMenuTriggerFor]="userMenu"
-        [attr.aria-label]="'Menu konta: ' + fullName()">
+      <!-- nazwa dostępna z treści (bez aria-label): „Menu konta: Marta Nowak” zawiera widoczne „Marta” (WCAG 2.5.3);
+           inicjały i ligatura ikony są ukryte przed czytnikami -->
+      @let name = accountName();
+      <button type="button" class="account-button" [matMenuTriggerFor]="userMenu">
         <span class="avatar" aria-hidden="true">{{ initials() }}</span>
-        <span class="account-name" aria-hidden="true">{{ current.firstName }}</span>
+        <span class="visually-hidden">Menu konta: </span>
+        <span class="account-name">{{ name.visible }}</span>
+        @if (name.rest) {
+          <span class="visually-hidden">{{ name.rest }}</span>
+        }
         <mat-icon class="chevron" aria-hidden="true">expand_more</mat-icon>
       </button>
       <mat-menu #userMenu="matMenu" xPosition="before">
