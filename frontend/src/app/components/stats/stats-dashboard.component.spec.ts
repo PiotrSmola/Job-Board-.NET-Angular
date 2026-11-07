@@ -131,13 +131,13 @@ describe('StatsDashboardComponent', () => {
       expect(el.querySelector('.skeleton')?.getAttribute('aria-hidden')).toBe('true');
       expect(el.querySelectorAll('.skeleton-block').length).toBeGreaterThan(3);
       expect(el.querySelector('app-stats-kpi-tiles')).toBeNull();
-      expect(text('[role="status"].sr-only')).toBe('Wczytywanie statystyk…');
+      expect(text('[role="status"].visually-hidden')).toBe('Wczytywanie statystyk…');
 
       pending.subject.next(adminStatsFixture());
       await settle();
 
       expect(el.querySelector('.skeleton')).toBeNull();
-      expect(text('[role="status"].sr-only')).toContain('zostały wczytane');
+      expect(text('[role="status"].visually-hidden')).toContain('zostały wczytane');
     });
 
     it('shows an alert with a retry button on error and recovers after retrying', async () => {

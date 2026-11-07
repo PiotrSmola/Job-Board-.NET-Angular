@@ -65,12 +65,13 @@ export interface DashboardView {
   hasData: boolean;
 }
 
-// Kolory na tle karty #161616 mają kontrast elementów graficznych ≥ 3:1 (cyjan, bursztyn, róż, zieleń)
+// Kolory z tokenów (akcent, bursztyn, niebieski, zielony) – na karcie --color-surface kontrast elementów graficznych ≥ 3:1;
+// serie rozróżnia też kreskowanie i kształt znaczników, więc informacja nie zależy od samego koloru
 const SERIES_STYLES: { color: string; dash: string; marker: MarkerShape }[] = [
-  { color: '#00e5ff', dash: '', marker: 'circle' },
-  { color: '#ffb74d', dash: '8 4', marker: 'square' },
-  { color: '#ea80fc', dash: '2 4', marker: 'diamond' },
-  { color: '#69f0ae', dash: '10 3 2 3', marker: 'triangle' }
+  { color: 'var(--color-accent)', dash: '', marker: 'circle' },
+  { color: 'var(--status-review)', dash: '8 4', marker: 'square' },
+  { color: 'var(--status-submitted)', dash: '2 4', marker: 'diamond' },
+  { color: 'var(--status-offered)', dash: '10 3 2 3', marker: 'triangle' }
 ];
 
 const FUNNEL_LABELS: { key: keyof StatsFunnel; label: string }[] = [

@@ -40,8 +40,8 @@ const MARKER_RADIUS = 4.5;
         <li>
           <button type="button" [attr.aria-pressed]="isVisible(item.key)" (click)="toggleSeries(item.key)">
             <svg width="40" height="14" viewBox="0 0 40 14" aria-hidden="true" focusable="false">
-              <path d="M2 7 H38" fill="none" stroke-width="2.5" [attr.stroke]="item.color" [attr.stroke-dasharray]="item.dash || null" />
-              <path [attr.d]="legendMarker(item)" [attr.fill]="item.color" />
+              <path d="M2 7 H38" fill="none" stroke-width="2.5" [style.stroke]="item.color" [attr.stroke-dasharray]="item.dash || null" />
+              <path [attr.d]="legendMarker(item)" [style.fill]="item.color" />
             </svg>
             <span [class.off]="!isVisible(item.key)">{{ item.label }}</span>
           </button>
@@ -52,7 +52,7 @@ const MARKER_RADIUS = 4.5;
     @if (showTable()) {
       <div class="scroll table-scroll" tabindex="0" role="region" [attr.aria-label]="title() + ' – tabela danych'">
         <table>
-          <caption class="sr-only">{{ title() }} – wartości dzienne</caption>
+          <caption class="visually-hidden">{{ title() }} – wartości dzienne</caption>
           <thead>
             <tr>
               <th scope="col">Data</th>
@@ -88,8 +88,8 @@ const MARKER_RADIUS = 4.5;
           }
           @for (line of geometry().lines; track line.key) {
             <path class="line" fill="none" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"
-              [attr.d]="line.path" [attr.stroke]="line.color" [attr.stroke-dasharray]="line.dash || null" />
-            <path class="marker" [attr.d]="line.markers" [attr.fill]="line.color" />
+              [attr.d]="line.path" [style.stroke]="line.color" [attr.stroke-dasharray]="line.dash || null" />
+            <path class="marker" [attr.d]="line.markers" [style.fill]="line.color" />
           }
         </svg>
       </div>
@@ -98,25 +98,23 @@ const MARKER_RADIUS = 4.5;
   styles: [`
     :host { display: block; }
     .header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
-    h3 { font-size: 1.15rem; }
-    .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; list-style: none; margin: 8px 0; padding: 0; }
-    .legend button { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 2px 8px; color: var(--text-primary);
-      background: none; border: 1px solid transparent; border-radius: 6px; cursor: pointer; font: inherit; font-size: 0.9rem; }
-    .legend button[aria-pressed='true'] { border-color: var(--border-color); }
-    .legend button:hover { background: var(--surface-hover); }
-    .legend button:focus-visible, .scroll:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-    .off { color: var(--text-secondary); text-decoration: line-through; }
+    h3 { margin: 0; font-size: var(--font-size-lg); font-weight: 500; }
+    .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; list-style: none; margin: 8px 0; padding: 0; }
+    .legend button { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 2px 8px; color: var(--color-text-prose);
+      background: none; border: 0; border-radius: var(--radius-input); cursor: pointer; font: inherit; }
+    .legend button:hover { background: var(--color-raised); }
+    .off { color: var(--color-text-tertiary); text-decoration: line-through; }
     .scroll { overflow-x: auto; }
     .chart { display: block; width: 100%; min-width: 480px; height: auto; }
-    .grid { stroke: #3d3d3d; stroke-width: 1; }
-    .axis { stroke: #8a8a8a; stroke-width: 1; }
-    .tick-label { fill: #b0b0b0; font-size: 13px; }
+    .grid { stroke: var(--color-selected); stroke-width: 1; }
+    .axis { stroke: var(--color-text-tertiary); stroke-width: 1; }
+    .tick-label { fill: var(--color-text-tertiary); font-size: 12px; }
     .table-scroll { max-height: 360px; overflow-y: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    th, td { padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--border-color); }
-    thead th { position: sticky; top: 0; background: var(--surface-color); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px 12px; text-align: left; box-shadow: inset 0 -1px 0 var(--color-hairline); }
+    thead th { position: sticky; top: 0; background: var(--color-surface); color: var(--color-text-tertiary); font-size: var(--font-size-sm); font-weight: 500; }
+    tbody th { font-weight: 400; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   `]
 })
 export class StatsLineChartComponent {

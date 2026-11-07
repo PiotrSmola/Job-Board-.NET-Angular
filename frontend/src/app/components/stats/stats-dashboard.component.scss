@@ -1,57 +1,54 @@
 :host { display: block; }
 
-.stats-dashboard { display: flex; flex-direction: column; gap: 24px; padding: 8px 0 32px; }
+.stats-dashboard { display: flex; flex-direction: column; gap: 12px; padding: 16px 0 8px; }
 
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.actions button { min-height: 40px; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; margin-bottom: 8px; }
+.actions { display: flex; flex-wrap: wrap; gap: 4px; }
 
-.export-error { margin: 0; color: #ff8a80; }
+.export-error { margin: 0; color: var(--color-danger); }
 
 .panel, .breakdown {
-  padding: 16px;
-  background: var(--surface-color);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
+  padding: 20px;
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
 }
 
+// Wykres i lejek obok siebie (2:1), na wąskim ekranie jeden pod drugim
+.charts { display: flex; flex-wrap: wrap; gap: 12px; }
+.chart-panel, .charts .chart { flex: 2 1 520px; min-width: 0; }
+.funnel-panel, .charts .funnel { flex: 1 1 300px; min-width: 0; }
+
 .breakdown {
-  h3 { font-size: 1.05rem; margin-bottom: 8px; }
-  ul { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 0; padding: 0; list-style: none; color: var(--text-secondary); }
-  strong { color: var(--text-primary); }
+  h3 { margin: 0 0 8px; font-size: var(--font-size-lg); font-weight: 500; }
+  ul { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 0; padding: 0; list-style: none; color: var(--color-text-secondary); }
+  strong { color: var(--color-text); font-weight: 500; }
 }
 
 .state-box {
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
-  min-height: 240px; justify-content: center; padding: 24px; text-align: center;
-  color: var(--text-secondary); background: var(--surface-color);
-  border: 1px solid var(--border-color); border-radius: 12px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  min-height: 240px; padding: 24px; text-align: center;
+  color: var(--color-text-secondary); background: var(--color-surface); border-radius: var(--radius-card);
 
-  mat-icon { width: 56px; height: 56px; font-size: 56px; }
   p { margin: 0; }
-  .hint { font-size: 0.9rem; }
+  .hint { font-size: var(--font-size-sm); }
 }
 
-// Szkielet ma stałe wysokości, więc podmiana na treść nie przesuwa układu strony (CLS)
-.skeleton { display: flex; flex-direction: column; gap: 24px; }
-.skeleton-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
+// Szkielet ma stałe wysokości, więc podmiana na treść nie przesuwa układu strony (CLS); bez gradientu – samo wypełnienie
+.skeleton { display: flex; flex-direction: column; gap: 12px; }
+.skeleton-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 12px; }
 .skeleton-block {
-  background: linear-gradient(90deg, #1b1b1b 25%, #262626 50%, #1b1b1b 75%);
-  background-size: 200% 100%;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  animation: shimmer 1.6s linear infinite;
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  animation: pulse 1.6s ease-in-out infinite;
 
   &.tile { height: 96px; }
   &.chart { height: 400px; }
-  &.funnel { height: 280px; }
+  &.funnel { height: 400px; }
   &.table { height: 260px; }
 }
 
-@keyframes shimmer { to { background-position: -200% 0; } }
+@keyframes pulse { 50% { opacity: .55; } }
 
 @media (prefers-reduced-motion: reduce) {
   .skeleton-block { animation: none; }
 }
-
-.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
