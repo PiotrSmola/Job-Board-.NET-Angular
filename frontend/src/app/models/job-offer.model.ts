@@ -1,3 +1,5 @@
+import { OfferBackground } from './company-media.model';
+
 export enum WorkType {
   Remote = 0,
   Hybrid = 1,
@@ -69,6 +71,8 @@ export interface JobOffer {
   salaryCurrency: Currency;
   salaryPeriod: SalaryPeriod;
   skills: string[];
+  /** Tło nagłówka oferty ustawione przez firmę; null, gdy brak albo firma niezatwierdzona. */
+  companyBackground?: OfferBackground | null;
 }
 
 export interface CreateJobOffer {
