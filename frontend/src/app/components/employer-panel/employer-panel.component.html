@@ -1,39 +1,48 @@
-<div class="admin-panel-container">
-  <div class="header">
-    <div class="title-section">
-      <h1>Panel pracodawcy</h1>
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>{{ company()?.name ?? 'Panel pracodawcy' }}</h1>
       @if (company(); as current) {
-        <p class="subtitle company-subtitle">
-          {{ current.name }}
+        <p class="page-subtitle company-subtitle">
           @if (statusPresentation(); as presentation) {
             <app-status-chip [label]="presentation.label" [tone]="presentation.tone" />
+            <span aria-hidden="true">·</span>
+          }
+          <span class="num">{{ activeJobsLabel() }}</span>
+          @if (isApproved()) {
+            <span aria-hidden="true">·</span>
+            <a class="text-link" [routerLink]="['/companies', current.id]">Zobacz profil publiczny</a>
           }
         </p>
       } @else {
-        <p class="subtitle">Zarządzaj ofertami i rekrutacją swojej firmy</p>
+        <p class="page-subtitle">Zarządzaj ofertami i rekrutacją swojej firmy</p>
       }
     </div>
+    @if (company()) {
+      <div class="page-actions">
+        <button mat-flat-button type="button" (click)="newOffer()">
+          <mat-icon aria-hidden="true">add</mat-icon>
+          Nowa oferta
+        </button>
+      </div>
+    }
   </div>
 
   @if (loading() && !company()) {
     <div class="panel-state">
-      <mat-spinner></mat-spinner>
+      <mat-spinner diameter="48" aria-label="Wczytywanie danych firmy"></mat-spinner>
     </div>
   } @else if (loadError()) {
-    <div class="panel-state">
-      <mat-icon>cloud_off</mat-icon>
+    <div class="panel-state" role="alert">
       <p>{{ loadError() }}</p>
-      <button mat-raised-button color="primary" (click)="loadCompany()">
-        <mat-icon>refresh</mat-icon>
-        Spróbuj ponownie
-      </button>
+      <button mat-stroked-button type="button" (click)="loadCompany()">Spróbuj ponownie</button>
     </div>
   } @else if (company(); as current) {
     @if (!isApproved() && selectedTabIndex() !== companyTab) {
-      <div class="approval-notice" role="status">
-        <mat-icon>hourglass_top</mat-icon>
+      <div class="approval-notice warning-strip" role="status">
+        <mat-icon aria-hidden="true">hourglass_top</mat-icon>
         <span>Firma nie jest jeszcze zatwierdzona – oferty możesz przygotowywać jako szkice. Publikacja będzie możliwa po weryfikacji przez administratora.</span>
-        <button mat-button color="primary" (click)="showCompanyTab()">Profil firmy</button>
+        <button mat-button type="button" (click)="showCompanyTab()">Profil firmy</button>
       </div>
     }
 
@@ -41,46 +50,28 @@
       [selectedIndex]="selectedTabIndex()"
       (selectedIndexChange)="onTabChange($event)"
       [preserveContent]="true"
-      class="admin-tabs">
+      mat-stretch-tabs="false"
+      mat-align-tabs="start"
+      aria-label="Sekcje panelu">
       <mat-tab label="Oferty">
-        <ng-template mat-tab-label>
-          <mat-icon class="tab-icon">work</mat-icon>
-          Oferty
-        </ng-template>
-
         <ng-template matTabContent>
           <app-admin-jobs-tab mode="employer" [company]="current"></app-admin-jobs-tab>
         </ng-template>
       </mat-tab>
 
       <mat-tab label="Aplikacje">
-        <ng-template mat-tab-label>
-          <mat-icon class="tab-icon">assignment</mat-icon>
-          Aplikacje
-        </ng-template>
-
         <ng-template matTabContent>
           <app-admin-applications-tab mode="employer"></app-admin-applications-tab>
         </ng-template>
       </mat-tab>
 
       <mat-tab label="Profil firmy">
-        <ng-template mat-tab-label>
-          <mat-icon class="tab-icon">business</mat-icon>
-          Profil firmy
-        </ng-template>
-
         <ng-template matTabContent>
           <app-employer-company-tab [company]="current" (companyChange)="onCompanyChange($event)"></app-employer-company-tab>
         </ng-template>
       </mat-tab>
 
       <mat-tab label="Statystyki">
-        <ng-template mat-tab-label>
-          <mat-icon class="tab-icon">insights</mat-icon>
-          Statystyki
-        </ng-template>
-
         <ng-template matTabContent>
           <!-- Kod wykresów jest ładowany dopiero przy pierwszym wejściu w zakładkę -->
           @defer (on immediate) {

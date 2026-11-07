@@ -1,39 +1,36 @@
-// Uzupełnienie stylów panelu admina (admin-panel.component.scss)
-
 .company-subtitle {
   display: flex;
-  align-items: center;
-  gap: 12px;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
 }
 
 .panel-state {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 16px;
-  padding: 80px 24px;
-  color: var(--text-secondary);
+  min-height: 320px;
+  color: var(--color-text-secondary);
 
-  mat-icon {
-    font-size: 64px;
-    width: 64px;
-    height: 64px;
-  }
+  p { margin: 0; }
 }
 
 .approval-notice {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 24px;
-  padding: 12px 16px;
-  border: 1px solid #ffb74d;
-  border-radius: 12px;
-  color: #ffb74d;
-  background-color: rgba(255, 183, 77, 0.08);
+  gap: 8px 12px;
+  margin-bottom: 16px;
 
-  span {
-    flex: 1;
-  }
+  mat-icon { color: var(--color-warning-icon); }
+  span { flex: 1 1 260px; }
+}
+
+// Rezerwacja miejsca na zakładkę statystyk ładowaną leniwie (bez skoku układu)
+.stats-placeholder {
+  min-height: 480px;
+  padding: 24px 0;
+  color: var(--color-text-secondary);
 }
